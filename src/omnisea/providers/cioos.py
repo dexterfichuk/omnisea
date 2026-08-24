@@ -38,7 +38,7 @@ import pandas as pd
 from .. import cf
 from ..errors import ProviderError
 from ..http import get_json, get_session
-from ..query import Query
+from ..query import BBox, Query
 from .base import DiscoverySource, Provider, StationMatch
 
 log = logging.getLogger("omnisea.cioos")
@@ -323,8 +323,8 @@ def _parse_form_shape(raw: Mapping[str, Any]) -> dict[str, Any] | None:
         "start": raw.get("dateStart"),
         "end": raw.get("dateEnd"),
         "bbox": bbox,
-        "lat": (bbox[1] + bbox[3]) / 2,
-        "lon": (bbox[0] + bbox[2]) / 2,
+        "lat": bbox.centre[0],
+        "lon": bbox.centre[1],
         "distribution": _distribution(raw.get("distribution")),
         "organization": raw.get("organization") or "",
         "license": raw.get("license") or "",
@@ -354,8 +354,8 @@ def _parse_xml_shape(raw: Mapping[str, Any]) -> dict[str, Any] | None:
         "start": ident.get("temporal_begin") or (ident.get("dates") or {}).get("creation"),
         "end": ident.get("temporal_end"),
         "bbox": bbox,
-        "lat": (bbox[1] + bbox[3]) / 2,
-        "lon": (bbox[0] + bbox[2]) / 2,
+        "lat": bbox.centre[0],
+        "lon": bbox.centre[1],
         "distribution": _distribution(raw.get("distribution")),
         "organization": _first_org(raw.get("contact")),
         "license": ((meta.get("use_constraints") or {}).get("licence") or ""),
@@ -364,7 +364,7 @@ def _parse_xml_shape(raw: Mapping[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _bbox_from_nsew(extent: Mapping[str, Any]) -> tuple[float, float, float, float] | None:
+def _bbox_from_nsew(extent: Mapping[str, Any]) -> BBox | None:
     try:
         north = float(extent["north"])
         south = float(extent["south"])
@@ -372,20 +372,20 @@ def _bbox_from_nsew(extent: Mapping[str, Any]) -> tuple[float, float, float, flo
         west = float(extent["west"])
     except (KeyError, TypeError, ValueError):
         return None
-    return (west, south, east, north)
+    return BBox(west, south, east, north)
 
 
-def _bbox_from_list(bbox: Any) -> tuple[float, float, float, float] | None:
+def _bbox_from_list(bbox: Any) -> BBox | None:
     if not isinstance(bbox, Sequence) or isinstance(bbox, str) or len(bbox) != 4:
         return None
     try:
         west, south, east, north = (float(v) for v in bbox)
     except (TypeError, ValueError):
         return None
-    return (west, south, east, north)
+    return BBox(west, south, east, north)
 
 
-def _bbox_from_polygon(polygon: Any) -> tuple[float, float, float, float] | None:
+def _bbox_from_polygon(polygon: Any) -> BBox | None:
     """Bounding box of a ``"lat,lon lat,lon ..."`` polygon string."""
     if not polygon or not isinstance(polygon, str):
         return None
@@ -402,7 +402,7 @@ def _bbox_from_polygon(polygon: Any) -> tuple[float, float, float, float] | None
             continue
     if not lats:
         return None
-    return (min(lons), min(lats), max(lons), max(lats))
+    return BBox(min(lons), min(lats), max(lons), max(lats))
 
 
 def _distribution(dist: Any) -> list[dict[str, str]]:

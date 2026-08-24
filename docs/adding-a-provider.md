@@ -69,6 +69,13 @@ class DataSource(ABC):
 can look before downloading. Do not pull observations here. Return `[]` freely — a source with
 nothing to offer for this query is normal, not an error.
 
+**Passing state from `discover()` to `fetch()`** goes through `StationMatch.extra`, an
+untyped dict for whatever your fetch step needs — an internal id, a series code — that the
+catalogue itself should not display. Read required keys with `match.require("iwls_id")` rather
+than `match.extra.get(...)`: a missing key then raises a named error instead of quietly
+dropping the station, and for scientific data that is the difference between a bug you find and
+one you publish.
+
 **`fetch(query, matches)`** receives only the matches that survived the user's filtering. Return
 either:
 
@@ -89,6 +96,7 @@ touching the point-series assembly code.
 | `self.include_unmapped(query)` | Whether to carry fields with no CF mapping (default yes) |
 | `self.to_cf_units(query)` | Whether the caller asked for canonical CF units |
 | `match.attach_site(query)` | Records which requested site a station answers for, and how far |
+| `match.require(key)` | Read an `extra` value `discover()` promised `fetch()`, failing loudly if absent |
 | `frame_from_records(rows)` | Time-indexed, sorted, de-duplicated frame from row dicts |
 | `trim_to_window(frame, start, end)` | Enforce the requested window regardless of upstream filter semantics |
 | `drop_orphan_qc(frame)` | Drop `<var>_qc` whose measurement column was empty |
@@ -254,6 +262,8 @@ omnisea.register_option("shorelogger_depth_m", "which logger depth to read")
 
 - [ ] `discover()` is cheap — no bulk transfer, and returns `[]` rather than raising when
       there is nothing to offer.
+- [ ] Anything `fetch()` needs from `discover()` is read with `match.require(...)`, so an
+      adapter bug is loud rather than a silently missing station.
 - [ ] Every `standard_name` appears in the CF standard name table; unmapped quantities use
       `standard_name=""` and a clear `long_name`.
 - [ ] Units in the `units` attribute are the units the values are *actually* in — pass

@@ -300,3 +300,36 @@ class TestFrameHelpers:
         )
         assert trimmed.index.min() == pd.Timestamp("2024-07-01", tz="UTC")
         assert trimmed.index.max() == pd.Timestamp("2024-07-08", tz="UTC")
+
+
+class TestDiscoverToFetchHandoff:
+    """`extra` is the untyped seam between discover() and fetch(); reading it must be loud."""
+
+    def test_missing_required_key_names_the_adapter_bug(self):
+        from omnisea.errors import ProviderError
+
+        bare = a_match("dfo_tides", "08545")
+        with pytest.raises(ProviderError, match="bug in the dfo_tides adapter"):
+            bare.require("iwls_id")
+
+    def test_the_error_lists_what_was_actually_recorded(self):
+        from omnisea.errors import ProviderError
+
+        partial = a_match("dfo_tides", "08545")
+        partial.extra["series"] = ["wlo"]
+        with pytest.raises(ProviderError, match="series"):
+            partial.require("iwls_id")
+
+    def test_present_key_is_returned(self):
+        found = a_match("dfo_tides", "08545")
+        found.extra["iwls_id"] = "5cebf1e23d0f4a073c4bc062"
+        assert found.require("iwls_id") == "5cebf1e23d0f4a073c4bc062"
+
+    def test_a_station_is_never_silently_dropped_for_a_missing_id(self):
+        """Previously this logged a warning and returned None — the station just vanished."""
+        from omnisea.errors import ProviderError
+
+        source = DfoTidesSource(DfoProvider())
+        query = Query.from_area((-126, 48, -125, 49), WEEK)
+        with pytest.raises(ProviderError):
+            source._fetch_series(query, a_match("dfo_tides", "08545"), "wlo")

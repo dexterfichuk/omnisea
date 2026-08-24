@@ -12,7 +12,7 @@ import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 import pandas as pd
 
@@ -21,7 +21,25 @@ from .errors import QueryError
 __all__ = ["Query", "Site", "BBox", "to_utc", "as_sites", "register_option",
            "KNOWN_OPTIONS"]
 
-BBox = tuple[float, float, float, float]  # (west, south, east, north)
+class BBox(NamedTuple):
+    """A geographic bounding box, in the OGC order ``(west, south, east, north)``.
+
+    A ``NamedTuple`` rather than a bare 4-tuple so that call sites can say ``bbox.south``
+    instead of ``bbox[1]``, and so a reader can tell at a glance which convention is in play —
+    lon-first (OGC, GeoJSON, EDR) rather than the lat-first order people often reach for.
+    It still unpacks, indexes and compares as an ordinary tuple, so plain tuples remain
+    acceptable input everywhere.
+    """
+
+    west: float
+    south: float
+    east: float
+    north: float
+
+    @property
+    def centre(self) -> tuple[float, float]:
+        """``(lat, lon)`` of the box centre."""
+        return ((self.south + self.north) / 2, (self.west + self.east) / 2)
 
 EARTH_RADIUS_KM = 6371.0088
 
@@ -121,7 +139,7 @@ def _normalize_bbox(bbox: Sequence[float]) -> BBox:
             f"bbox west ({west}) is east of east ({east}); "
             "antimeridian-crossing boxes are not supported yet"
         )
-    return west, south, east, north
+    return BBox(west, south, east, north)
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -253,7 +271,7 @@ def _first_key(mapping: Mapping[str, Any], candidates: tuple[str, ...]) -> str:
 
 def _union_bbox(boxes: Sequence[BBox]) -> BBox:
     """Smallest box covering them all — the pre-filter sent upstream for a multi-site query."""
-    return (
+    return BBox(
         min(b[0] for b in boxes),
         min(b[1] for b in boxes),
         max(b[2] for b in boxes),
@@ -504,7 +522,7 @@ def _bbox_around(lat: float, lon: float, radius_km: float) -> BBox:
     coslat = math.cos(math.radians(lat))
     dlon = 180.0 if abs(coslat) < 1e-9 else math.degrees(radius_km / (EARTH_RADIUS_KM * coslat))
     dlon = min(abs(dlon), 180.0)
-    return (
+    return BBox(
         max(lon - dlon, -180.0),
         max(lat - dlat, -90.0),
         min(lon + dlon, 180.0),

@@ -211,10 +211,9 @@ class DfoTidesSource(RetrievalSource):
     def _fetch_series(
         self, query: Query, match: StationMatch, code: str
     ) -> StationSeries | None:
-        station_id = match.extra.get("iwls_id")
-        if not station_id:
-            log.warning("no IWLS internal id on match %s; skipping", match.station_id)
-            return None
+        # The IWLS internal id comes from discovery; a station vanishing from the tree because
+        # it was missing would be far worse than a clear error.
+        station_id = match.require("iwls_id")
 
         resolution = self._resolution(query)
         # wlp-hilo is an event series: irregular by nature, and it takes no resolution parameter.

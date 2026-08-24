@@ -148,3 +148,62 @@ class TestOverlaps:
     def test_record_starting_after_the_window_does_not_overlap(self):
         q = Query.from_area((-126, 48, -125, 49), ("2024-07-01", "2024-07-08"))
         assert not q.overlaps("2025-01-01", None)
+
+
+class TestBBoxType:
+    def test_fields_are_named_in_ogc_order(self):
+        q = Query.from_area((-125.22, 48.78, -125.05, 48.90), "2024-07-01")
+        assert q.bbox.west == -125.22
+        assert q.bbox.south == 48.78
+        assert q.bbox.east == -125.05
+        assert q.bbox.north == 48.90
+
+    def test_it_still_behaves_as_a_plain_tuple(self):
+        """Named fields must not break unpacking, indexing or comparison."""
+        q = Query.from_area((-125.22, 48.78, -125.05, 48.90), "2024-07-01")
+        west, south, east, north = q.bbox
+        assert (west, south, east, north) == (-125.22, 48.78, -125.05, 48.90)
+        assert q.bbox == (-125.22, 48.78, -125.05, 48.90)
+        assert q.bbox[1] == 48.78
+        assert list(q.bbox) == [-125.22, 48.78, -125.05, 48.90]
+
+    def test_centre_is_lat_lon(self):
+        q = Query.from_position(48.8353, -125.1358, "2024-07-01", radius_km=10)
+        lat, lon = q.bbox.centre
+        assert lat == pytest.approx(48.8353)
+        assert lon == pytest.approx(-125.1358)
+
+    def test_lat_first_input_is_rejected_rather_than_silently_swapped(self):
+        """The classic bbox mistake: (south, west, north, east) instead of OGC order."""
+        with pytest.raises(QueryError):
+            Query.from_area((48.78, -125.22, 48.90, -125.05), "2024-07-01")
+
+
+class TestSiteAsArgument:
+    def test_a_site_carries_its_own_name_into_the_query(self):
+        site = Site(48.8353, -125.1358, "Bamfield Marine Sciences Centre", radius_km=30)
+        q = Query.from_sites(site, "2024-07-01")
+        assert q.sites[0].label == "Bamfield Marine Sciences Centre"
+
+    def test_an_unnamed_site_falls_back_to_its_coordinates(self):
+        q = Query.from_sites(Site(48.8353, -125.1358), "2024-07-01")
+        assert q.sites[0].label == "48.8353,-125.1358"
+
+    def test_site_id_is_used_when_there_is_no_name(self):
+        q = Query.from_sites(Site(48.8353, -125.1358, id="BAM01"), "2024-07-01")
+        assert q.sites[0].label == "BAM01"
+
+    def test_a_site_is_immutable(self):
+        import dataclasses
+
+        site = Site(48.8353, -125.1358, "Bamfield")
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            site.lat = 0.0
+
+    def test_invalid_site_coordinates_are_caught_at_construction(self):
+        with pytest.raises(QueryError, match="lat must lie"):
+            Site(999.0, -125.1358, "Nowhere")
+
+    def test_non_positive_radius_is_rejected(self):
+        with pytest.raises(QueryError, match="radius_km must be positive"):
+            Site(48.8353, -125.1358, "Bamfield", radius_km=0)

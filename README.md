@@ -76,18 +76,24 @@ in the error message. Nothing large happens by accident.
 
 ## Many locations at once
 
-Hand it a list of sites — `Site` objects, `(lat, lon, name)` tuples, dicts, or a DataFrame with
-`lat`/`lon` columns, so a CSV of moorings works directly. Locations with no nearby data simply
-contribute nothing, which is normal, not an error:
+A **`Site`** is the location type: coordinates, its own search radius, and the name you know it
+by. That name travels with the results, so what comes back is joinable to your own records
+without a second lookup.
+
+`(lat, lon, name)` tuples, dicts, and DataFrames with `lat`/`lon` columns are accepted too — so
+a CSV of moorings you already keep works without reshaping it first. Locations with no nearby
+data simply contribute nothing, which is normal, not an error:
 
 ```python
+from omnisea import Site
+
 sites = [
-    {"name": "Bamfield",  "lat": 48.8353, "lon": -125.1358},
-    {"name": "Victoria",  "lat": 48.4204, "lon": -123.3656},
-    {"name": "Open ocean","lat": 48.0000, "lon": -128.0000},   # nothing here
+    Site(48.8353, -125.1358, "Bamfield",   radius_km=25),
+    Site(48.4204, -123.3656, "Victoria",   radius_km=25),
+    Site(48.0000, -128.0000, "Open ocean", radius_km=25),   # nothing here
 ]
 
-tree = omnisea.positions(sites, radius_km=25, time=("2024-07-01", "2024-07-08"), nearest=1)
+tree = omnisea.positions(sites, time=("2024-07-01", "2024-07-08"), nearest=1)
 
 omnisea.coverage(tree)      # one row per requested site, INCLUDING the empty ones
 omnisea.to_dataframe(tree)  # tidy: time, site, station_id, variable, value
@@ -191,6 +197,31 @@ Ship it as a package and it is indexed automatically:
 [project.entry-points."omnisea.providers"]
 my_org = "my_package.provider:MyOrgProvider"
 ```
+
+## Types
+
+Two small types carry meaning that a bare tuple would lose:
+
+```python
+from omnisea import Site
+
+site = Site(48.8353, -125.1358, "Bamfield Marine Sciences Centre", radius_km=30)
+site.label                      # 'Bamfield Marine Sciences Centre' — travels onto the data
+omnisea.fetch(sites=site, time=...)
+```
+
+`BBox` is a `NamedTuple` in the OGC order `(west, south, east, north)`, so `bbox.south` beats
+`bbox[1]` and a reader can tell which convention is in play — lon-first, not the lat-first order
+people often reach for. It still unpacks, indexes and compares as an ordinary tuple, so plain
+tuples remain acceptable input everywhere:
+
+```python
+cat = omnisea.discover(bbox=(-125.22, 48.78, -125.05, 48.90), time=...)
+cat.query.bbox.south      # 48.78
+cat.query.bbox.centre     # (48.84, -125.135) as (lat, lon)
+```
+
+A lat-first bbox is rejected rather than silently swapped.
 
 ## Design notes
 

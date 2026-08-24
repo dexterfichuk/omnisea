@@ -29,6 +29,7 @@ import pandas as pd
 import xarray as xr
 
 from .. import cf
+from ..errors import ProviderError
 from ..http import get_json
 from ..query import Query, Site
 
@@ -70,7 +71,28 @@ class StationMatch:
     first: pd.Timestamp | None = None
     last: pd.Timestamp | None = None
     provider: str = ""  # organization that owns the source, e.g. "eccc"
-    extra: dict[str, Any] = field(default_factory=dict)  # source-private payload
+    #: Source-private payload handed from :meth:`DataSource.discover` to
+    #: :meth:`DataSource.fetch` — internal ids, series codes, anything the fetch step needs
+    #: that the catalogue itself should not display. Read required keys with :meth:`require`.
+    extra: dict[str, Any] = field(default_factory=dict)
+
+    def require(self, key: str) -> Any:
+        """Read a value ``discover()`` promised to ``fetch()``, failing loudly if absent.
+
+        ``extra`` is deliberately untyped — each source needs different things in it — which
+        makes it the one place a typo can quietly cost you a station. Reading through here turns
+        that into a named error instead of a silently missing series, which for scientific data
+        is the difference between a bug you find and one you publish.
+        """
+        try:
+            return self.extra[key]
+        except KeyError:
+            raise ProviderError(
+                f"discovery did not record {key!r} for station {self.station_id!r}, "
+                f"so it cannot be fetched. This is a bug in the {self.source} adapter, "
+                f"not in your query. Available keys: {sorted(self.extra) or '(none)'}",
+                provider=self.source,
+            ) from None
 
     def attach_site(self, query: Query) -> StationMatch:
         """Record which requested site this station answers for, and how far away it is."""

@@ -21,7 +21,9 @@ import omnisea
 
 warnings.simplefilter("ignore")
 
-BAMFIELD = dict(lat=48.8353, lon=-125.1358, radius_km=30)
+# A Site is the location type: coordinates, a search radius, and the name you know it by.
+# That name travels with the results, so what comes back is joinable to your own records.
+BAMFIELD = omnisea.Site(48.8353, -125.1358, "Bamfield Marine Sciences Centre", radius_km=30)
 WEEK = ("2024-07-01", "2024-07-08")
 
 
@@ -46,7 +48,7 @@ print("\n(Fields with no CF name are still returned — under the provider's own
 # ---------------------------------------------------------------------------
 rule("2. Discover: what exists near Bamfield, and how big is it?")
 
-catalog = omnisea.discover(**BAMFIELD, time=WEEK)
+catalog = omnisea.discover(sites=BAMFIELD, time=WEEK)
 
 print(f"{len(catalog)} stations from {len(catalog.sources)} sources, "
       f"~{catalog.n_rows_est:,} rows estimated\n")
@@ -166,14 +168,16 @@ print("it means the times, the units and the datum are all right, not merely par
 # ---------------------------------------------------------------------------
 rule("9. Many locations at once")
 
+# Site objects, (lat, lon, name) tuples, dicts and DataFrames are all accepted, so a CSV
+# of moorings you already keep works without reshaping it first.
 sites = [
-    {"name": "Bamfield", "lat": 48.8353, "lon": -125.1358},
-    {"name": "Tofino", "lat": 49.1530, "lon": -125.9066},
-    {"name": "Victoria", "lat": 48.4204, "lon": -123.3656},
-    {"name": "Open ocean", "lat": 47.5000, "lon": -128.5000},  # deliberately empty
+    omnisea.Site(48.8353, -125.1358, "Bamfield", radius_km=15),
+    omnisea.Site(49.1530, -125.9066, "Tofino", radius_km=15),
+    omnisea.Site(48.4204, -123.3656, "Victoria", radius_km=15),
+    omnisea.Site(47.5000, -128.5000, "Open ocean", radius_km=15),  # deliberately empty
 ]
 
-multi = omnisea.positions(sites, radius_km=15, time=WEEK, providers="dfo_tides", nearest=1)
+multi = omnisea.positions(sites, time=WEEK, providers="dfo_tides", nearest=1)
 print(omnisea.coverage(multi).to_string(index=False))
 print("\nEvery site you asked for gets a row, including the ones that found nothing.")
 print("With a long list of locations, the gaps are the result you most need to see.")
