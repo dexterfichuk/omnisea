@@ -1,0 +1,22 @@
+# scratch API probing, not part of the library
+probe/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# smoke-test output
+*.nc
+
+.DS_Store
+.idea/
+.vscode/
