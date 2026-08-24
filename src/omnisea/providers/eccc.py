@@ -236,13 +236,13 @@ class EcccClimateDaily(OgcFeaturesSource):
         "HEATING_DEGREE_DAYS": cf.FieldSpec(
             var="heating_degree_days",
             standard_name="integral_wrt_time_of_air_temperature_deficit",
-            units="degC day", long_name="Heating degree days",
+            units="degC day", cell_methods="time: sum", long_name="Heating degree days",
             qc_field="HEATING_DEGREE_DAYS_FLAG",
         ),
         "COOLING_DEGREE_DAYS": cf.FieldSpec(
             var="cooling_degree_days",
             standard_name="integral_wrt_time_of_air_temperature_excess",
-            units="degC day", long_name="Cooling degree days",
+            units="degC day", cell_methods="time: sum", long_name="Cooling degree days",
             qc_field="COOLING_DEGREE_DAYS_FLAG",
         ),
     }

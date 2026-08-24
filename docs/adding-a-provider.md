@@ -136,6 +136,12 @@ Two rules, and the distinction between them matters:
   units in the `units` attribute. Silently turning 15 °C into 288.15 K makes a scientist
   distrust their own data at a glance.
 
+**Set `cell_methods` whenever a value summarizes an interval** — a total, a mean, a maximum
+over a period. It is not decoration: `omnisea.align()` reads it to decide how the variable
+resamples and how it joins to a user's own timestamps. A daily total without `cell_methods`
+gets interpolated as if it were an instantaneous reading, which invents an intra-day
+distribution that was never measured.
+
 **Verify your `standard_name` against the real CF table.** `sea_surface_height_above_reference_datum`
 looks official and is not in it; the real name is `water_surface_height_above_reference_datum`.
 A CI test checks every built-in name against the published table — yours should pass it too.
@@ -276,6 +282,8 @@ omnisea.register_option("shorelogger_depth_m", "which logger depth to read")
       publishing UTC timestamps.
 - [ ] Upstream interval caps are handled with `chunk_time(...)`, not by failing.
 - [ ] QC flags are carried as `<var>_qc`, never silently dropped.
+- [ ] Any variable that summarizes an interval carries `cell_methods`, so `align()` resamples
+      it correctly instead of interpolating an accumulation.
 - [ ] Predictions and models live under a different `node_path` than observations, so they can
       never be mistaken for measurements.
 - [ ] Errors raised are `omnisea` errors (`UpstreamError`, `ProviderError`), so users can catch

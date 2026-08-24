@@ -108,6 +108,83 @@ Bamfield and Tofino track each other closely — both open Pacific coast — whi
 the Strait of Juan de Fuca, shows a markedly stronger diurnal inequality. One call, three
 stations, three agencies' worth of plumbing you did not have to write.
 
+## Bring your own data and build a model
+
+The tree is lossless but ragged — tides every 15 minutes, climate summaries once a day, tidal
+extrema at irregular turning points. A model wants a rectangle. `align()` produces one.
+
+Say you have a field sheet: irregular sampling times and your own measurement. Join the
+environmental data onto *your* timestamps:
+
+```python
+mine = pd.read_csv("field_samples.csv")     # time, chlorophyll_ug_L, secchi_m
+
+tree = omnisea.fetch(sites=BAMFIELD, time=("2024-07-01", "2024-07-08"), nearest=1)
+X = omnisea.align(tree, on=mine, tolerance="30min")
+```
+
+```
+                     chlorophyll_ug_L  water_surface_height...  air_temperature  precipitation_amount
+2024-07-01 09:14:00              5.64                    0.852             14.0                   0.0
+2024-07-01 15:40:00              3.25                    2.212             14.0                   0.0
+2024-07-02 10:05:00              1.77                    0.742             14.0                   0.0
+2024-07-03 08:50:00              1.61                    1.864             13.8                   0.0
+```
+
+Your columns come through, so you have `y` and `X` in one table — straight into scikit-learn or
+statsmodels. Or resample everything onto a regular grid instead:
+
+```python
+hourly = omnisea.align(tree, freq="1h")
+weekly = omnisea.align(tree, freq="7D")
+```
+
+### Why this isn't just `.resample()`
+
+Resampling a series wrongly is one of the easiest ways to publish a wrong result, and the right
+answer differs per variable. omnisea doesn't guess — CF `cell_methods`, which every provider
+already publishes, says what each variable *is*:
+
+| `cell_methods` | Downsampling | Upsampling |
+|---|---|---|
+| `time: sum` (precipitation) | **sum** — a weekly total is the sum of daily totals | forward-fill; interpolating invents an intra-day distribution that was never measured |
+| `time: maximum` (gust speed) | **max** — the max of maxima is a real maximum; their mean is a statistic of nothing | forward-fill |
+| `time: mean` (daily mean temp) | mean | forward-fill — a daily mean spread across its own day is honest |
+| none / `time: point` (tide height) | mean | **interpolate** — the only case where it's safe |
+
+The same metadata governs the `on=` join. An **interval summary** matches *backwards within its
+own interval* — a sample at 10:05 gets the total for the day containing it. An **instantaneous
+reading** matches to the nearest observation within `tolerance`. Without that distinction, a
+30-minute tolerance against a value stamped at midnight silently returns a column of `NaN`.
+
+Every column records how it got there:
+
+```python
+X.attrs["omnisea_aggregation"]
+```
+```
+water_surface_height_above_reference_datum@08545   nearest within 30min (8/8 matched)
+air_temperature@1031316                            backward within its own 1d interval (8/8 matched)
+precipitation_amount@1031316                       backward within its own 1d interval (8/8 matched)
+water_surface_height..._at_extremum@08545          nearest within 30min (0/8 matched)
+```
+
+That last line is the point: what *couldn't* be matched is reported, not silently `NaN`.
+
+### Putting your data in the tree
+
+If your measurements are the thing being modelled and you want one object holding response and
+predictors together — round-trippable to netCDF, with your provenance beside the providers':
+
+```python
+tree = omnisea.add_local(tree, mine, name="Chlorophyll grab samples",
+                         lat=48.8353, lon=-125.1358, station_id="BAM-CHL",
+                         var_attrs={"chlorophyll_ug_L": {"units": "ug L-1"}})
+```
+
+A `cell_methods` you supply in `var_attrs` is honoured by `align()` exactly as a provider's
+would be.
+
 ## What you get back
 
 A plain `xarray.DataTree` — not a subclass, so it interoperates with the whole ecosystem.

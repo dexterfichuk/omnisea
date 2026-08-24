@@ -28,6 +28,7 @@ import xarray as xr
 __version__ = "0.1.0"
 
 from . import cf, registry
+from .align import add_local, aggregation_for, align
 from .catalog import Catalog
 from .errors import (
     OmniseaError,
@@ -73,6 +74,10 @@ __all__ = [
     "providers",
     "sources",
     "variables",
+    # alignment / modelling
+    "align",
+    "add_local",
+    "aggregation_for",
     # tree helpers
     "summary",
     "stations",

@@ -188,7 +188,58 @@ print(joined.groupby("site")["value"].agg(["count", "mean"]).round(3).to_string(
 
 
 # ---------------------------------------------------------------------------
-rule("10. Save it")
+rule("10. Bring your own data and build a model")
+
+import numpy as np  # noqa: E402  (kept local to this section)
+
+rng = np.random.default_rng(0)
+field_times = pd.to_datetime([
+    "2024-07-01 09:14", "2024-07-01 15:40", "2024-07-02 10:05", "2024-07-03 08:50",
+    "2024-07-04 14:20", "2024-07-05 09:00", "2024-07-06 16:30", "2024-07-07 11:10",
+])
+mine = pd.DataFrame({
+    "time": field_times,
+    "chlorophyll_ug_L": rng.uniform(1.5, 8.0, len(field_times)).round(2),
+})
+print("your field sheet — irregular sampling times:")
+print(mine.to_string(index=False))
+
+# align(on=...) joins the environmental data onto YOUR timestamps and carries your columns
+# through, so you get y and X in one table.
+features = omnisea.align(tree, on=mine, tolerance="30min")
+show = ["chlorophyll_ug_L", "water_surface_height_above_reference_datum",
+        "air_temperature", "air_temperature_max", "precipitation_amount"]
+print("\njoined to environmental predictors:")
+print(features[show].round(3).to_string())
+
+print("\nhow each column got there — chosen from CF cell_methods, not guessed:")
+for column, how in features.attrs["omnisea_aggregation"].items():
+    if "reviewed" not in column:
+        print(f"  {column:56s} {how}")
+
+print("\nA daily total matches by INTERVAL CONTAINMENT (the day holding your sample);")
+print("an instantaneous tide height matches to the nearest reading within tolerance.")
+print("Without that distinction a 30-minute tolerance against a midnight stamp")
+print("would silently hand you a column of NaN.")
+
+print("\nOr resample everything onto a regular grid instead:")
+weekly = omnisea.align(tree, freq="7D")
+print(f"  weekly precipitation total : {weekly['precipitation_amount'].sum():.1f} mm  (summed)")
+print(f"  weekly max daily-max temp  : {weekly['air_temperature_max'].max():.1f} degC"
+      "  (max, not mean)")
+
+# and your own measurements can live in the tree beside the providers'
+with_mine = omnisea.add_local(
+    tree, mine, name="Chlorophyll grab samples",
+    lat=48.8353, lon=-125.1358, station_id="BAM-CHL",
+    var_attrs={"chlorophyll_ug_L": {"long_name": "Chlorophyll a", "units": "ug L-1"}},
+)
+print("\nyour data as a node in the tree:")
+print(omnisea.summary(with_mine)[["node", "station_name", "n_time"]].to_string(index=False))
+
+
+# ---------------------------------------------------------------------------
+rule("11. Save it")
 
 tree.to_netcdf("bamfield.nc")
 print("wrote bamfield.nc — reopen losslessly with:")
