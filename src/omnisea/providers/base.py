@@ -1,0 +1,348 @@
+"""The provider/source class hierarchy — omnisea's extension point.
+
+Two levels, because real marine data has two levels:
+
+* A :class:`Provider` is an **organization or service**: DFO, ECCC, CIOOS. It owns the base URL,
+  the licence, the attribution and any auth, and it is what you credit in a paper.
+* A :class:`DataSource` is **one queryable dataset** belonging to a provider: IWLS tides,
+  ``climate-hourly``, ``swob-realtime``. It owns the field table, the node path and the actual
+  discover/fetch logic.
+
+ECCC alone publishes four datasets that share paging, bbox handling and GeoJSON decoding but
+differ in their fields and time semantics — that shared middle is what the hierarchy captures.
+Adding a dataset to an existing provider is a subclass; adding a new organization is one new
+module.
+
+Users select :class:`DataSource` names (``"dfo_tides"``, ``"eccc_climate"``), and naming a
+provider (``"eccc"``) selects all of its sources.
+"""
+
+from __future__ import annotations
+
+import logging
+from abc import ABC, abstractmethod
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Any
+
+import pandas as pd
+import xarray as xr
+
+from .. import cf
+from ..http import get_json
+from ..query import Query, Site
+
+__all__ = [
+    "drop_orphan_qc",
+    "trim_to_window",
+    "Provider",
+    "DataSource",
+    "RetrievalSource",
+    "DiscoverySource",
+    "StationMatch",
+    "StationSeries",
+    "frame_from_records",
+]
+
+log = logging.getLogger("omnisea.providers")
+
+
+# --------------------------------------------------------------------------- data carriers
+
+
+@dataclass
+class StationMatch:
+    """One candidate station found during discovery — a row in the :class:`~omnisea.Catalog`.
+
+    Discovery is deliberately cheap: it answers "what is there, and roughly how much of it?" so
+    the caller can look before committing to a download.
+    """
+
+    source: str
+    station_id: str
+    name: str
+    lat: float
+    lon: float
+    variables: tuple[str, ...] = ()
+    n_rows_est: int = 0
+    distance_km: float | None = None
+    site: str | None = None  # label of the nearest requested site, for multi-site queries
+    first: pd.Timestamp | None = None
+    last: pd.Timestamp | None = None
+    provider: str = ""  # organization that owns the source, e.g. "eccc"
+    extra: dict[str, Any] = field(default_factory=dict)  # source-private payload
+
+    def attach_site(self, query: Query) -> StationMatch:
+        """Record which requested site this station answers for, and how far away it is."""
+        nearest = query.nearest_site(self.lat, self.lon)
+        if nearest is not None:
+            site, distance = nearest
+            self.site = site.label
+            self.distance_km = distance
+        return self
+
+    def as_row(self) -> dict[str, Any]:
+        return {
+            "source": self.source,
+            "provider": self.provider,
+            "site": self.site,
+            "station_id": self.station_id,
+            "name": self.name,
+            "lat": self.lat,
+            "lon": self.lon,
+            "distance_km": self.distance_km,
+            "variables": ", ".join(self.variables),
+            "n_rows_est": self.n_rows_est,
+            "first": self.first,
+            "last": self.last,
+        }
+
+
+@dataclass
+class StationSeries:
+    """A fetched point time series, ready to become one node of the tree.
+
+    ``frame`` is indexed by a tz-aware UTC ``DatetimeIndex`` named ``time``; its columns are
+    already CF-named where a CF name exists, with QC flags carried alongside as ``<var>_qc``.
+    """
+
+    match: StationMatch
+    frame: pd.DataFrame
+    node_path: str
+    attrs: dict[str, Any] = field(default_factory=dict)
+    var_attrs: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    @property
+    def is_empty(self) -> bool:
+        return self.frame is None or self.frame.empty
+
+
+# --------------------------------------------------------------------------- provider
+
+
+class Provider(ABC):
+    """An organization or service that publishes one or more datasets.
+
+    Subclasses declare the identity and licensing that every node from every one of their
+    sources will carry, and instantiate their sources in :meth:`build_sources`.
+    """
+
+    #: Short registry key for the organization, e.g. ``"eccc"``.
+    name: str = ""
+    #: Human-readable organization name, used in attribution.
+    title: str = ""
+    #: Root URL all of this provider's sources hang off.
+    base_url: str = ""
+    #: Licence string recorded on every node.
+    license: str = ""
+    #: Where the licence and terms live.
+    terms_url: str = ""
+
+    def __init__(self) -> None:
+        self._sources: list[DataSource] | None = None
+
+    @abstractmethod
+    def build_sources(self) -> Sequence[DataSource]:
+        """Instantiate this provider's datasets. Called once, lazily."""
+
+    @property
+    def sources(self) -> list[DataSource]:
+        if self._sources is None:
+            self._sources = list(self.build_sources())
+        return self._sources
+
+    # ------------------------------------------------------------------ http
+
+    def get_json(
+        self, path: str, params: Mapping[str, Any] | None = None, *, source: str | None = None
+    ) -> Any:
+        """GET JSON relative to :attr:`base_url` (or an absolute URL), tagged with this provider."""
+        url = path if path.startswith("http") else f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"
+        return get_json(url, dict(params or {}), provider=source or self.name)
+
+    def attribution(self) -> dict[str, Any]:
+        """Identity/licence attributes stamped onto every node this provider produces."""
+        return {
+            "institution": self.title or self.name,
+            "license": self.license,
+            "references": self.terms_url,
+            "provider": self.name,
+        }
+
+    def __repr__(self) -> str:  # pragma: no cover - display only
+        return f"<Provider {self.name!r} sources={[s.name for s in self.sources]}>"
+
+
+# --------------------------------------------------------------------------- source
+
+
+class DataSource(ABC):
+    """One queryable dataset. This is what users select and what the registry keys on."""
+
+    #: Registry key, e.g. ``"eccc_climate"``.
+    name: str = ""
+    #: Human-readable dataset name.
+    title: str = ""
+    #: Where this source's nodes live in the tree, e.g. ``"in_situ/weather"``.
+    node_path: str = ""
+    #: CF discrete-sampling-geometry type: ``timeSeries``, ``trajectory``, ``profile``, ``grid``.
+    feature_type: str = "timeSeries"
+    #: True for sources that describe data rather than serve it (Catalog rows only, no arrays).
+    discovery_only: bool = False
+    #: This dataset's raw-field to CF mapping. Defined on the class, next to the code that uses
+    #: it, so adding a source is one new file rather than an edit in two places.
+    fields: dict[str, cf.FieldSpec] = {}
+
+    def __init__(self, provider: Provider):
+        self.provider = provider
+
+    # ------------------------------------------------------------------ description
+
+    @property
+    def variables(self) -> frozenset[str]:
+        """CF standard names this source can serve.
+
+        Unmapped fields are still returned by :meth:`fetch` under their provider names; this
+        lists only what has a canonical name to advertise.
+        """
+        return frozenset(
+            spec.standard_name or spec.var for spec in self.fields.values()
+        )
+
+    # ------------------------------------------------------------------ contract
+
+    @abstractmethod
+    def discover(self, query: Query) -> list[StationMatch]:
+        """Stations this source can offer for ``query``. Cheap; no bulk data transfer."""
+
+    # ------------------------------------------------------------------ helpers
+
+    def new_match(self, **kwargs: Any) -> StationMatch:
+        """A :class:`StationMatch` pre-tagged with this source and its provider."""
+        kwargs.setdefault("source", self.name)
+        kwargs.setdefault("provider", self.provider.name)
+        return StationMatch(**kwargs)
+
+    def base_attrs(self, **extra: Any) -> dict[str, Any]:
+        """Node attributes every series from this source carries."""
+        attrs: dict[str, Any] = {
+            "Conventions": "CF-1.10",
+            "featureType": self.feature_type,
+            "source_name": self.name,
+            **self.provider.attribution(),
+        }
+        attrs.update({k: v for k, v in extra.items() if v is not None})
+        return attrs
+
+    def sites_for(self, query: Query) -> tuple[Site, ...]:
+        return query.sites
+
+    def include_unmapped(self, query: Query) -> bool:
+        """Whether to carry fields that have no CF mapping (default: yes, keep everything)."""
+        return bool(query.option("include_unmapped", True))
+
+    def to_cf_units(self, query: Query) -> bool:
+        """Whether to emit canonical CF units instead of the provider's own (default: no).
+
+        The conversion happens where the values are read, so the ``units`` attribute and the
+        numbers beside it can never disagree.
+        """
+        return bool(query.option("to_cf_units", False))
+
+    def __repr__(self) -> str:  # pragma: no cover - display only
+        return f"<{type(self).__name__} name={self.name!r} node={self.node_path!r}>"
+
+
+# --------------------------------------------------------------------------- utilities
+
+
+def frame_from_records(
+    records: list[Mapping[str, Any]], *, time_key: str = "time"
+) -> pd.DataFrame:
+    """Build a time-indexed frame from row dicts, sorted and de-duplicated.
+
+    Duplicate timestamps are expected — chunked requests share their boundary instants — so the
+    last value for a timestamp wins and the index comes back strictly increasing.
+    """
+    if not records:
+        return pd.DataFrame()
+    frame = pd.DataFrame.from_records(records)
+    if time_key not in frame.columns:
+        return pd.DataFrame()
+    frame[time_key] = pd.to_datetime(frame[time_key], utc=True, format="mixed", errors="coerce")
+    frame = frame.dropna(subset=[time_key])
+    if frame.empty:
+        return pd.DataFrame()
+    frame = frame.set_index(time_key).sort_index()
+    frame = frame[~frame.index.duplicated(keep="last")]
+    frame.index.name = "time"
+    # Columns that are entirely empty carry no information and clutter every node.
+    frame = frame.dropna(axis=1, how="all")
+    return frame
+
+
+class RetrievalSource(DataSource):
+    """A source that actually returns data arrays."""
+
+    discovery_only = False
+
+    @abstractmethod
+    def fetch(
+        self, query: Query, matches: list[StationMatch]
+    ) -> list[StationSeries | xr.Dataset]:
+        """Pull the data for the confirmed subset of ``matches``.
+
+        Returning either :class:`StationSeries` (the point path, assembled by ``tree.py``) or a
+        ready-made :class:`xarray.Dataset` (the gridded path) is the seam that lets a future
+        Copernicus or griddap source drop in without the point-assembly code knowing about it.
+        """
+
+
+class DiscoverySource(DataSource):
+    """A source that describes data without serving it.
+
+    Metadata catalogues — CIOOS records, STAC, and eventually any ISO 19115 endpoint — tell you
+    *what exists and where*, and hand back a URL rather than an array. They contribute
+    :class:`~omnisea.Catalog` rows and nothing to the tree, so they get their own base class
+    instead of an inherited ``fetch`` that could only ever return an empty list.
+    """
+
+    discovery_only = True
+
+    def fetch(
+        self, query: Query, matches: list[StationMatch]
+    ) -> list[StationSeries | xr.Dataset]:
+        """Discovery sources contribute catalogue rows only."""
+        return []
+
+
+def drop_orphan_qc(frame: pd.DataFrame) -> pd.DataFrame:
+    """Remove ``<var>_qc`` columns whose measurement column is gone.
+
+    A variable that was entirely empty gets dropped, but its flag column can survive (ECCC marks
+    missing values with an ``M`` flag on every row, so the flags are *not* empty). A lone
+    ``precipitation_amount_qc`` with no ``precipitation_amount`` beside it is just confusing.
+    """
+    if frame is None or frame.empty:
+        return frame
+    orphans = [
+        col
+        for col in frame.columns
+        if str(col).endswith("_qc") and str(col)[: -len("_qc")] not in frame.columns
+    ]
+    return frame.drop(columns=orphans) if orphans else frame
+
+
+def trim_to_window(
+    frame: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp
+) -> pd.DataFrame:
+    """Clip a time-indexed frame to the requested window, inclusive of both endpoints.
+
+    Upstream filters do not always mean what the caller meant — ECCC filters ``climate-hourly``
+    on *local* dates while omnisea labels rows in UTC — so the window is enforced here. Asking
+    for a week and receiving a week shifted by the station's UTC offset is exactly the kind of
+    quiet wrongness this library exists to prevent.
+    """
+    if frame is None or frame.empty:
+        return frame
+    return frame[(frame.index >= start) & (frame.index <= end)]

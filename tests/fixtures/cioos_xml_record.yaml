@@ -1,0 +1,29 @@
+metadata:
+  naming_authority: ca.cioos
+  identifier: 9a7e-0000-4b22-8d31-000000000002
+  use_constraints:
+    licence: CC-BY-4.0
+    limitations: None
+spatial:
+  bbox: [-125.22, 48.78, -125.05, 48.90]
+  polygon: ""
+identification:
+  title:
+    en: Barkley Sound mooring array
+  abstract:
+    en: Subsurface temperature and currents from a mooring array.
+  temporal_begin: "2023-05-01"
+  temporal_end: "2024-10-31"
+  progress_code: onGoing
+  keywords:
+    default:
+      en: [mooring, currents]
+    eov:
+      en: [subSurfaceTemperature, subSurfaceCurrents]
+distribution:
+  - url: https://data.cioos.ca/erddap/tabledap/barkley_mooring.html
+    name:
+      en: ERDDAP
+contact:
+  - organization:
+      name: Bamfield Marine Sciences Centre

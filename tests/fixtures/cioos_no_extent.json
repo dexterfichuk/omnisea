@@ -1,0 +1,7 @@
+{
+  "recordID": "no-extent-001",
+  "title": {"en": "Record without a spatial extent"},
+  "eov": ["oxygen"],
+  "map": {"north": "", "south": "", "east": "", "west": "", "polygon": ""},
+  "distribution": []
+}
