@@ -343,13 +343,14 @@ omnisea.register_option("shorelogger_depth_m", "which logger depth to read")
 
 ## Sources worth adding
 
-The extension path from the design doc, in rough order of coverage won:
+The extension path from the design doc, in rough order of coverage won. (ERDDAP, the largest
+item on the original list, has since landed as `providers/erddap/` — worth reading as a worked
+example of a source whose field tables come from the data rather than a curated mapping.)
 
 | Source | Base class | Notes |
 |---|---|---|
-| ERDDAP (`erddapy`) | `RetrievalSource` | Largest coverage win. `tabledap` reuses the point path; `griddap` returns a lazy `Dataset` into `/gridded/`. |
 | NOAA CO-OPS | `RetrievalSource` | US tides; pairs with DFO across the border. |
-| Copernicus Marine | `RetrievalSource` | First gridded source. Keep `subset()` lazy — no `.load()`. |
-| STAC (`pystac-client`) | `DiscoverySource` | Discovery engine; contributes Catalog rows, not arrays. |
+| Copernicus Marine | `RetrievalSource` | Gridded; keep `subset()` lazy — no `.load()` — like `erddap_griddap`. |
+| STAC (`pystac-client`) | `DiscoverySource` | Discovery engine; contributes Catalog rows, not arrays, like `cioos_metadata`. |
 | OGC API - EDR | `RetrievalSource` | `Query` is already EDR-shaped, so this is close to a pass-through. |
 | `eo_tides` | `RetrievalSource` | A *derived* node under `/predictions/tides_model/`, computed at query points. |

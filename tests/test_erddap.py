@@ -766,12 +766,57 @@ def skip_if_unreachable(exc: UpstreamError) -> None:
 
 @live
 class TestLiveDefaultServer:
-    """The default server has to work out of the box, or the source is not usable as shipped."""
+    """The default server has to work out of the box, or the source is not usable as shipped.
+
+    Anchored on the Carnation Creek hydrometric gauge rather than a named buoy: IOOS Sensors
+    delisted ``PRIMED_wavebuoy`` in mid-2026, which is exactly the kind of upstream churn a
+    default-server test has to survive. The buoy-specific physics now runs against the buoy's
+    home server in :class:`TestLiveCioosPacific`.
+    """
+
+    def test_discovery_near_bamfield_finds_real_stations(self):
+        source = ErddapTableSource(ErddapProvider())
+        query = Query.from_position(**BAMFIELD, time=WEEK, radius_km=30)
+        try:
+            matches = source.discover(query)
+        except UpstreamError as exc:
+            skip_if_unreachable(exc)
+        gauge = next((m for m in matches if m.station_id == "ca_hydro_08HB048"), None)
+        assert gauge is not None, f"default server returned {sorted(m.station_id for m in matches)}"
+        assert gauge.distance_km < 20
+        assert gauge.first is not None and gauge.first < pd.Timestamp("2024-07-01T00:00:00Z")
+
+    def test_a_window_outside_the_record_returns_nothing_rather_than_raising(self):
+        """ERDDAP reports "no rows" as a 404, which must not surface as an error."""
+        source = ErddapTableSource(ErddapProvider())
+        query = Query.from_area(
+            (-125.6, 48.5, -124.7, 49.2), ("1970-01-01", "1970-01-08"),
+            erddap_datasets=["ca_hydro_08HB048"],
+        )
+        try:
+            assert source.fetch(query, source.discover(query)) == []
+        except UpstreamError as exc:
+            skip_if_unreachable(exc)
+
+
+@live
+class TestLiveCioosPacific:
+    """A second server, reached the way a user would reach it: through ``erddap_server=``.
+
+    This is the wave buoy's home server, so the physics checks live here — and no offline test
+    exercises the ``erddap_server=`` knob against a real installation, so this class is also
+    the proof that "any ERDDAP" is more than a claim.
+    """
+
+    CIOOS_PACIFIC = "https://data.cioospacific.ca/erddap"
 
     @pytest.fixture(scope="class")
     def catalog(self):
         source = ErddapTableSource(ErddapProvider())
-        query = Query.from_position(**BAMFIELD, time=("2021-04-01", "2021-04-08"), radius_km=80)
+        query = Query.from_position(
+            **BAMFIELD, time=("2021-04-01", "2021-04-08"), radius_km=80,
+            erddap_server=self.CIOOS_PACIFIC,
+        )
         try:
             return source, query, source.discover(query)
         except UpstreamError as exc:
@@ -841,36 +886,6 @@ class TestLiveDefaultServer:
         }
         assert emitted, "the buoy published no standard names at all"
         assert not (emitted - valid), f"not CF standard names: {sorted(emitted - valid)}"
-
-
-@live
-class TestLiveIoosSensors:
-    """A second server, because "works on one ERDDAP" is not the claim being made."""
-
-    def test_the_carnation_creek_gauge_is_found_near_bamfield(self):
-        source = ErddapTableSource(ErddapProvider())
-        query = Query.from_position(
-            **BAMFIELD, time=WEEK, radius_km=30, erddap_server=IOOS_SENSORS
-        )
-        try:
-            matches = source.discover(query)
-        except UpstreamError as exc:
-            skip_if_unreachable(exc)
-        gauge = next((m for m in matches if m.station_id == "ca_hydro_08HB048"), None)
-        assert gauge is not None, f"IOOS Sensors returned {sorted(m.station_id for m in matches)}"
-        assert gauge.distance_km < 20
-
-    def test_a_window_outside_the_record_returns_nothing_rather_than_raising(self):
-        """ERDDAP reports "no rows" as a 404, which must not surface as an error."""
-        source = ErddapTableSource(ErddapProvider())
-        query = Query.from_area(
-            (-125.6, 48.5, -124.7, 49.2), ("1970-01-01", "1970-01-08"),
-            erddap_server=IOOS_SENSORS, erddap_datasets=["ca_hydro_08HB048"],
-        )
-        try:
-            assert source.fetch(query, source.discover(query)) == []
-        except UpstreamError as exc:
-            skip_if_unreachable(exc)
 
 
 @live
