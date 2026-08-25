@@ -31,6 +31,7 @@ from . import cf, registry
 from .align import add_local, aggregation_for, align
 from .catalog import Catalog
 from .errors import (
+    MissingDependencyError,
     OmniseaError,
     PayloadTooLargeError,
     ProviderError,
@@ -38,7 +39,13 @@ from .errors import (
     UnknownProviderError,
     UpstreamError,
 )
-from .http import DEFAULT_MAX_WORKERS, map_threads, set_max_concurrency
+from .http import (
+    DEFAULT_MAX_WORKERS,
+    disable_cache,
+    enable_cache,
+    map_threads,
+    set_max_concurrency,
+)
 from .providers import BUILTIN_PROVIDERS
 from .providers.base import (
     DataSource,
@@ -95,6 +102,8 @@ __all__ = [
     "register_source",
     "register_option",
     "set_max_concurrency",
+    "enable_cache",
+    "disable_cache",
     # errors
     "OmniseaError",
     "QueryError",
@@ -102,6 +111,7 @@ __all__ = [
     "UpstreamError",
     "UnknownProviderError",
     "PayloadTooLargeError",
+    "MissingDependencyError",
 ]
 
 for _provider in BUILTIN_PROVIDERS:

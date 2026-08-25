@@ -14,6 +14,7 @@ __all__ = [
     "UnknownProviderError",
     "UpstreamError",
     "PayloadTooLargeError",
+    "MissingDependencyError",
 ]
 
 
@@ -77,6 +78,24 @@ class UpstreamError(ProviderError):
         if url:
             parts.append(f"\n  url: {url}")
         super().__init__(" ".join(parts), provider=provider)
+
+
+class MissingDependencyError(OmniseaError, ImportError):
+    """An optional feature was used without the extra that provides it.
+
+    Also an ``ImportError``, so code probing for optional dependencies with
+    ``except ImportError`` keeps working, while ``except omnisea.OmniseaError`` stays a
+    complete catch.
+    """
+
+    def __init__(self, package: str, extra: str, purpose: str = ""):
+        self.package = package
+        self.extra = extra
+        detail = f" {purpose}" if purpose else ""
+        super().__init__(
+            f"{package} is required{detail}, but is not installed. "
+            f'Install it with: pip install "omnisea[{extra}]"'
+        )
 
 
 class PayloadTooLargeError(OmniseaError):
