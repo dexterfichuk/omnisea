@@ -394,3 +394,72 @@ class TestRegressions:
             pd.DataFrame({"good": [1.0, 2, 3, 4, 5], "bad": [np.nan] * 5}, index=idx)
         )
         assert list(align(tree, freq="D").columns) == ["good"]
+
+
+class TestCircularQuantities:
+    """A compass bearing is not an ordinary number.
+
+    350 deg and 10 deg both point nearly north; their arithmetic mean is 180 deg -- due south --
+    and interpolating between them sweeps the long way round. Every source here publishes wind
+    or wave directions, so getting this wrong is wrong everywhere at once.
+    """
+
+    def test_a_direction_is_recognised(self):
+        from omnisea.align import is_circular
+
+        assert is_circular({"units": "degree", "standard_name": "wind_from_direction"})
+        assert is_circular({"units": "°", "standard_name": "sea_surface_wave_from_direction"})
+
+    def test_a_directional_spread_is_not_circular(self):
+        """A spread of 30 degrees is a width, and averages perfectly well."""
+        from omnisea.align import is_circular
+
+        assert not is_circular(
+            {"units": "°", "standard_name": "sea_surface_wave_directional_spread"}
+        )
+
+    def test_a_plain_number_in_degrees_celsius_is_not_circular(self):
+        from omnisea.align import is_circular
+
+        assert not is_circular({"units": "degC", "standard_name": "air_temperature"})
+
+    def test_directions_use_a_circular_mean_and_are_never_interpolated(self):
+        assert aggregation_for(
+            {"units": "degree", "standard_name": "wind_from_direction"},
+            var="wind_from_direction",
+        ) == ("circular_mean", "ffill")
+
+    def test_the_circular_mean_of_north_readings_points_north(self):
+        from omnisea.align import circular_mean
+
+        def bearing_gap(a, b):
+            return abs((a - b + 180.0) % 360.0 - 180.0)
+
+        assert bearing_gap(circular_mean([350.0, 10.0]), 0.0) < 0.01
+        assert bearing_gap(circular_mean([355.0, 5.0, 15.0]), 5.0) < 0.01
+
+    def test_the_arithmetic_mean_would_have_pointed_south(self):
+        """Pins the bug this rule exists for."""
+        assert np.mean([350.0, 10.0]) == pytest.approx(180.0)
+
+    def test_downsampling_a_direction_through_north_stays_north(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=4, freq="15min", tz="UTC", name="time")
+        frame = pd.DataFrame({"wind_from_direction": [350.0, 355.0, 5.0, 10.0]}, index=idx)
+        tree = build_tree(q, [series("A", "in_situ/weather", frame, {
+            "wind_from_direction": {"units": "degree", "standard_name": "wind_from_direction"}
+        })])
+        hourly = align(tree, freq="1h")
+        got = hourly["wind_from_direction"].dropna().iloc[0]
+        assert got > 350 or got < 10, f"expected a northerly bearing, got {got}"
+
+    def test_the_rule_is_recorded_in_the_audit_trail(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=8, freq="15min", tz="UTC", name="time")
+        frame = pd.DataFrame({"wind_from_direction": [350.0] * 8}, index=idx)
+        tree = build_tree(q, [series("A", "in_situ/weather", frame, {
+            "wind_from_direction": {"units": "degree", "standard_name": "wind_from_direction"}
+        })])
+        assert "circular" in align(tree, freq="1h").attrs["omnisea_aggregation"][
+            "wind_from_direction@A"
+        ]

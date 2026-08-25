@@ -29,6 +29,7 @@ import logging
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -36,7 +37,10 @@ from .errors import QueryError
 
 log = logging.getLogger("omnisea.align")
 
-__all__ = ["align", "add_local", "aggregation_for"]
+__all__ = ["align", "add_local", "aggregation_for", "is_circular"]
+
+#: Units that mark an angular quantity.
+DEGREE_UNITS = frozenset({"degree", "degrees", "deg", "degree_true", "degrees_true", "\u00b0"})
 
 #: How each CF cell_method resamples: (downsample aggregation, upsample fill).
 CELL_METHOD_RULES: dict[str, tuple[str, str]] = {
@@ -51,15 +55,49 @@ CELL_METHOD_RULES: dict[str, tuple[str, str]] = {
 DEFAULT_RULE = ("mean", "interpolate")
 CATEGORICAL_RULE = ("first", "ffill")
 
+#: A compass direction cannot be averaged or interpolated as a number: 350 deg and 10 deg both
+#: point nearly north, but their arithmetic mean is 180 deg -- due south -- and interpolating
+#: between them sweeps the long way round through south. Directions are combined as unit
+#: vectors instead, and never interpolated.
+CIRCULAR_RULE = ("circular_mean", "ffill")
 
-def aggregation_for(attrs: Mapping[str, Any], *, numeric: bool = True) -> tuple[str, str]:
+
+def is_circular(attrs: Mapping[str, Any], var: str = "") -> bool:
+    """Is this variable an angle on a compass, rather than an ordinary number?
+
+    Keyed on degree units *and* the name reading as a direction. Directional *spread* is
+    excluded: a spread of 30 degrees is a width, which averages perfectly well.
+    """
+    units = str(attrs.get("units") or "").strip()
+    if units not in DEGREE_UNITS:
+        return False
+    name = f"{attrs.get('standard_name') or ''} {var}".lower()
+    return "direction" in name and "spread" not in name
+
+
+def circular_mean(values: Any) -> float:
+    """Mean compass bearing, via unit vectors. NaN for an empty window."""
+    series = pd.Series(values).dropna().astype(float)
+    if series.empty:
+        return float("nan")
+    radians = np.deg2rad(series.to_numpy())
+    mean = np.arctan2(np.sin(radians).mean(), np.cos(radians).mean())
+    return float(np.rad2deg(mean) % 360.0)
+
+
+def aggregation_for(
+    attrs: Mapping[str, Any], *, numeric: bool = True, var: str = ""
+) -> tuple[str, str]:
     """The ``(downsample, upsample)`` rule implied by a variable's CF attributes.
 
     Non-numeric variables (weather descriptions, flag strings) cannot be averaged, so they take
-    the first value in a window and are forward-filled.
+    the first value in a window and are forward-filled. Compass directions get their own rule --
+    see :data:`CIRCULAR_RULE` for why an ordinary mean is not merely imprecise but backwards.
     """
     if not numeric:
         return CATEGORICAL_RULE
+    if is_circular(attrs, var):
+        return CIRCULAR_RULE
     cell_methods = str(attrs.get("cell_methods") or "")
     for token, rule in CELL_METHOD_RULES.items():
         if token in cell_methods:
@@ -236,7 +274,9 @@ def align(
             if series.empty:
                 continue
             numeric = pd.api.types.is_numeric_dtype(series)
-            down, up = aggregation_for(attrs.get(variable, {}), numeric=numeric)
+            down, up = aggregation_for(
+                attrs.get(variable, {}), numeric=numeric, var=str(variable)
+            )
             if variable in overrides:
                 down = overrides[variable]
                 up = "ffill" if isinstance(down, str) and down in ("sum", "max", "min") else up
@@ -328,6 +368,9 @@ def _resample(
             else combined.ffill()
         )
         return filled.reindex(grid), f"{up} (upsampled)"
+
+    if down == "circular_mean":
+        return series.resample(freq).apply(circular_mean).reindex(grid), "circular mean"
 
     try:
         return series.resample(freq).agg(down).reindex(grid), f"{down}"

@@ -285,6 +285,15 @@ class EcccSwobMarine(_SwobSource):
     is deliberate: the report minute is not fixed (MSC buoys file at ``HH05``, OPP buoys every
     ten minutes from ``HH00``), so guessed names would 404 on entire station classes.
     """
+    #: MSC and OPP buoys spell the same measurement differently and never appear in one
+    #: record, so both map to the same variable on purpose. Declared rather than left to
+    #: look like a mistake — and if a future buoy ever reports both, resolve_fields
+    #: disambiguates deterministically instead of one silently winning.
+    equivalent_fields = (
+        frozenset({"sig_wave_hgt_pst20mts", "avg_sig_wave_hgt_pst20mts"}),
+        frozenset({"sig_wave_pd_pst20mts", "avg_sig_wave_pd_pst20mts"}),
+    )
+
 
     name = "eccc_swob_marine"
     title = "ECCC marine surface weather observations (SWOB) — moored buoys"

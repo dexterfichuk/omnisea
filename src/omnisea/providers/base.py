@@ -214,6 +214,10 @@ class DataSource(ABC):
     #: This dataset's raw-field to CF mapping. Defined on the class, next to the code that uses
     #: it, so adding a source is one new file rather than an edit in two places.
     fields: dict[str, cf.FieldSpec] = {}
+    #: Groups of raw fields that mean the same thing and never appear in one record — a
+    #: platform spelling a measurement two ways across hardware generations, say. They may
+    #: share an output variable; without this a reviewer cannot tell that from a mistake.
+    equivalent_fields: tuple[frozenset[str], ...] = ()
     #: How far back this dataset holds data, for the "realtime" collections that keep only a
     #: rolling window. ``None`` means a full historical archive.
     #:

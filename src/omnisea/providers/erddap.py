@@ -708,7 +708,10 @@ class ErddapTableSource(ErddapSource):
         """
         station_var = info.station_variable
         groups = _split_by_station(rows, station_var)
-        table = _field_table(info, present=_ordered_keys(rows))
+        include_unmapped = self.include_unmapped(query)
+        table = _field_table(
+            info, present=_ordered_keys(rows), include_unmapped=include_unmapped
+        )
         skip = _skip_columns(info, station_var)
         primary_qc = _primary_qc_names(info)
         to_cf = self.to_cf_units(query)
@@ -718,7 +721,7 @@ class ErddapTableSource(ErddapSource):
             specs = cf.resolve_fields(
                 table,
                 _ordered_keys(group),
-                include_unmapped=self.include_unmapped(query),
+                include_unmapped=include_unmapped,
                 skip=skip,
                 is_qc=lambda raw: raw in primary_qc,
                 units_for=lambda raw: _units_of(info, raw),
@@ -727,7 +730,7 @@ class ErddapTableSource(ErddapSource):
             if frame.empty:
                 continue
 
-            member = self._member_match(match, info, station_id, group)
+            member = self._member_match(query, match, info, station_id, group)
             path = f"{self.node_path}/{_safe(info.dataset_id)}"
             if station_id is not None and len(groups) > 1:
                 path = f"{path}/{_safe(station_id)}"
@@ -790,45 +793,37 @@ class ErddapTableSource(ErddapSource):
 
     def _member_match(
         self,
+        query: Query,
         match: StationMatch,
         info: DatasetInfo,
         station_id: Any,
         rows: list[Mapping[str, Any]],
     ) -> StationMatch:
-        """The match this series belongs to: the dataset's, or a per-station copy of it."""
-        lat, lon = _mean_position(rows)
-        if station_id is None:
-            if lat is None or lon is None:
-                return match
-            # A single-station dataset positions better from its rows than from its declared
-            # bounding box, which for a point station are the same thing anyway.
-            member = self.new_match(
-                station_id=match.station_id,
-                name=match.name,
-                lat=lat,
-                lon=lon,
-                variables=match.variables,
-                n_rows_est=match.n_rows_est,
-                first=match.first,
-                last=match.last,
-                extra=dict(match.extra),
-            )
-            member.site, member.distance_km = match.site, match.distance_km
-            return member
+        """The match this series belongs to: the dataset's, or a per-station copy of it.
 
+        Position comes from the rows rather than from the dataset's declared bounding box. For a
+        fixed station the two are the same; for a dataset holding many platforms the box is the
+        envelope of all of them, and for one that declared no extent at all it is the only
+        position there is. The distance to the requested site is recomputed from it, so the
+        position a Catalog row shows and the distance beside it always describe the same point.
+        """
+        lat, lon = _mean_position(rows)
+        if station_id is None and (lat is None or lon is None):
+            return match
+
+        named = station_id is not None
         member = self.new_match(
-            station_id=f"{info.dataset_id}:{station_id}",
-            name=f"{info.title} — {station_id}",
+            station_id=f"{info.dataset_id}:{station_id}" if named else match.station_id,
+            name=f"{info.title} — {station_id}" if named else match.name,
             lat=lat if lat is not None else match.lat,
             lon=lon if lon is not None else match.lon,
             variables=match.variables,
-            n_rows_est=len(rows),
+            n_rows_est=len(rows) if named else match.n_rows_est,
             first=match.first,
             last=match.last,
-            extra={**match.extra, "erddap_station": station_id},
+            extra={**match.extra, "erddap_station": station_id} if named else dict(match.extra),
         )
-        member.site, member.distance_km = match.site, match.distance_km
-        return member
+        return member.attach_site(query)
 
 
 # --------------------------------------------------------------------------- griddap

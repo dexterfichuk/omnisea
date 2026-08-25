@@ -30,6 +30,7 @@ __version__ = "0.1.0"
 from . import cf, registry
 from .align import add_local, aggregation_for, align
 from .catalog import Catalog
+from .conformance import check_all, check_source
 from .errors import (
     MissingDependencyError,
     OmniseaError,
@@ -105,6 +106,8 @@ __all__ = [
     "register_provider",
     "register_source",
     "register_option",
+    "check_source",
+    "check_all",
     "set_max_concurrency",
     "enable_cache",
     "disable_cache",
