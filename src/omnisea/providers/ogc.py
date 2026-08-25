@@ -322,13 +322,43 @@ class OgcFeaturesSource(RetrievalSource):
                     "source_field": self.qc_field_for(raw, spec) or "",
                 }
 
+        attrs = self.node_attrs(query, match)
+        drift = self._schema_drift(rows, available)
+        if drift:
+            attrs["omnisea_schema_drift"] = drift
+
         return StationSeries(
             match=match,
             frame=frame,
             node_path=f"{self.node_path}/{_safe(match.station_id)}",
-            attrs=self.node_attrs(query, match),
+            attrs=attrs,
             var_attrs=var_attrs,
         )
+
+    def _schema_drift(self, rows: list[Mapping[str, Any]], available: list[str]) -> str | None:
+        """A loud note when the upstream no longer speaks the fields this source curates.
+
+        A provider renaming its properties does not make omnisea error: every field still
+        arrives, just under the new raw names with ``omnisea_mapped = 0``. What silently
+        disappears is the CF layer — canonical names, units, ``cell_methods``, the alignment
+        rules built on them — and a user who selected by CF name would see variables vanish
+        with no hint why. Zero curated fields in a non-empty response is the signature of that
+        drift (a station merely lacking some instruments still returns the properties as
+        nulls), so it is logged and stamped on the node rather than left to be noticed.
+        """
+        if not rows or not self.fields:
+            return None
+        present = set(available)
+        if any(raw in present for raw in self.fields):
+            return None
+        message = (
+            f"none of the {len(self.fields)} fields omnisea curates for {self.name} appear in "
+            "a non-empty upstream response; the provider's schema may have changed. All fields "
+            "were still returned under the provider's own names (omnisea_mapped = 0), but CF "
+            "names, units and cell_methods are missing until the adapter is updated."
+        )
+        log.warning("%s: %s", self.name, message)
+        return message
 
     def node_attrs(self, query: Query, match: StationMatch) -> dict[str, Any]:
         return self.base_attrs(

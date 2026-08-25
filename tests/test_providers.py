@@ -107,6 +107,46 @@ class TestEcccHourly:
             assert identity not in series.frame.columns
 
 
+class TestSchemaDrift:
+    """A provider renaming every property must be loud, not a quiet fall to passthrough."""
+
+    def renamed(self, rows):
+        """The hourly response as it would look after an upstream rename of every field."""
+        keep = {"UTC_DATE", "CLIMATE_IDENTIFIER"}  # time and identity keep their spelling
+        return [
+            {(k if k in keep else f"NEW_{k}"): v for k, v in row.items()}
+            for row in rows
+        ]
+
+    def test_a_renamed_upstream_is_flagged_on_the_node_and_logged(
+        self, eccc, eccc_hourly_rows, caplog
+    ):
+        source = EcccClimateHourly(eccc)
+        query = Query.from_area((-124, 48, -123, 49), WEEK)
+        with caplog.at_level("WARNING", logger="omnisea.ogc"):
+            series = source.series_from_rows(
+                query, a_match("eccc_climate"), self.renamed(eccc_hourly_rows)
+            )
+        assert "schema may have changed" in series.attrs["omnisea_schema_drift"]
+        assert any("schema may have changed" in r.message for r in caplog.records)
+        # The data itself still arrives — under the new raw names, unmapped.
+        assert "NEW_TEMP" in series.frame.columns
+        assert "air_temperature" not in series.frame.columns
+
+    def test_an_intact_response_is_not_flagged(self, eccc, eccc_hourly_rows):
+        source = EcccClimateHourly(eccc)
+        query = Query.from_area((-124, 48, -123, 49), WEEK)
+        series = source.series_from_rows(query, a_match("eccc_climate"), eccc_hourly_rows)
+        assert "omnisea_schema_drift" not in series.attrs
+
+    def test_an_empty_response_is_not_drift(self, eccc):
+        """No rows means no overlap with the window — a different, already-handled story."""
+        source = EcccClimateHourly(eccc)
+        query = Query.from_area((-124, 48, -123, 49), WEEK)
+        series = source.series_from_rows(query, a_match("eccc_climate"), [])
+        assert "omnisea_schema_drift" not in series.attrs
+
+
 class TestEcccDaily:
     def test_local_date_is_stamped_at_midnight_utc(self, eccc, eccc_daily_rows):
         source = EcccClimateDaily(eccc)
