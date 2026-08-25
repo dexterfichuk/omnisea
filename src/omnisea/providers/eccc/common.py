@@ -45,6 +45,3 @@ CLIMATE_SKIP = frozenset(
         "FRE_PROVINCE_NAME",
     }
 )
-
-#: Backwards-compatible alias.
-_CLIMATE_SKIP = CLIMATE_SKIP

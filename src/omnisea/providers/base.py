@@ -31,7 +31,7 @@ import xarray as xr
 from .. import cf
 from ..errors import ProviderError
 from ..http import get_json
-from ..query import Query, Site
+from ..query import Query
 
 __all__ = [
     "drop_orphan_qc",
@@ -279,9 +279,6 @@ class DataSource(ABC):
         }
         attrs.update({k: v for k, v in extra.items() if v is not None})
         return attrs
-
-    def sites_for(self, query: Query) -> tuple[Site, ...]:
-        return query.sites
 
     def retention_cutoff(self, now: pd.Timestamp | None = None) -> pd.Timestamp | None:
         """The earliest instant this source can still serve, or ``None`` if it keeps everything."""

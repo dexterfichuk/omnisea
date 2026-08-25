@@ -233,17 +233,6 @@ class EcccClimateDaily(OgcFeaturesSource):
 
 # --------------------------------------------------------------------------- monthly
 
-#: climate-monthly carries province names, a load timestamp, and its own decimal-degree
-#: LATITUDE/LONGITUDE strings. None of them measure anything, and the coordinates in particular
-#: must not become variables: the geometry is the only trusted source of position.
-MONTHLY_SKIP = CLIMATE_SKIP | {
-    "LATITUDE",
-    "LONGITUDE",
-    "LAST_UPDATED",
-    "ENG_PROVINCE_NAME",
-    "FRE_PROVINCE_NAME",
-}
-
 #: The ``NORMAL_*`` columns are not observations. Each row repeats the station's 1981–2010
 #: normal for that calendar month, so the same twelve numbers recur every year — they are the
 #: reference the month is meant to be read against, not a second measurement of it.
@@ -287,7 +276,7 @@ class EcccClimateMonthly(OgcFeaturesSource):
     station_id_field = "CLIMATE_IDENTIFIER"
     catalogue_id_field = "CLIMATE_IDENTIFIER"
     time_field = "LOCAL_DATE"
-    skip_fields = MONTHLY_SKIP
+    skip_fields = CLIMATE_SKIP
     samples_per_day = 1.0 / 30.4375  # mean Gregorian month, so the estimate reads as months
 
     period = "M"

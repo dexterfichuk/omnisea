@@ -66,19 +66,6 @@ class FieldSpec:
         return self.cf_units or self.units
 
 
-# --------------------------------------------------------------------------- unit helpers
-
-DEGC_TO_K = dict(cf_units="K", cf_offset=273.15)
-KMH_TO_MS = dict(cf_units="m s-1", cf_scale=1.0 / 3.6)
-KPA_TO_PA = dict(cf_units="Pa", cf_scale=1000.0)
-HPA_TO_PA = dict(cf_units="Pa", cf_scale=100.0)
-MM_TO_KGM2 = dict(cf_units="kg m-2", cf_scale=1.0)  # 1 mm of water == 1 kg m-2
-CM_TO_M = dict(cf_units="m", cf_scale=0.01)
-
-# ECCC stores wind direction in tens of degrees; 25 means 250 degrees.
-TENS_OF_DEGREES = dict(scale=10.0, units="degree", cf_units="degree")
-
-
 # --------------------------------------------------------------------------- name resolution
 
 #: Names people reasonably reach for that are not the CF spelling omnisea emits.

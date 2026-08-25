@@ -11,7 +11,6 @@ that up correctly from memory is exactly the sort of thing that gets skipped.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import Any
 
 import pandas as pd
@@ -168,10 +167,3 @@ def _describe_span(first: Any, last: Any) -> str:
     if pd.isna(first) or pd.isna(last):
         return ""
     return f", {pd.Timestamp(first):%Y-%m-%d} to {pd.Timestamp(last):%Y-%m-%d}"
-
-
-def _unique(values: Iterable[Any]) -> list[Any]:
-    seen: dict[Any, None] = {}
-    for value in values:
-        seen.setdefault(value, None)
-    return list(seen)
