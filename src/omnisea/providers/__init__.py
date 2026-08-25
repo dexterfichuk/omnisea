@@ -13,6 +13,7 @@ from .base import (
 from .cioos import CioosProvider
 from .dfo import DfoProvider
 from .eccc import EcccProvider
+from .erddap import ErddapProvider
 from .ogc import OgcFeaturesProvider, OgcFeaturesSource
 
 __all__ = [
@@ -26,9 +27,10 @@ __all__ = [
     "OgcFeaturesSource",
     "DfoProvider",
     "EcccProvider",
+    "ErddapProvider",
     "CioosProvider",
     "BUILTIN_PROVIDERS",
 ]
 
 #: Instantiated at import; :func:`omnisea.registry.register_provider` wires them in.
-BUILTIN_PROVIDERS = [DfoProvider(), EcccProvider(), CioosProvider()]
+BUILTIN_PROVIDERS = [DfoProvider(), EcccProvider(), CioosProvider(), ErddapProvider()]

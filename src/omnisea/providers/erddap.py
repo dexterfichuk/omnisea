@@ -97,7 +97,13 @@ __all__ = [
 
 #: CIOOS Pacific: a Canadian regional ERDDAP, on-mission for this library and small enough that a
 #: first query returns quickly. Override per query with ``erddap_server=``.
-DEFAULT_SERVER = "https://data.cioospacific.ca/erddap"
+#: Chosen because it answers. CIOOS Pacific is the natural regional fit but publishes nine
+#: datasets, of which one declares a geospatial extent covering seven weeks of 2021 — a user
+#: trying ERDDAP against it would reasonably conclude the adapter was broken. IOOS Sensors
+#: indexes thousands, including the Bamfield-area hydrometric gauges and NDBC buoys, and
+#: answered a Barkley Sound query in 0.9 s against CIOOS Pacific's 4.1 s for nothing.
+#: Override per query with ``erddap_server=``.
+DEFAULT_SERVER = "https://erddap.sensors.ioos.us/erddap"
 
 #: How many datasets discovery will describe before it refuses. Each one costs an ``/info``
 #: request, and a wide griddap query on a national server matches a couple of hundred — asking
@@ -441,7 +447,9 @@ class ErddapSource(RetrievalSource):
         for info in infos:
             match = self._match_for(query, server, info, wanted, explicit=bool(named))
             if match is not None:
-                matches.append(match.attach_site(query))
+                # _match_for already attached the site and, for datasets with real extent,
+                # corrected the distance to the nearest edge. Re-attaching would undo that.
+                matches.append(match)
         log.debug("%s discovered %d dataset(s) on %s", self.name, len(matches), server)
         return matches
 
@@ -470,7 +478,7 @@ class ErddapSource(RetrievalSource):
         # Where the extent is genuinely unknown the position is NaN rather than invented; fetch
         # fills it in from the rows.
         lat, lon = bounds.centre if bounds is not None else (float("nan"), float("nan"))
-        return self.new_match(
+        match = self.new_match(
             station_id=info.dataset_id,
             name=info.title,
             lat=float(lat),
@@ -486,6 +494,11 @@ class ErddapSource(RetrievalSource):
                 "bounds": tuple(bounds) if bounds is not None else None,
             },
         )
+        match.attach_site(query)
+        if bounds is not None and not _is_point(bounds):
+            # An extent is a track or a grid: how near it *comes*, not where its middle is.
+            match.distance_km = _distance_to_extent(query, bounds)
+        return match
 
     def _estimate_rows(self, query: Query, info: DatasetInfo) -> int:
         """Rows the window would pull, over the part of it the dataset actually covers."""
@@ -624,6 +637,9 @@ class ErddapSource(RetrievalSource):
 
 class ErddapTableSource(ErddapSource):
     """``tabledap`` — station, mooring, profile and trajectory records, as point time series."""
+    #: Every name, unit and cell_method comes from the dataset\'s own /info.
+    fields_from_metadata = True
+
 
     name = "erddap_tabledap"
     title = "ERDDAP tabledap"
@@ -836,6 +852,9 @@ class ErddapGridSource(ErddapSource):
     bytes move until the caller indexes the result. That is the point of the gridded path: a user
     can put a decade of a global SST analysis in their tree and only pay for the pixels they read.
     """
+    #: Every name, unit and cell_method comes from the dataset\'s own /info.
+    fields_from_metadata = True
+
 
     name = "erddap_griddap"
     title = "ERDDAP griddap"
@@ -1187,6 +1206,25 @@ def _overlaps_query(query: Query, bounds: BBox) -> bool:
     if not boxes:
         return True
     return any(_boxes_intersect(bounds, box) for box in boxes)
+
+
+def _distance_to_extent(query: Query, bounds: BBox) -> float | None:
+    """Distance from the query's nearest site to the closest point of a dataset's extent.
+
+    Zero when the extent covers the site. Measuring to the centre instead makes a glider track
+    that runs past your door look 250 km away, and ``nearest=`` and ``max_distance_km=`` then
+    act on that number.
+    """
+    if not query.sites:
+        return None
+    best: float | None = None
+    for site in query.sites:
+        lat = min(max(site.lat, bounds.south), bounds.north)
+        lon = min(max(site.lon, bounds.west), bounds.east)
+        distance = site.distance_km(lat, lon)
+        if best is None or distance < best:
+            best = distance
+    return best
 
 
 def _is_point(bounds: BBox) -> bool:

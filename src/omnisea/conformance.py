@@ -23,6 +23,8 @@ from typing import Any
 
 import pandas as pd
 
+from .align import is_circular
+
 __all__ = ["Problem", "check_source", "check_all", "cf_standard_names", "format_report"]
 
 _CF_NAMES_FILE = Path(__file__).parent / "data" / "cf-standard-names.txt.gz"
@@ -130,8 +132,12 @@ def check_source(source: Any, *, cf_names: Iterable[str] | None = None) -> list[
 
     # ---------------------------------------------------------------- field table
     fields = getattr(source, "fields", {}) or {}
-    if not fields and not getattr(source, "discovery_only", False):
-        warn("declares no fields; every variable will be carried through unmapped")
+    describes_itself = getattr(source, "fields_from_metadata", False)
+    if not fields and not getattr(source, "discovery_only", False) and not describes_itself:
+        warn(
+            "declares no fields and no fields_from_metadata; every variable will be carried "
+            "through unmapped. Set fields_from_metadata = True if that is deliberate."
+        )
 
     equivalents = getattr(source, "equivalent_fields", ()) or ()
 
@@ -171,7 +177,15 @@ def check_source(source: Any, *, cf_names: Iterable[str] | None = None) -> list[
                 pass  # units come from the record, which is fine
         looks_aggregated = raw.startswith(AGGREGATE_PREFIXES)
         is_timestamp = spec.var.endswith(TIME_VALUED_SUFFIXES)
-        if looks_aggregated and not is_timestamp and not getattr(spec, "cell_methods", None):
+        # A compass bearing already has its own rule in align() and is never interpolated, so
+        # it does not need cell_methods to be handled correctly.
+        circular = is_circular({"units": spec.units, "standard_name": standard_name}, spec.var)
+        if (
+            looks_aggregated
+            and not is_timestamp
+            and not circular
+            and not getattr(spec, "cell_methods", None)
+        ):
             warn(
                 f"{where} looks like an interval statistic but declares no cell_methods; "
                 "align() will treat it as instantaneous and may interpolate it"

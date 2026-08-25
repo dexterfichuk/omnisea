@@ -214,6 +214,11 @@ class DataSource(ABC):
     #: This dataset's raw-field to CF mapping. Defined on the class, next to the code that uses
     #: it, so adding a source is one new file rather than an edit in two places.
     fields: dict[str, cf.FieldSpec] = {}
+    #: True when the source reads its field descriptions from the data at runtime rather than
+    #: declaring them — an ERDDAP dataset publishes its own standard names and units, and
+    #: hardcoding them would be both wrong and unmaintainable. An empty ``fields`` is then a
+    #: design choice, not an omission.
+    fields_from_metadata: bool = False
     #: Groups of raw fields that mean the same thing and never appear in one record — a
     #: platform spelling a measurement two ways across hardware generations, say. They may
     #: share an output variable; without this a reviewer cannot tell that from a mistake.

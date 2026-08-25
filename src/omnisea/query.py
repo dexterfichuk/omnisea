@@ -55,6 +55,10 @@ KNOWN_OPTIONS: dict[str, str] = {
     "resolution": "dfo_tides: ONE_MINUTE | THREE_MINUTES | FIVE_MINUTES | "
     "FIFTEEN_MINUTES | SIXTY_MINUTES",
     "series": "dfo_tides: which IWLS series to pull, e.g. ('wlo', 'wlp', 'wlp-hilo')",
+    "erddap_server": "erddap: ERDDAP server root URL (default CIOOS Pacific)",
+    "erddap_datasets": "erddap: dataset id(s) to use instead of searching the server",
+    "erddap_search": "erddap: free-text searchFor passed to the ERDDAP search index",
+    "erddap_max_datasets": "erddap: ceiling on datasets discovery will describe (default 25)",
     "cioos_records": "cioos_metadata: path, directory, URL or owner/repo holding metadata records",
     "cioos_token": "cioos_metadata: token for an authenticated records endpoint",
 }

@@ -382,7 +382,7 @@ def fields(tree: xr.DataTree, *, mapped: bool | None = None) -> pd.DataFrame:
                     "source": ds.attrs.get("source_name", ""),
                     "station_id": _scalar(ds, "station_id"),
                     "node": path,
-                    "n_values": int(var.count().values) if var.size else 0,
+                    "n_values": _count_if_loaded(var),
                 }
             )
     frame = pd.DataFrame(rows)
@@ -451,10 +451,31 @@ def _requested_sites(tree: xr.DataTree, query: Query | None) -> list[str]:
     return []
 
 
+def _count_if_loaded(var: xr.DataArray) -> int | None:
+    """Non-null count, but never at the cost of a download.
+
+    Counting is cheap for a station series and is a silent transfer for a lazy gridded
+    variable, which is the whole point of keeping those lazy. ``None`` means "not counted".
+    """
+    if var.size == 0:
+        return 0
+    if var.chunks is not None or not var.variable._in_memory:
+        return None
+    return int(var.count().values)
+
+
 def _scalar(ds: xr.Dataset, name: str) -> Any:
+    """A scalar coordinate's value, or ``None`` if the coordinate is not scalar.
+
+    A gridded node's ``latitude`` is a whole vector; returning it would put the entire array in
+    a table cell.
+    """
     if name not in ds.coords:
         return None
-    value = ds[name].values
+    coord = ds[name]
+    if coord.size != 1:
+        return None
+    value = coord.values
     try:
         item = value.item()
     except (ValueError, AttributeError):
