@@ -266,3 +266,21 @@ class TestFieldsInventory:
     def test_empty_tree_gives_an_empty_inventory(self):
         q = Query.from_position(48.8353, -125.1358, WEEK)
         assert fields(build_tree(q, [])).empty
+
+
+class TestEmptyStationReporting:
+    def test_stations_that_returned_nothing_are_named(self):
+        """With nearest=1 the closest station can be empty while one further out has decades."""
+        q = Query.from_position(48.8353, -125.1358, WEEK)
+        empty = make_series(station_id="1030610")
+        empty.frame = pd.DataFrame()
+        empty.match.source = "eccc_climate_monthly"
+        tree = build_tree(q, [empty, make_series(station_id="08545")])
+        assert tree.attrs["n_empty_series_dropped"] == 1
+        assert "eccc_climate_monthly/1030610" in tree.attrs["omnisea_empty_stations"]
+
+    def test_a_complete_fetch_names_none(self):
+        q = Query.from_position(48.8353, -125.1358, WEEK)
+        tree = build_tree(q, [make_series()])
+        assert tree.attrs["n_empty_series_dropped"] == 0
+        assert "omnisea_empty_stations" not in tree.attrs

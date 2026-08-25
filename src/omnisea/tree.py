@@ -167,7 +167,7 @@ def build_tree(
     simply does not cover the requested dates should not appear as an empty group.
     """
     nodes: dict[str, xr.Dataset] = {}
-    n_empty = 0
+    empty: list[str] = []
 
     for item in results:
         if item is None:
@@ -179,8 +179,16 @@ def build_tree(
             continue
 
         if drop_empty and item.is_empty:
-            n_empty += 1
-            log.debug("dropping empty series for %s/%s", item.match.provider, item.match.station_id)
+            # Naming them matters. A station can be discovered and still hold nothing for the
+            # window — ECCC's catalogue overstates several stations' periods of record — and
+            # with nearest=1 that means the closest station silently yields an empty tree while
+            # one a few km further has decades.
+            empty.append(f"{item.match.source}/{item.match.station_id}")
+            log.info(
+                "no rows for %s station %s in the requested window",
+                item.match.source,
+                item.match.station_id,
+            )
             continue
 
         ds = series_to_dataset(item)
@@ -202,7 +210,8 @@ def build_tree(
             ),
             "omnisea_version": _version(),
             "n_nodes": len(nodes),
-            "n_empty_series_dropped": n_empty,
+            "n_empty_series_dropped": len(empty),
+            "omnisea_empty_stations": sorted(set(empty)) or None,
         }
     )
 
