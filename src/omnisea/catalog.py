@@ -115,8 +115,13 @@ class Catalog:
 
     def coverage(self) -> pd.DataFrame:
         """Per-site station counts, with a row for every requested site including empty ones."""
+        # The same columns whether or not sites were requested — an area query returning a
+        # differently-shaped frame turned coverage()["has_match"] into a KeyError depending on
+        # how the caller had asked for their data.
         if not self.query.sites:
-            return pd.DataFrame(columns=["site", "n_stations", "n_rows_est", "providers"])
+            return pd.DataFrame(
+                columns=["site", "n_stations", "n_rows_est", "sources", "has_match"]
+            )
         by_site: dict[str, list[StationMatch]] = {label: [] for label in self.sites}
         for m in self.matches:
             if m.site in by_site:
@@ -264,12 +269,16 @@ class Catalog:
         ceiling = max_rows if max_rows is not None else self.query.max_rows
         estimate = self.n_rows_est
         if ceiling and estimate > ceiling:
+            # The suggested max_rows is underscore-separated so it can be pasted straight into
+            # Python. Only that number: applying .replace() to the whole message turned every
+            # comma in the prose into an underscore.
+            suggestion = f"{estimate + 1:,}".replace(",", "_")
             raise PayloadTooLargeError(
                 f"this catalogue would pull about {estimate:,} rows across "
                 f"{len(self.matches)} station(s), over the {ceiling:,} row ceiling.\n"
                 "  Narrow it with .filter(nearest=1) or .filter(max_distance_km=...), "
                 "shorten the time window, coarsen resolution (e.g. resolution='SIXTY_MINUTES'), "
-                f"or raise the ceiling with fetch(max_rows={estimate + 1:,}).".replace(",", "_"),
+                f"or raise the ceiling with fetch(max_rows={suggestion}).",
                 estimate=estimate,
                 limit=ceiling,
             )
@@ -412,7 +421,23 @@ class Catalog:
 
 
 def _nearest_per_site(matches: list[StationMatch], n: int) -> list[StationMatch]:
-    """Keep the ``n`` closest stations for each (site, source) pair."""
+    """Keep the ``n`` closest stations for each (site, source) pair.
+
+    ``distance_km`` is ``None`` for a pure bbox query — there is no site to be near — so the
+    stations sort equal and "nearest" degenerates to "first n discovered". That is a real
+    answer to a question that has no better one, but it is not what the name promises, so it
+    is worth knowing rather than guessing at.
+    """
+    if n < 1:
+        raise ValueError(f"nearest must be at least 1; got {n}")
+    if matches and all(m.distance_km is None for m in matches):
+        log.warning(
+            "filter(nearest=%d) on a query with no sites: these matches carry no distance, so "
+            "this keeps the first %d per source in discovery order rather than the closest. "
+            "Use sites=/lat=/lon= if you meant proximity.",
+            n,
+            n,
+        )
     buckets: dict[tuple[str | None, str], list[StationMatch]] = {}
     for m in matches:
         buckets.setdefault((m.site, m.source), []).append(m)

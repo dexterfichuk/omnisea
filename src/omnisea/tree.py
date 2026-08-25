@@ -37,6 +37,18 @@ __all__ = [
 
 log = logging.getLogger("omnisea.tree")
 
+#: Columns :func:`summary` always produces, so an empty result is still addressable.
+SUMMARY_COLUMNS = [
+    "node", "provider", "site", "station_id", "station_name", "lat", "lon",
+    "variables", "n_time", "start", "end",
+]
+
+#: Columns :func:`fields` always produces, for the same reason.
+FIELD_COLUMNS = [
+    "variable", "standard_name", "units", "long_name", "cf_mapped", "kind",
+    "source_field", "cell_methods", "provider", "source", "station_id", "node", "n_values",
+]
+
 
 def _clean_attrs(attrs: Mapping[str, Any]) -> dict[str, Any]:
     """Coerce attributes into something netCDF can actually store.
@@ -285,7 +297,10 @@ def summary(tree: xr.DataTree) -> pd.DataFrame:
                 "end": pd.Timestamp(times.max()) if times.size else pd.NaT,
             }
         )
-    frame = pd.DataFrame(rows)
+    # Named columns even when empty: an empty tree is exactly when someone reaches for the
+    # "did I get what I asked for?" view, and a 0x0 frame turns summary(tree)["node"] into a
+    # KeyError instead of an empty answer.
+    frame = pd.DataFrame(rows, columns=SUMMARY_COLUMNS)
     if not frame.empty:
         frame = frame.sort_values(["provider", "node"]).reset_index(drop=True)
     return frame
@@ -295,7 +310,10 @@ def stations(tree: xr.DataTree) -> pd.DataFrame:
     """Distinct stations present in the tree, one row each."""
     frame = summary(tree)
     if frame.empty:
-        return frame
+        return pd.DataFrame(
+            columns=["provider", "station_id", "station_name", "site", "lat", "lon",
+                     "n_nodes", "n_time"]
+        )
     return (
         frame.groupby(["provider", "station_id"], as_index=False)
         .agg(
@@ -321,6 +339,16 @@ def to_dataframe(tree: xr.DataTree, *, wide: bool = False) -> pd.DataFrame:
     pieces: list[pd.DataFrame] = []
     for path, ds in data_nodes(tree):
         if "time" not in ds.coords or ds["time"].size == 0:
+            # A profile keyed on depth rather than time has real values that this flat,
+            # time-indexed view cannot represent. Saying so beats returning fewer rows than
+            # summary() and fields() both report — align() logs the same condition.
+            log.warning(
+                "to_dataframe(): skipping node %s — no 'time' coordinate, so its %d variable(s) "
+                "cannot be placed on a time axis. Read it directly with tree[%r].",
+                path,
+                len(ds.data_vars),
+                path,
+            )
             continue
         keep = [v for v in ds.data_vars if not str(v).endswith("_qc")]
         if not keep:
@@ -392,7 +420,7 @@ def fields(tree: xr.DataTree, *, mapped: bool | None = None) -> pd.DataFrame:
                     "n_values": _count_if_loaded(var),
                 }
             )
-    frame = pd.DataFrame(rows)
+    frame = pd.DataFrame(rows, columns=FIELD_COLUMNS)
     if frame.empty:
         return frame
     if mapped is True:

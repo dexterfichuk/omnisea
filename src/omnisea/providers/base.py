@@ -418,6 +418,20 @@ def frame_from_records(
     frame.index.name = "time"
     # Columns that are entirely empty carry no information and clutter every node.
     frame = frame.dropna(axis=1, how="all")
+
+    # A provider that spells one row's number as a string — ``"8.2"`` where the rest are floats
+    # — makes the whole column object dtype, and object columns are stored as *text* on the way
+    # to netCDF. The measurement then reaches align() as a category: its cell_methods is
+    # ignored, a daily mean comes back as the string of one member, and correlations() drops it
+    # from every redundancy check. Coerce only where every non-null value really is a number,
+    # so weather descriptions and flag letters stay the prose they are.
+    for column in frame.columns:
+        if frame[column].dtype != object:
+            continue
+        numeric = pd.to_numeric(frame[column], errors="coerce")
+        present = frame[column].notna().sum()
+        if present and numeric.notna().sum() == present:
+            frame[column] = numeric
     return frame
 
 

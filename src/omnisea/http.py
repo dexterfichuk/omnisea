@@ -380,11 +380,18 @@ def paginate_ogc_items(
             yield feat
 
         returned = len(features)
-        if returned == 0 or returned < page_size:
+        if returned == 0:
             return
         offset += returned
         if isinstance(matched, int) and offset >= matched:
             return
+        # Deliberately NOT stopping on a short page. OGC API - Features permits a server to
+        # return fewer items than `limit`, and pygeoapi caps `limit` server-side — which is the
+        # premise of paging by explicit offset in the first place. Treating a short page as the
+        # end made the *first* page the last one against a capped server: 1000 of 2500 stations
+        # discovered, the numberMatched proving otherwise thrown away, and nothing anywhere
+        # saying so. The cost of continuing is one extra request that comes back empty; the
+        # cost of stopping was a silently truncated result that looked complete.
 
 
 def chunk_time(
@@ -396,9 +403,15 @@ def chunk_time(
     treat both endpoints as inclusive; the duplicate rows are removed when the frames are
     concatenated, which is cheaper than trying to nudge the boundaries by an epsilon.
     """
+    if max_days <= 0:
+        raise ValueError(f"max_days must be positive; got {max_days!r}")
     if end <= start:
         return []
     span = pd.Timedelta(days=max_days)
+    if span <= pd.Timedelta(0):
+        # A positive max_days can still round to zero nanoseconds. Left alone the cursor never
+        # advances and the loop below allocates chunks until the process dies.
+        raise ValueError(f"max_days={max_days!r} is too small to form a time chunk")
     if end - start <= span:
         return [(start, end)]
     out: list[tuple[pd.Timestamp, pd.Timestamp]] = []

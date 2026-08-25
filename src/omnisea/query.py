@@ -122,6 +122,14 @@ def _normalize_time(time: Any) -> tuple[pd.Timestamp, pd.Timestamp]:
         )
     start_ts = to_utc(start, label="start")
     end_ts = to_utc(end, label="end")
+    # NaT compares False against everything, so the ordering guard below waves it through — and
+    # the query then makes zero requests and returns nothing, which reads as "no data here".
+    # Reachable straight from a DataFrame cell that failed to parse.
+    for label, value in (("start", start_ts), ("end", end_ts)):
+        if pd.isna(value):
+            raise QueryError(
+                f"{label} is not a usable timestamp (got NaT — an empty or unparseable value?)"
+            )
     if end_ts <= start_ts:
         raise QueryError(f"end ({end_ts}) must be after start ({start_ts})")
     return start_ts, end_ts
@@ -174,6 +182,15 @@ class Site:
             raise QueryError(f"site {self.label!r}: lat must lie in [-90, 90]; got {self.lat}")
         if not -180 <= self.lon <= 180:
             raise QueryError(f"site {self.label!r}: lon must lie in [-180, 180]; got {self.lon}")
+        # `nan <= 0` is False, so the ordinary guard lets a blank radius_km cell through — and a
+        # NaN radius makes a site that matches nothing and contributes a NaN box to the union,
+        # silently removing its area from the request. The lat/lon guards above reject NaN by
+        # the same comparison logic; this one has to say so explicitly.
+        if math.isnan(self.radius_km):
+            raise QueryError(
+                f"site {self.label!r}: radius_km is NaN (a blank column in a sites CSV?). "
+                "Give it a positive radius, or drop the column to take the default."
+            )
         if self.radius_km <= 0:
             raise QueryError(
                 f"site {self.label!r}: radius_km must be positive; got {self.radius_km}"
@@ -241,8 +258,11 @@ def _as_site(item: Any, default_radius_km: float) -> Site:
             raise QueryError(
                 f"site mapping needs numeric lat/lon keys; got {dict(item)!r}"
             ) from exc
-        name = lower.get("name") or lower.get("station") or lower.get("label") or ""
-        site_id = lower.get("id") or lower.get("site_id") or None
+        # A blank cell arrives as float("nan"), which is *truthy* — so `or` chaining would make
+        # every unnamed row in a CSV land on the literal label "nan", collapsing them all into
+        # one site downstream.
+        name = _first_text(lower, ("name", "station", "label"))
+        site_id = _first_text(lower, ("id", "site_id")) or None
         radius = lower.get("radius_km", default_radius_km)
         return Site(
             lat=lat,
@@ -270,6 +290,42 @@ def _first_key(mapping: Mapping[str, Any], candidates: tuple[str, ...]) -> str:
         if c in mapping:
             return c
     raise KeyError(candidates[0])
+
+
+def _first_text(mapping: Mapping[str, Any], candidates: tuple[str, ...]) -> str:
+    """The first candidate key holding real text, skipping blanks and NaN."""
+    for key in candidates:
+        value = mapping.get(key)
+        if value is None:
+            continue
+        if isinstance(value, float) and math.isnan(value):
+            continue
+        text = str(value).strip()
+        if text and text.lower() != "nan":
+            return text
+    return ""
+
+
+def _reject_duplicate_labels(sites: Sequence[Site]) -> None:
+    """Refuse two sites that answer to the same name.
+
+    The label is the join key: it is stamped on every station a site matched, and
+    :meth:`Catalog.coverage` and :attr:`Catalog.missing_sites` are keyed by it. Two "Farm A"
+    rows in a CSV therefore merge into one — one coverage row for two requested places, and a
+    farm that found nothing reported as if it had been covered by the other. Since the whole
+    point of a site label is to carry results back to the caller's own records, silently
+    merging two of them is worse than asking for distinct names.
+    """
+    seen: dict[str, int] = {}
+    for site in sites:
+        seen[site.label] = seen.get(site.label, 0) + 1
+    repeated = sorted(label for label, count in seen.items() if count > 1)
+    if repeated:
+        raise QueryError(
+            f"duplicate site label(s): {', '.join(repr(r) for r in repeated)}. Site labels are "
+            "the join key results come back on, so two places sharing one name would merge "
+            "into a single row. Give each site a distinct name= or id=."
+        )
 
 
 def _union_bbox(boxes: Sequence[BBox]) -> BBox:
@@ -382,6 +438,7 @@ class Query:
         resolved = as_sites(sites, default_radius_km=radius_km)
         if not resolved:
             raise QueryError("no sites given; pass at least one (lat, lon)")
+        _reject_duplicate_labels(resolved)
         start, end = _normalize_time(time)
         return cls(
             start=start,
@@ -527,10 +584,11 @@ def _bbox_around(lat: float, lon: float, radius_km: float) -> BBox:
     # Longitude degrees shrink with latitude; guard the poles where cos -> 0.
     coslat = math.cos(math.radians(lat))
     dlon = 180.0 if abs(coslat) < 1e-9 else math.degrees(radius_km / (EARTH_RADIUS_KM * coslat))
-    dlon = min(abs(dlon), 180.0)
-    return BBox(
-        max(lon - dlon, -180.0),
-        max(lat - dlat, -90.0),
-        min(lon + dlon, 180.0),
-        min(lat + dlat, 90.0),
-    )
+    south, north = max(lat - dlat, -90.0), min(lat + dlat, 90.0)
+    if abs(dlon) >= 180.0:
+        # Near a pole the circle spans every meridian. Clamping dlon to 180 and *then* taking
+        # lon +/- dlon kept only half of them, so a station 22 km away across the pole fell
+        # outside the box a provider filters on and was never seen. The full range is
+        # representable and needs no antimeridian handling, so say so.
+        return BBox(-180.0, south, 180.0, north)
+    return BBox(max(lon - dlon, -180.0), south, min(lon + dlon, 180.0), north)

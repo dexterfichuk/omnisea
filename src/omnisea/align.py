@@ -148,6 +148,17 @@ def _node_frames(
                 frame.index.name,
             )
             continue
+        if frame.index.has_duplicates:
+            # Every provider path de-duplicates in frame_from_records, but add_local() takes a
+            # frame straight from the caller. Left alone this surfaces from deep inside pandas
+            # as "cannot reindex on an axis with duplicate labels", naming neither the node nor
+            # the offending instant.
+            repeated = frame.index[frame.index.duplicated()].unique()
+            raise QueryError(
+                f"node {node.path} has {len(repeated)} repeated timestamp(s) — first is "
+                f"{repeated[0]}. A time axis with duplicates cannot be resampled or joined; "
+                "collapse them first (frame.groupby(level=0).mean(), say)."
+            )
         label = _station_label(ds, node.path)
         attrs = {v: dict(ds[v].attrs) for v in keep}
         out.append((label, node.path, frame.sort_index(), attrs))
@@ -304,6 +315,14 @@ def align(
             key = (str(variable), label)
             if key in used:
                 key = (str(variable), f"{label}/{_branch(node_path)}")
+            if key in used:
+                # Two nodes of one station in one branch — build_tree's _unique() fires twice
+                # for the same station id. A third collision would emit two identically named
+                # columns holding different data, and frame[name] would hand back a DataFrame.
+                suffix = 2
+                while (key[0], f"{key[1]}#{suffix}") in used:
+                    suffix += 1
+                key = (key[0], f"{key[1]}#{suffix}")
             used.add(key)
             aligned.name = key
             pieces.append(aligned.to_frame())
@@ -368,7 +387,12 @@ def _resample(
     if len(grid) == 0:
         return None, "empty grid"
     if len(series) < 2:
-        return series.reindex(grid, method="ffill"), f"{down} (single sample)"
+        # A lone sample has no cadence, so there is no honest basis for spreading it across the
+        # grid. Forward-filling it made a single 12 mm daily rainfall total read as 12 mm on
+        # every following day — 72 mm over a week — while the audit line claimed a "sum" that
+        # was never computed. Bin it where it actually falls and leave the rest missing.
+        binned = _bin(series, freq, down)
+        return binned.reindex(grid), f"{down} (single sample, not extended beyond its own bin)"
 
     native = series.index.to_series().diff().median()
     grid_step = pd.Series(grid).diff().median()
@@ -392,6 +416,16 @@ def _resample(
         return series.resample(freq).agg(down).reindex(grid), f"{down}"
     except (TypeError, ValueError, AttributeError):
         return series.resample(freq).first().reindex(grid), "first (not aggregatable)"
+
+
+def _bin(series: pd.Series, freq: str, down: Any) -> pd.Series:
+    """Put a series into ``freq`` bins with its own aggregation, whatever that aggregation is."""
+    if down == "circular_mean":
+        return series.resample(freq).apply(circular_mean)
+    try:
+        return series.resample(freq).agg(down)
+    except (TypeError, ValueError, AttributeError):
+        return series.resample(freq).first()
 
 
 def _native_cadence(series: pd.Series) -> pd.Timedelta | None:
@@ -423,9 +457,22 @@ def _join_to(
     cadence = _native_cadence(series)
 
     if interval:
-        window = cadence
         used_direction = "backward"
-        described = f"backward within its own {_pretty(window)} interval" if window else "backward"
+        if cadence is not None:
+            window = cadence
+            described = f"backward within its own {_pretty(window)} interval"
+        elif tolerance is not None:
+            # One sample, so there is no interval to infer. The caller's tolerance is then the
+            # only stated bound, and honouring it is what stops a lone January daily total from
+            # matching every timestamp in July.
+            window = pd.Timedelta(tolerance)
+            described = f"backward within {_pretty(window)}"
+        else:
+            window = None
+            described = (
+                "backward (UNBOUNDED: single interval sample and no tolerance=, so it matches "
+                "at any distance)"
+            )
     else:
         window = pd.Timedelta(tolerance) if tolerance is not None else cadence
         used_direction = direction
@@ -557,8 +604,11 @@ def correlations(
     numeric = frame[columns]
 
     corr = numeric.corr(method=method, min_periods=max(int(min_overlap), 2))
-    present = numeric.notna().astype(int)
-    overlap = present.T @ present
+    # Counted on *finite* values, matching what pandas actually correlates on. Using notna()
+    # here would report n=500 for an r computed over the 12 rows that were not +/-inf — and n
+    # is the number min_overlap is judged on, the whole defence against a spurious r=1.0.
+    present = np.isfinite(numeric.to_numpy(dtype="float64", na_value=np.nan)).astype(int)
+    overlap = pd.DataFrame(present.T @ present, index=numeric.columns, columns=numeric.columns)
 
     rows: list[dict[str, Any]] = []
     for i, a in enumerate(columns):
@@ -705,6 +755,15 @@ def add_local(
         for node in tree.subtree
         if node.dataset.data_vars or node.dataset.coords
     }
+    if path in contents:
+        # "Reef 1" and "Reef.1" both sanitize to Reef_1, and the first survey's data would be
+        # destroyed without a word. build_tree has refused to do that since it was written;
+        # adding your own data must not be the one path that silently overwrites.
+        raise QueryError(
+            f"the tree already has a node at {path!r}. Two local datasets whose names differ "
+            "only in punctuation land on one path — pass a distinct station_id= or node_path= "
+            "rather than replacing the first silently."
+        )
     contents[path] = ds
     merged = xr.DataTree.from_dict(contents)
     merged.attrs.update(dict(tree.attrs))

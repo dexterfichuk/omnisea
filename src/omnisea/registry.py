@@ -47,6 +47,14 @@ def register_source(source: DataSource, *, replace: bool = False) -> DataSource:
         raise ValueError(
             f"source {source.name!r} is already registered; pass replace=True to override"
         )
+    if source.name in _PROVIDERS and _PROVIDERS[source.name] is not source.provider:
+        # select() resolves a source name before a provider name, so a source sharing an
+        # organization's name would answer for the whole organization: asking for "acme" would
+        # quietly return one of its datasets instead of all of them.
+        raise ValueError(
+            f"source {source.name!r} collides with the registered provider of the same name. "
+            "Selecting it would be ambiguous — give the source a distinct name."
+        )
     _SOURCES[source.name] = source
     provider = source.provider
     if provider is not None and provider.name:
@@ -155,7 +163,13 @@ def select(names: Iterable[str] | None) -> list[DataSource]:
         if name in _SOURCES:
             picked = [_SOURCES[name]]
         elif name in _PROVIDERS:
-            picked = list(_PROVIDERS[name].sources)
+            # Only the provider's *registered* sources. An entry point may point at a single
+            # DataSource, which back-registers its provider; Provider.sources would then build
+            # every dataset that provider declares, and fetch() would later die on a source the
+            # user never asked for and the registry never accepted.
+            picked = [s for s in _PROVIDERS[name].sources if _SOURCES.get(s.name) is s]
+            if not picked:
+                raise UnknownProviderError(name, sorted(_SOURCES) + sorted(_PROVIDERS))
         else:
             raise UnknownProviderError(name, sorted(_SOURCES) + sorted(_PROVIDERS))
         for source in picked:
