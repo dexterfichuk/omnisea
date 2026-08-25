@@ -56,7 +56,8 @@ class _RollingSource(RetrievalSource):
         if self.boom:
             raise omnisea.UpstreamError("upstream exploded", provider=self.name, status=503)
         index = pd.date_range(query.start, periods=3, freq="h", name="time")
-        frame = self.frame if self.frame is not None else pd.DataFrame({"v": [1.0, 2, 3]}, index=index)
+        default = pd.DataFrame({"v": [1.0, 2, 3]}, index=index)
+        frame = self.frame if self.frame is not None else default
         return [
             StationSeries(match=m, frame=frame, node_path=f"{self.node_path}/{m.station_id}")
             for m in matches
@@ -117,8 +118,9 @@ class TestRetention:
 
 class TestCatalogNotes:
     def test_notes_survive_filtering(self):
-        catalog = Catalog(_window("2024-07-01", "2024-07-08"), [], {}, {"fake_realtime": "holds 30 days"})
-        assert catalog.filter(source="anything").notes == {"fake_realtime": "holds 30 days"}
+        notes = {"fake_realtime": "holds 30 days"}
+        catalog = Catalog(_window("2024-07-01", "2024-07-08"), [], {}, notes)
+        assert catalog.filter(source="anything").notes == notes
 
     def test_an_empty_catalogue_explains_itself_rather_than_shrugging(self):
         catalog = Catalog(
