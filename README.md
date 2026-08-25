@@ -265,7 +265,11 @@ omnisea.fields(tree)     # what a particular fetch actually returned
 | `eccc_climate` | `eccc` | Hourly surface climate observations |
 | `eccc_climate_daily` | `eccc` | Daily climate summaries |
 | `eccc_swob` | `eccc` | Surface weather observations, realtime (~30 days) |
-| `eccc_hydrometric` | `eccc` | Realtime water level and river discharge |
+| `eccc_hydrometric` | `eccc` | Realtime water level and river discharge (~30 days) |
+| `eccc_hydrometric_daily` | `eccc` | Daily mean level and discharge — the historical archive |
+| `eccc_hydrometric_monthly` | `eccc` | Monthly mean level and discharge |
+| `eccc_hydrometric_annual` | `eccc` | Annual extremes, with the date each occurred |
+| `eccc_hydrometric_annual_peaks` | `eccc` | Instantaneous annual peaks |
 | `cioos_metadata` | `cioos` | CIOOS metadata records — discovery only, contributes catalogue rows |
 
 Select a single dataset or a whole organization:
@@ -337,6 +341,29 @@ cat.query.bbox.centre     # (48.84, -125.135) as (lat, lon)
 ```
 
 A lat-first bbox is rejected rather than silently swapped.
+
+## Caching
+
+Off by default. Turn it on and repeat queries stop re-downloading the parts that don't change:
+
+```bash
+pip install "omnisea[cache]"
+```
+```python
+omnisea.enable_cache(path="~/.omnisea-cache.sqlite")
+```
+
+What gets cached is decided per endpoint rather than by one TTL, because they differ in kind.
+Station catalogues and metadata are near-static (7 days); GitHub-hosted CIOOS records get a day
+(unauthenticated GitHub allows 60 requests an hour, which is the difference between discovery
+working twice in a row and not); appended archives get an hour. **Measurement endpoints are
+never cached**, and are excluded explicitly rather than by omission, so the exclusion survives a
+caller who passes `expire_after=` to cache everything else.
+
+One thing worth knowing: IWLS answers *every* request — including its near-static 1573-station
+list — with `Cache-Control: no-cache, no-store, must-revalidate`. Honouring that would reduce
+the feature to a no-op, so omnisea overrides it deliberately for the endpoints its policy
+considers static.
 
 ## When a source can't help
 
