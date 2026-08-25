@@ -95,6 +95,7 @@ touching the point-series assembly code.
 | `self.base_attrs(**extra)` | Node attrs with `Conventions`, `featureType`, licence, institution |
 | `self.include_unmapped(query)` | Whether to carry fields with no CF mapping (default yes) |
 | `self.to_cf_units(query)` | Whether the caller asked for canonical CF units |
+| `self.covers(query)` / `self.retention_gap(query)` | Whether your rolling window reaches the requested dates, and the message if not |
 | `match.attach_site(query)` | Records which requested site a station answers for, and how far |
 | `match.require(key)` | Read an `extra` value `discover()` promised `fetch()`, failing loudly if absent |
 | `frame_from_records(rows)` | Time-indexed, sorted, de-duplicated frame from row dicts |
@@ -135,6 +136,19 @@ Two rules, and the distinction between them matters:
   `to_cf_units=True`.** Values otherwise stay in the units the provider published, with those
   units in the `units` attribute. Silently turning 15 °C into 288.15 K makes a scientist
   distrust their own data at a glance.
+
+**Declare `retention` if your dataset is a rolling window.** A source that keeps only the last
+30 days should say so:
+
+```python
+class MyRealtimeSource(RetrievalSource):
+    retention = pd.Timedelta(days=30)
+```
+
+omnisea then checks the query window *before* calling you, skips the request when it cannot
+possibly help, and prints an explanation on the Catalog. Without it, a historical query gets an
+empty result — which a user reads as "there is no station here", a different and wrong
+conclusion from "this collection only keeps 30 days". Leave it `None` for a full archive.
 
 **Set `cell_methods` whenever a value summarizes an interval** — a total, a mean, a maximum
 over a period. It is not decoration: `omnisea.align()` reads it to decide how the variable
@@ -297,7 +311,11 @@ omnisea.register_option("shorelogger_depth_m", "which logger depth to read")
 - [ ] Predictions and models live under a different `node_path` than observations, so they can
       never be mistaken for measurements.
 - [ ] Errors raised are `omnisea` errors (`UpstreamError`, `ProviderError`), so users can catch
-      `omnisea.OmniseaError` and mean it.
+      `omnisea.OmniseaError` and mean it. Let them propagate from `fetch()` — `Catalog.fetch()`
+      decides whether to raise or collect, and swallowing them inside a source removes that
+      choice from the caller.
+- [ ] A rolling-window dataset declares `retention`, so a historical query gets an explanation
+      instead of an empty result.
 
 ---
 

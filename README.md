@@ -338,6 +338,26 @@ cat.query.bbox.centre     # (48.84, -125.135) as (lat, lon)
 
 A lat-first bbox is rejected rather than silently swapped.
 
+## When a source can't help
+
+Several ECCC collections are rolling archives — `swob-realtime` and `hydrometric-realtime` keep
+roughly 30 days. Asking them for last year returns nothing, and "nothing" reads as *there is no
+station here*, which is a different and wrong conclusion. So sources declare their retention and
+omnisea says what happened:
+
+```
+<Catalog: no stations found for 1 site(s) in Query(position(48.8353, -125.1358, r=30.0km), ...)>
+  - eccc_hydrometric: holds only the last ~30 days (back to 2026-07-26); the requested
+    window ends 2024-07-08 and is entirely outside it
+```
+
+Discovery and retrieval treat failure differently, on purpose. `discover()` collects per-source
+errors and carries on — it is a survey, and the Catalog shows you which sources are missing from
+it. `fetch()` **raises** by default, because it produces the data you will analyse and a tree
+quietly missing a source looks exactly like a tree where that source had nothing to say. Pass
+`on_error="collect"` for exploratory work; the failures are then recorded in the tree's
+`omnisea_fetch_errors` attribute rather than dropped.
+
 ## Design notes
 
 `Query` is deliberately EDR-shaped — `bbox` or sites with radii, a UTC-normalized interval, CF
