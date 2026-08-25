@@ -123,3 +123,59 @@ def test_it_participates_in_multi_site_queries(registered):
     cov = omnisea.coverage(tree).set_index("site")
     assert bool(cov.loc["Bamfield", "has_data"])
     assert not bool(cov.loc["Nowhere", "has_data"])
+
+
+class TestProviderTemplate:
+    """The template in CONTRIBUTING's workflow must actually run.
+
+    A broken template is worse than none: it wastes the time of exactly the person we most
+    want to keep.
+    """
+
+    @pytest.fixture(scope="class")
+    def template(self):
+        spec = importlib.util.spec_from_file_location(
+            "provider_template_example",
+            Path(__file__).resolve().parents[1] / "examples" / "provider_template.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+
+    @pytest.fixture
+    def registered(self, template):
+        omnisea.register_provider(template.MyOrgProvider(), replace=True)
+        yield
+        from omnisea import registry
+
+        registry._SOURCES.pop("myorg_observations", None)
+        registry._PROVIDERS.pop("myorg", None)
+
+    def test_the_template_source_conforms(self, template):
+        problems = omnisea.check_source(template.MySource(template.MyOrgProvider()))
+        assert not problems, "\n".join(map(str, problems))
+
+    def test_it_fetches_end_to_end(self, registered):
+        tree = omnisea.fetch(lat=48.8353, lon=-125.1358, radius_km=10,
+                             time=("2024-07-01", "2024-07-02"), providers="myorg")
+        ds = tree["/in_situ/myorg/DEMO1"].dataset
+        assert "sea_water_temperature" in ds.data_vars
+
+    def test_it_demonstrates_passthrough(self, registered):
+        tree = omnisea.fetch(lat=48.8353, lon=-125.1358, radius_km=10,
+                             time=("2024-07-01", "2024-07-02"), providers="myorg")
+        ds = tree["/in_situ/myorg/DEMO1"].dataset
+        assert ds["instrument_serial"].attrs["omnisea_mapped"] == 0
+
+    def test_it_produces_a_citation(self, registered):
+        tree = omnisea.fetch(lat=48.8353, lon=-125.1358, radius_km=10,
+                             time=("2024-07-01", "2024-07-02"), providers="myorg")
+        assert "My Organization" in omnisea.citation(tree)
+        assert "CC-BY-4.0" in omnisea.citation(tree)
+
+    def test_trim_window_is_reachable_from_a_plain_source(self, template):
+        """It used to live on OgcFeaturesSource, so a non-OGC source could not call it."""
+        source = template.MySource(template.MyOrgProvider())
+        assert hasattr(source, "trim_window")
+        assert hasattr(source, "period_window")

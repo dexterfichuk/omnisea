@@ -214,6 +214,14 @@ class DataSource(ABC):
     #: This dataset's raw-field to CF mapping. Defined on the class, next to the code that uses
     #: it, so adding a source is one new file rather than an edit in two places.
     fields: dict[str, cf.FieldSpec] = {}
+    #: pandas **Period** alias ("D", "M", "Y") for collections whose rows summarize a period
+    #: and are labelled by the period's first instant.
+    #:
+    #: Without it, asking for "15 July noon to 17 July" silently returns fewer days than
+    #: "15 July to 17 July": the 15 July summary is stamped 00:00Z, so the trim discards it even
+    #: though the day it describes overlaps the request. A period belongs to a window when its
+    #: *interval* overlaps, not when its label instant happens to fall inside.
+    period: str | None = None
     #: True when the source reads its field descriptions from the data at runtime rather than
     #: declaring them — an ERDDAP dataset publishes its own standard names and units, and
     #: hardcoding them would be both wrong and unmaintainable. An empty ``fields`` is then a
@@ -340,6 +348,28 @@ class DataSource(ABC):
 
         known = known_variable_names()
         return any(name not in known for name in wanted)
+
+    def period_window(self, query: Query) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """The query window grown out to whole :attr:`period` aggregation periods.
+
+        Needed at both ends of the round trip. Upstream matches an aggregate against the period
+        it covers, so a window landing inside one period matches nothing:
+        ``hydrometric-annual-statistics`` returns 0 rows for ``2020-06-01/2020-09-30`` and 2 for
+        ``2020-01-01/2020-12-31``. And a row that did come back would then be trimmed away for
+        being stamped before the window opened, since a period is labelled by its first instant.
+        Growing both ends keeps every period that overlaps what was asked for.
+
+        Idempotent, so a source may widen its request and still let the shared trim run.
+        """
+        start = query.start.tz_convert("UTC").tz_localize(None).to_period(self.period)
+        end = query.end.tz_convert("UTC").tz_localize(None).to_period(self.period)
+        return start.start_time.tz_localize("UTC"), end.end_time.tz_localize("UTC")
+
+    def trim_window(self, query: Query) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """The window the fetched frame is trimmed to."""
+        if not self.period:
+            return query.start, query.end
+        return self.period_window(query)
 
     def include_unmapped(self, query: Query) -> bool:
         """Whether to carry fields that have no CF mapping (default: yes, keep everything)."""

@@ -264,12 +264,17 @@ omnisea.fields(tree)     # what a particular fetch actually returned
 | `dfo_tides` | `dfo` | Water levels: observed, predicted, and high/low events (1573 stations) |
 | `eccc_climate` | `eccc` | Hourly surface climate observations |
 | `eccc_climate_daily` | `eccc` | Daily climate summaries |
-| `eccc_swob` | `eccc` | Surface weather observations, realtime (~30 days) |
 | `eccc_hydrometric` | `eccc` | Realtime water level and river discharge (~30 days) |
 | `eccc_hydrometric_daily` | `eccc` | Daily mean level and discharge — the historical archive |
 | `eccc_hydrometric_monthly` | `eccc` | Monthly mean level and discharge |
 | `eccc_hydrometric_annual` | `eccc` | Annual extremes, with the date each occurred |
 | `eccc_hydrometric_annual_peaks` | `eccc` | Instantaneous annual peaks |
+| `eccc_climate_monthly` | `eccc` | Monthly climate summaries |
+| `eccc_ahccd_monthly` / `_seasonal` / `_annual` | `eccc` | Adjusted & Homogenized Canadian Climate Data — the long homogenized record |
+| `eccc_swob` | `eccc` | Surface weather observations, realtime (~30 days) |
+| `eccc_swob_marine` | `eccc` | Moored buoys: waves, sea surface temperature (~30 days) |
+| `erddap_tabledap` | `erddap` | Any ERDDAP server's station/point datasets |
+| `erddap_griddap` | `erddap` | Any ERDDAP server's gridded datasets, returned lazily |
 | `cioos_metadata` | `cioos` | CIOOS metadata records — discovery only, contributes catalogue rows |
 
 Select a single dataset or a whole organization:
@@ -299,6 +304,31 @@ cat.metadata()    # titles, extents, EOVs, licences, download URLs
 GOOS EOV tags are translated to CF standard names, so `variables=["sea_surface_temperature"]`
 matches a record tagged `seaSurfaceTemperature`.
 
+## Where did this data come from?
+
+Every node carries the institution that published it, the licence and the URL it was read from,
+so attribution comes out of the result rather than out of memory:
+
+```python
+omnisea.provenance(tree)     # one row per source: institution, licence, terms, stations, span
+omnisea.citation(tree)       # an attribution block for a methods section
+```
+
+```
+Data were retrieved with omnisea 0.1.0 on 2026-08-25 from 2 source(s) across 2 station(s),
+covering 2024-07-01 to 2024-07-08.
+
+  Fisheries and Oceans Canada / Canadian Hydrographic Service — dfo_tides (1 station(s)).
+    Licence: Open Government Licence – Canada. Terms: https://open.canada.ca/...
+  Environment and Climate Change Canada — eccc_climate_daily (1 station(s)).
+    Licence: Open Government Licence – Canada. Terms: https://eccc-msc.github.io/...
+```
+
+It also reports what went *wrong* — an incomplete fetch, or stations that matched but returned
+no rows. Publishing a partial pull without noticing is the failure this is meant to prevent.
+Pass `include_urls=True` for the exact endpoint each series came from, which matters for
+realtime sources whose contents cannot be recovered later from the query alone.
+
 ## Adding your own source
 
 A new data source is **one new file**, not a refactor. omnisea models two levels — a `Provider`
@@ -306,9 +336,25 @@ is an organization (licence, base URL, auth); a `DataSource` is one queryable da
 node path, discover/fetch). Implement the interface and your source is discovered, filtered,
 CF-described and assembled alongside every built-in one.
 
-**→ [docs/adding-a-provider.md](docs/adding-a-provider.md)** is the full contract, with a
-complete worked example in [examples/csv_stations.py](examples/csv_stations.py) that the test
-suite exercises.
+**→ [docs/adding-a-provider.md](docs/adding-a-provider.md)** is the full contract.
+**→ [examples/provider_template.py](examples/provider_template.py)** is a runnable source with
+every hook commented — copy it rather than starting from scratch.
+**→ [CONTRIBUTING.md](CONTRIBUTING.md)** is the PR path.
+
+The contract is also **a program**, so a pull request self-checks:
+
+```bash
+python -m omnisea.conformance     # every registered source
+```
+
+```python
+omnisea.check_source(MySource(MyProvider()))
+```
+
+It checks the things where being wrong is *quiet*: a `standard_name` that is not in the CF
+table (bundled, so it works offline), two fields colliding on one output variable, a value
+converted with no `cf_units` to convert to, an aggregate with no `cell_methods` for `align()`
+to read. Written on a Tuesday, it found two real defects and one library-wide bug the same day.
 
 Ship it as a package and it is indexed automatically:
 
