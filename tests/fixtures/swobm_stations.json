@@ -1,0 +1,216 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "id": "9100340",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -129.9158,
+     50.8742,
+     0.0
+    ]
+   },
+   "properties": {
+    "iata_id": "",
+    "name_fr": "EAST DELLWOOD",
+    "name_en": "EAST DELLWOOD",
+    "province_territory": "XX",
+    "auto_man": "AUTO",
+    "icao_id": "",
+    "wmo_id": 46207,
+    "msc_id": "9100340",
+    "dst_time": "",
+    "std_time": "",
+    "data_provider": "Environment and Climate Change Canada (ECCC)",
+    "data_attribution_notice": "Data provided by ECCC. All rights reserved."
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "9100552",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -123.7267,
+     49.34,
+     0.0
+    ]
+   },
+   "properties": {
+    "iata_id": "",
+    "name_fr": "HALIBUT BANK",
+    "name_en": "HALIBUT BANK",
+    "province_territory": "XX",
+    "auto_man": "AUTO",
+    "icao_id": "",
+    "wmo_id": 46146,
+    "msc_id": "9100552",
+    "dst_time": "",
+    "std_time": "",
+    "data_provider": "Environment and Climate Change Canada (ECCC)",
+    "data_attribution_notice": "Data provided by ECCC. All rights reserved."
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "9100580",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -125.9983,
+     48.835,
+     0.0
+    ]
+   },
+   "properties": {
+    "iata_id": "",
+    "name_fr": "LA PEROUSE BANK",
+    "name_en": "LA PEROUSE BANK",
+    "province_territory": "XX",
+    "auto_man": "AUTO",
+    "icao_id": "",
+    "wmo_id": 46206,
+    "msc_id": "9100580",
+    "dst_time": "",
+    "std_time": "",
+    "data_provider": "Environment and Climate Change Canada (ECCC)",
+    "data_attribution_notice": "Data provided by ECCC. All rights reserved."
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "9100624",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9858,
+     49.9067,
+     0.0
+    ]
+   },
+   "properties": {
+    "iata_id": "",
+    "name_fr": "SENTRY SHOAL",
+    "name_en": "SENTRY SHOAL",
+    "province_territory": "XX",
+    "auto_man": "AUTO",
+    "icao_id": "",
+    "wmo_id": 46131,
+    "msc_id": "9100624",
+    "dst_time": "",
+    "std_time": "",
+    "data_provider": "Environment and Climate Change Canada (ECCC)",
+    "data_attribution_notice": "Data provided by ECCC. All rights reserved."
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "9100888",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -128.7668,
+     51.3835,
+     0.0
+    ]
+   },
+   "properties": {
+    "iata_id": "",
+    "name_fr": "WEST SEA OTTER",
+    "name_en": "WEST SEA OTTER",
+    "province_territory": "XX",
+    "auto_man": "AUTO",
+    "icao_id": "",
+    "wmo_id": 46204,
+    "msc_id": "9100888",
+    "dst_time": "",
+    "std_time": "",
+    "data_provider": "Environment and Climate Change Canada (ECCC)",
+    "data_attribution_notice": "Data provided by ECCC. All rights reserved."
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "9101624",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -127.9317,
+     49.7383,
+     0.0
+    ]
+   },
+   "properties": {
+    "iata_id": "",
+    "name_fr": "SOUTH BROOKS",
+    "name_en": "SOUTH BROOKS",
+    "province_territory": "XX",
+    "auto_man": "AUTO",
+    "icao_id": "",
+    "wmo_id": 46132,
+    "msc_id": "9101624",
+    "dst_time": "",
+    "std_time": "",
+    "data_provider": "Environment and Climate Change Canada (ECCC)",
+    "data_attribution_notice": "Data provided by ECCC. All rights reserved."
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "9102000",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -123.43,
+     49.025,
+     0.0
+    ]
+   },
+   "properties": {
+    "iata_id": "",
+    "name_fr": "Southern Georgia Strait",
+    "name_en": "Southern Georgia Strait",
+    "province_territory": "XX",
+    "auto_man": "AUTO",
+    "icao_id": "",
+    "wmo_id": 4600303,
+    "msc_id": "9102000",
+    "dst_time": "",
+    "std_time": "",
+    "data_provider": "Environment and Climate Change Canada (ECCC) in support of Ocean Protection Plan.",
+    "data_attribution_notice": "Data provided by ECCC. All rights reserved."
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "9102001",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -123.35667,
+     49.301667,
+     0.0
+    ]
+   },
+   "properties": {
+    "iata_id": "",
+    "name_fr": "Entrance to English Bay",
+    "name_en": "Entrance to English Bay",
+    "province_territory": "XX",
+    "auto_man": "AUTO",
+    "icao_id": "",
+    "wmo_id": 4600304,
+    "msc_id": "9102001",
+    "dst_time": "",
+    "std_time": "",
+    "data_provider": "Environment and Climate Change Canada (ECCC) in support of Ocean Protection Plan.",
+    "data_attribution_notice": "Data provided by ECCC. All rights reserved."
+   }
+  }
+ ],
+ "numberMatched": 8,
+ "numberReturned": 8,
+ "timeStamp": "2026-08-25T13:12:22.705644Z"
+}

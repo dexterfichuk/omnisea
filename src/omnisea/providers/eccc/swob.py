@@ -6,13 +6,15 @@ observations live:
 
 * Land SWOB is an OGC API - Features collection (``swob-realtime``) on ``api.weather.gc.ca``.
 * **Marine SWOB is not on that API at all.** ``swob-marine-stations`` lists the 42 moored buoys,
-  but ``swob-realtime`` holds none of their observations — every record in it carries a
-  ``-atmospheric-surface_weather-`` dataset id, and filtering it by a buoy's ``msc_id``,
-  ``wmo_synop_id``, name or position returns zero matches. The buoy observations are published
-  only as SWOB-ML XML on the MSC Datamart, one file per station per report.
+  but ``swob-realtime`` holds none of their observations. Filtering it by a buoy's ``msc_id``,
+  ``wmo_synop_id``, station name, or a bbox around its position returns zero matches over all
+  time; its 674 queryables contain no wave or sea-surface field; and every record sampled from
+  it carries an ``-atmospheric-surface_weather-`` dataset id. The buoy observations are
+  published only as SWOB-ML XML on the MSC Datamart, one file per station per report.
 
-So :class:`EcccSwobMarine` speaks a different transport from every other ECCC source, which is
-why it overrides discovery's counterpart, ``fetch``, rather than inheriting the OGC one.
+:class:`EcccSwobMarine` therefore discovers over the OGC API like everything else here and then
+retrieves over a different transport entirely, which is why it is the one source that replaces
+``fetch`` rather than inheriting it.
 """
 
 from __future__ import annotations
@@ -636,7 +638,11 @@ def _get_text(url: str, *, source: str) -> str | None:
             url=resp.url,
             status=resp.status_code,
         )
-    resp.encoding = resp.encoding or "utf-8"
+    # Trust only a charset the server actually declares. `requests` otherwise falls back to
+    # ISO-8859-1 for any text/* body, and SWOB-ML is UTF-8 with a degree sign in the `-uom` of
+    # every temperature and direction — decoded as Latin-1 the units silently become mojibake.
+    if "charset=" not in resp.headers.get("Content-Type", "").lower():
+        resp.encoding = "utf-8"
     return resp.text
 
 

@@ -37,7 +37,7 @@ from .hydrometric import (
     EcccHydrometricDailyMean,
     EcccHydrometricMonthlyMean,
 )
-from .swob import EcccSwobRealtime
+from .swob import EcccSwobMarine, EcccSwobRealtime
 
 __all__ = [
     "EcccProvider",
@@ -48,6 +48,7 @@ __all__ = [
     "EcccAhccdSeasonal",
     "EcccAhccdAnnual",
     "EcccSwobRealtime",
+    "EcccSwobMarine",
     "EcccHydrometric",
     "EcccHydrometricDailyMean",
     "EcccHydrometricMonthlyMean",
@@ -72,6 +73,7 @@ class EcccProvider(OgcFeaturesProvider):
             EcccAhccdSeasonal(self),
             EcccAhccdAnnual(self),
             EcccSwobRealtime(self),
+            EcccSwobMarine(self),
             EcccHydrometric(self),
             EcccHydrometricDailyMean(self),
             EcccHydrometricMonthlyMean(self),
