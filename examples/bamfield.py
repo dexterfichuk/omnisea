@@ -300,6 +300,38 @@ else:
     print("\nThose numbers matching is the end-to-end proof: the join, the units and")
     print("the time handling are all right, not merely plausible.")
 
+    # -- correlated features across the sources: see them, then drop them -------------
+    print("\nMultiple sources publish the same physical signal several ways over, and a")
+    print("model matrix built from all of them is collinear. See the redundancy first:")
+    redundancy = omnisea.correlations(data, threshold=0.9)
+    print(redundancy.to_string(index=False))
+
+    pruned = omnisea.drop_correlated(data, threshold=0.9)
+    print("\ndrop_correlated() keeps the better-covered column of each pair, and says why:")
+    for column, why in pruned.attrs["omnisea_dropped"].items():
+        print(f"  dropped {column:40s} {why}")
+    print("\nYour own columns (here water_temp_c) are carried through align(on=...) and are")
+    print("never dropped — correlation with YOUR data is the point of the model, not")
+    print("redundancy. Pin any feature you trust with keep=.")
+
+    def wide_fit(matrix: pd.DataFrame) -> tuple[int, float]:
+        columns = [c for c in matrix.columns
+                   if c != "water_temp_c"
+                   and pd.api.types.is_numeric_dtype(matrix[c])
+                   and matrix[c].nunique() > 1]
+        features = matrix[columns].dropna(axis=1)
+        train_x, test_x, train_y, test_y = train_test_split(
+            features, matrix["water_temp_c"], test_size=0.3, random_state=0)
+        fitted = LinearRegression().fit(train_x, train_y)
+        return features.shape[1], r2_score(test_y, fitted.predict(test_x))
+
+    n_all, r2_all = wide_fit(data)
+    n_pruned, r2_pruned = wide_fit(pruned)
+    print(f"\n  everything omnisea returned : {n_all:2d} predictors -> R2 = {r2_all:.3f}")
+    print(f"  after drop_correlated       : {n_pruned:2d} predictors -> R2 = {r2_pruned:.3f}")
+    print("\nSame predictive power from fewer, non-duplicated features — and every removal")
+    print("is recorded in attrs['omnisea_dropped'], auditable like the resampling choices.")
+
 
 # ---------------------------------------------------------------------------
 rule("12. Save it")

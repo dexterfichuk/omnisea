@@ -171,6 +171,29 @@ water_surface_height..._at_extremum@08545          nearest within 30min (0/8 mat
 
 That last line is the point: what *couldn't* be matched is reported, not silently `NaN`.
 
+### See what's redundant across sources, then drop it
+
+A matrix assembled from many sources is collinear by construction — a station's mean, minimum
+and maximum temperature share one week of weather, `heating_degree_days` is *derived from* mean
+temperature, and an observed water level and its harmonic prediction are nearly one column. A
+model fed all of them still predicts, but OLS splits the true effect arbitrarily among the
+near-copies and the coefficients stop meaning anything.
+
+```python
+omnisea.correlations(X)                        # pairs that move together, strongest first
+X = omnisea.drop_correlated(X, threshold=0.95)
+X.attrs["omnisea_dropped"]                     # what went, and why
+```
+
+`correlations()` is the evidence: each pair's `r` comes with `n`, the overlapping samples it
+was computed on, because an r of 1.0 over three points is noise wearing a convincing costume
+(compass directions are excluded — a linear r between bearings is meaningless, the same reason
+`align()` combines them as unit vectors). `drop_correlated()` removes only near-duplicates,
+keeps the better-covered column of each pair, and records every removal — auditable like the
+resampling choices. Columns you carried through `align(on=...)` are **never dropped and never
+cause a drop** (correlation with *your* response is signal, not redundancy), and `keep=` pins
+the copy you trust so its partners go instead.
+
 ### Then build a model
 
 `examples/bamfield.ipynb` runs this end to end: a mock five-day logger deployment sampling every
@@ -473,7 +496,7 @@ test validates every emitted `standard_name` against the published table.
 ## Tests
 
 ```bash
-pytest -m "not network"   # 531 offline tests over committed real API responses
+pytest -m "not network"   # 547 offline tests over committed real API responses
 pytest -m network         # 52 live integration tests
 ```
 

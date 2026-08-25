@@ -463,3 +463,165 @@ class TestCircularQuantities:
         assert "circular" in align(tree, freq="1h").attrs["omnisea_aggregation"][
             "wind_from_direction@A"
         ]
+
+
+# --------------------------------------------------------------------------- redundancy
+
+
+def wide_frame(n=40, seed=7):
+    """A model matrix with a planted near-duplicate cluster and one independent column.
+
+    temp_mean / temp_max / degree_days are the shape real daily climate takes: one signal
+    published three ways. tide is genuinely independent of all of them.
+    """
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range("2024-07-01", periods=n, freq="2h", name="time")
+    base = np.sin(np.arange(n) / 5.0) * 4 + 15
+    return pd.DataFrame({
+        "temp_mean": base + rng.normal(0, 0.05, n),
+        "temp_max": base + 3 + rng.normal(0, 0.05, n),
+        "degree_days": (18 - base) + rng.normal(0, 0.05, n),  # strongly NEGATIVE correlate
+        "tide": np.sin(np.arange(n) / 1.9) + 2 + rng.normal(0, 0.3, n),
+    }, index=idx)
+
+
+class TestCorrelations:
+    def test_a_planted_pair_is_found_with_r_and_n(self):
+        pairs = omnisea.correlations(wide_frame(), threshold=0.9)
+        pair_sets = zip(pairs["feature_a"], pairs["feature_b"], strict=True)
+        found = {frozenset((a, b)) for a, b in pair_sets}
+        assert frozenset(("temp_mean", "temp_max")) in found
+        row = pairs[(pairs["feature_a"] == "temp_mean") & (pairs["feature_b"] == "temp_max")]
+        assert row["r"].iloc[0] > 0.99
+        assert row["n"].iloc[0] == 40
+
+    def test_strong_negative_correlation_ranks_by_magnitude(self):
+        """degree_days runs opposite to temperature; |r| is what redundancy is about."""
+        pairs = omnisea.correlations(wide_frame(), threshold=0.9)
+        assert (pairs["r"] < 0).any(), "the negative correlate must be reported"
+        magnitudes = pairs["r"].abs().to_list()
+        assert magnitudes == sorted(magnitudes, reverse=True), "strongest pair first"
+
+    def test_threshold_zero_shows_every_pair(self):
+        pairs = omnisea.correlations(wide_frame(), threshold=0.0)
+        assert len(pairs) == 6  # 4 columns -> 6 pairs
+
+    def test_the_independent_column_is_not_flagged(self):
+        pairs = omnisea.correlations(wide_frame(), threshold=0.9)
+        flagged = set(pairs["feature_a"]) | set(pairs["feature_b"])
+        assert "tide" not in flagged
+
+    def test_a_perfect_r_over_three_points_is_not_reported(self):
+        """Ragged overlap: r=1.0 on 3 samples is noise wearing a convincing costume."""
+        frame = wide_frame()
+        sparse = pd.Series(np.nan, index=frame.index)
+        sparse.iloc[:3] = frame["temp_mean"].iloc[:3] * 2 + 1  # exactly collinear, n=3
+        frame["sparse_sensor"] = sparse
+        pairs = omnisea.correlations(frame, threshold=0.9)
+        flagged = set(pairs["feature_a"]) | set(pairs["feature_b"])
+        assert "sparse_sensor" not in flagged
+        assert "sparse_sensor" in set(
+            omnisea.correlations(frame, threshold=0.9, min_overlap=3)["feature_b"]
+        ) | set(omnisea.correlations(frame, threshold=0.9, min_overlap=3)["feature_a"])
+
+    def test_directions_and_qc_flags_are_excluded_but_spread_is_not(self):
+        """Pearson r between bearings is meaningless; a directional SPREAD is a width."""
+        frame = wide_frame()
+        frame["wind_from_direction"] = frame["temp_mean"] * 20 % 360
+        frame["wave_directional_spread"] = frame["temp_mean"] + 5
+        frame["temp_mean_qc"] = 1.0
+        pairs = omnisea.correlations(frame, threshold=0.9)
+        flagged = set(pairs["feature_a"]) | set(pairs["feature_b"])
+        assert "wind_from_direction" not in flagged
+        assert "temp_mean_qc" not in flagged
+        assert "wave_directional_spread" in flagged
+
+    def test_fewer_than_two_usable_columns_is_an_empty_table(self):
+        lone = pd.DataFrame({"only": [1.0, 2.0, 3.0]})
+        pairs = omnisea.correlations(lone)
+        assert list(pairs.columns) == ["feature_a", "feature_b", "r", "n"]
+        assert pairs.empty
+
+    def test_it_is_exported(self):
+        from omnisea.align import correlations, drop_correlated
+
+        assert omnisea.correlations is correlations
+        assert omnisea.drop_correlated is drop_correlated
+
+
+class TestDropCorrelated:
+    def test_one_of_each_near_duplicate_pair_goes_and_the_reason_is_recorded(self):
+        pruned = omnisea.drop_correlated(wide_frame(), threshold=0.95)
+        cluster = {"temp_mean", "temp_max", "degree_days"}
+        survivors = cluster & set(pruned.columns)
+        assert len(survivors) == 1, f"the cluster must collapse to one column, kept {survivors}"
+        assert "tide" in pruned.columns
+        assert set(pruned.attrs["omnisea_dropped"]) == cluster - survivors
+        for reason in pruned.attrs["omnisea_dropped"].values():
+            assert "|r|=" in reason and "samples" in reason
+
+    def test_the_better_covered_column_is_the_one_kept(self):
+        frame = wide_frame()
+        frame.loc[frame.index[:10], "temp_mean"] = np.nan  # temp_max now has more coverage
+        pruned = omnisea.drop_correlated(frame[["temp_mean", "temp_max"]], threshold=0.95)
+        assert list(pruned.columns) == ["temp_max"]
+
+    def test_on_equal_coverage_the_first_column_wins(self):
+        pruned = omnisea.drop_correlated(wide_frame()[["temp_mean", "temp_max"]], threshold=0.95)
+        assert list(pruned.columns) == ["temp_mean"]
+
+    def test_keep_pins_a_column_and_its_partner_goes_instead(self):
+        frame = wide_frame()
+        frame.loc[frame.index[:10], "temp_max"] = np.nan  # coverage says drop temp_max...
+        pruned = omnisea.drop_correlated(
+            frame[["temp_mean", "temp_max"]], threshold=0.95, keep="temp_max"
+        )
+        assert "temp_max" in pruned.columns  # ...but the pin overrides coverage
+        assert "temp_mean" in pruned.attrs["omnisea_dropped"]
+
+    def test_nothing_above_threshold_leaves_the_frame_alone(self):
+        frame = wide_frame()[["temp_mean", "tide"]]
+        pruned = omnisea.drop_correlated(frame, threshold=0.95)
+        assert list(pruned.columns) == ["temp_mean", "tide"]
+        assert pruned.attrs["omnisea_dropped"] == {}
+
+    def test_existing_audit_attrs_survive_the_prune(self):
+        frame = wide_frame()
+        frame.attrs["omnisea_aggregation"] = {"temp_mean": "mean"}
+        pruned = omnisea.drop_correlated(frame, threshold=0.95)
+        assert pruned.attrs["omnisea_aggregation"] == {"temp_mean": "mean"}
+
+    def test_your_own_columns_are_never_dropped_nor_cause_drops(self, ragged_tree):
+        """End to end through align(on=...): y correlating with a feature is the POINT."""
+        stamps = pd.date_range("2024-07-01", "2024-07-07", freq="6h")
+        tree_frame = align(ragged_tree, on=pd.DataFrame({"time": stamps}), tolerance="4h")
+        mine = pd.DataFrame({
+            "time": stamps,
+            # y is (nearly) the water level itself: r ~ 1 with a fetched feature.
+            "my_response": tree_frame["water_level"].to_numpy() * 2 + 0.001,
+        })
+        data = align(ragged_tree, on=mine, tolerance="4h")
+        assert "my_response" in data.attrs["omnisea_carried"]
+
+        pruned = omnisea.drop_correlated(data, threshold=0.9)
+        assert "my_response" in pruned.columns, "your response variable must survive"
+        assert "water_level" in pruned.columns, (
+            "correlation with YOUR column is signal, not redundancy — it must not "
+            "knock the feature out"
+        )
+
+
+class TestReopenedTree:
+    def test_align_on_your_timestamps_works_after_a_netcdf_round_trip(
+        self, ragged_tree, tmp_path
+    ):
+        """Save today, model tomorrow: the reopened tree carries microsecond datetimes while
+        a user's stamps are pandas-native nanoseconds, and merge_asof refuses to convert."""
+        pytest.importorskip("netCDF4")
+        path = tmp_path / "roundtrip.nc"
+        ragged_tree.to_netcdf(path)
+        reopened = xr.open_datatree(path)
+
+        stamps = pd.date_range("2024-07-02", "2024-07-06", freq="6h")
+        aligned = align(reopened, on=pd.DataFrame({"time": stamps}), tolerance="4h")
+        assert aligned["water_level"].notna().all()

@@ -28,7 +28,7 @@ import xarray as xr
 __version__ = "0.1.0"
 
 from . import cf, registry
-from .align import add_local, aggregation_for, align
+from .align import add_local, aggregation_for, align, correlations, drop_correlated
 from .catalog import Catalog
 from .errors import (
     MissingDependencyError,
@@ -86,6 +86,8 @@ __all__ = [
     "align",
     "add_local",
     "aggregation_for",
+    "correlations",
+    "drop_correlated",
     # tree helpers
     "summary",
     "fields",

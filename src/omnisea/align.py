@@ -37,7 +37,14 @@ from .errors import QueryError
 
 log = logging.getLogger("omnisea.align")
 
-__all__ = ["align", "add_local", "aggregation_for", "is_circular"]
+__all__ = [
+    "align",
+    "add_local",
+    "aggregation_for",
+    "correlations",
+    "drop_correlated",
+    "is_circular",
+]
 
 #: Units that mark an angular quantity.
 DEGREE_UNITS = frozenset({"degree", "degrees", "deg", "degree_true", "degrees_true", "\u00b0"})
@@ -303,9 +310,13 @@ def align(
             applied[key] = rule
 
     if not pieces:
+        if carried is not None:
+            out = carried.copy()
+            out.attrs["omnisea_carried"] = [str(c) for c in carried.columns]
+            return out
         empty = pd.DataFrame(index=target if target is not None else pd.DatetimeIndex([]))
         empty.index.name = "time"
-        return empty if carried is None else carried.copy()
+        return empty
 
     wide = pd.concat(pieces, axis=1)
     wide.index.name = "time"
@@ -320,6 +331,11 @@ def align(
 
     wide = _name_columns(wide, columns)
     wide.attrs["omnisea_aggregation"] = {f"{v}@{s}" if s else v: r for (v, s), r in applied.items()}
+    # Which columns are the caller's own rather than fetched features. drop_correlated() reads
+    # this so it can never prune someone's response variable out of their own model matrix.
+    wide.attrs["omnisea_carried"] = (
+        [] if carried is None else [str(c) for c in carried.columns]
+    )
     wide.attrs["omnisea_alignment"] = (
         f"resampled to {freq}" if freq else f"joined to {len(target)} supplied timestamps"
         + (f" within {tolerance}" if tolerance else "")
@@ -421,8 +437,13 @@ def _join_to(
             # a constant column stretching across the whole query.
             described = f"{direction} (UNBOUNDED: single observation, pass tolerance= to cap)"
 
-    left = pd.DataFrame({"__t": target}).sort_values("__t")
-    right = pd.DataFrame({"__t": series.index, "__v": series.to_numpy()}).sort_values("__t")
+    # Both sides normalized to nanoseconds: a tree reopened from netCDF carries microsecond
+    # datetimes while a user's timestamps are pandas-native nanoseconds, and merge_asof
+    # refuses to join across resolutions rather than converting.
+    left = pd.DataFrame({"__t": pd.DatetimeIndex(target).as_unit("ns")}).sort_values("__t")
+    right = pd.DataFrame(
+        {"__t": pd.DatetimeIndex(series.index).as_unit("ns"), "__v": series.to_numpy()}
+    ).sort_values("__t")
     merged = pd.merge_asof(
         left, right, on="__t", direction=used_direction, tolerance=window
     )
@@ -466,6 +487,143 @@ def _name_columns(wide: pd.DataFrame, style: str) -> pd.DataFrame:
             names.append(f"{variable}@{station}")
     out = wide.copy()
     out.columns = names
+    return out
+
+
+# --------------------------------------------------------------------------- redundancy
+
+
+def _correlation_columns(frame: pd.DataFrame) -> list[str]:
+    """The columns a linear correlation can honestly describe.
+
+    QC flags are labels, not measurements. Compass bearings are excluded because Pearson r
+    between angles is meaningless — 350 deg and 10 deg point nearly the same way and correlate
+    as though they did not — which is the same reason :func:`align` combines directions as unit
+    vectors instead of averaging them.
+    """
+    out: list[str] = []
+    for column in frame.columns:
+        name = str(column).lower()
+        if name.endswith("_qc"):
+            continue
+        if "direction" in name and "spread" not in name:
+            continue
+        if not pd.api.types.is_numeric_dtype(frame[column]):
+            continue
+        out.append(column)
+    return out
+
+
+def correlations(
+    frame: pd.DataFrame,
+    *,
+    threshold: float = 0.8,
+    min_overlap: int = 10,
+    method: str = "pearson",
+) -> pd.DataFrame:
+    """Pairs of columns that move together — the redundancy view of an aligned frame.
+
+    One aligned frame can hold the same physical signal several times over: a station's mean,
+    minimum and maximum temperature share one cadence and one week of weather; an observed
+    water level and its harmonic prediction are nearly a single column; two sources five
+    kilometres apart measure the same rain. A model fed all of them still predicts, but OLS
+    splits the true effect arbitrarily among the near-copies and the coefficients stop meaning
+    anything. This is the view that shows the problem; :func:`drop_correlated` removes it.
+
+    Returns one row per pair with ``|r| >= threshold`` — ``feature_a``, ``feature_b``, ``r``,
+    and ``n``, the overlapping samples the correlation was computed on — strongest first. Pass
+    ``threshold=0`` to see every pair.
+
+    Pairs overlapping on fewer than ``min_overlap`` samples are excluded rather than reported:
+    ragged sources joined onto one axis can share only a handful of timestamps, and an r of
+    1.0 over three points is noise wearing a convincing costume. QC flags and compass
+    directions are excluded — see :func:`_correlation_columns` for why a linear r cannot
+    describe a bearing.
+    """
+    columns = _correlation_columns(frame)
+    if len(columns) < 2:
+        return pd.DataFrame(columns=["feature_a", "feature_b", "r", "n"])
+    numeric = frame[columns]
+
+    corr = numeric.corr(method=method, min_periods=max(int(min_overlap), 2))
+    present = numeric.notna().astype(int)
+    overlap = present.T @ present
+
+    rows: list[dict[str, Any]] = []
+    for i, a in enumerate(columns):
+        for b in columns[i + 1:]:
+            n = int(overlap.loc[a, b])
+            r = corr.loc[a, b]
+            if n < min_overlap or pd.isna(r) or abs(float(r)) < threshold:
+                continue
+            rows.append({"feature_a": str(a), "feature_b": str(b), "r": float(r), "n": n})
+
+    pairs = pd.DataFrame(rows, columns=["feature_a", "feature_b", "r", "n"])
+    if pairs.empty:
+        return pairs
+    return (
+        pairs.sort_values("r", key=lambda s: s.abs(), ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def drop_correlated(
+    frame: pd.DataFrame,
+    *,
+    threshold: float = 0.95,
+    keep: Any = (),
+    min_overlap: int = 10,
+    method: str = "pearson",
+) -> pd.DataFrame:
+    """Drop one column of each highly correlated pair, and say which and why.
+
+    Walks the pairs from :func:`correlations` strongest first; from each pair still standing it
+    keeps the column with **more non-missing values** — coverage is the one merit visible in
+    the frame itself — and on a tie keeps the one appearing first. Every removal is recorded in
+    the result's ``attrs["omnisea_dropped"]`` as ``{dropped: reason}``, so the pruning is
+    auditable rather than implicit, exactly like the resampling choices in
+    ``attrs["omnisea_aggregation"]``.
+
+    Two kinds of column are never dropped:
+
+    * **Your own.** Columns carried through :func:`align`'s ``on=`` (recorded in
+      ``attrs["omnisea_carried"]``) are the response and covariates you brought — correlation
+      *with* them is the point of the model, not redundancy, so pairs touching them are
+      ignored entirely rather than resolved.
+    * **Pinned.** Anything named in ``keep=`` survives; its correlated partners are dropped
+      instead, which is how you say "of these near-copies, this is the one I trust".
+
+    The default threshold is deliberately conservative — 0.95 removes only near-duplicates.
+    Which features belong in a model is a scientific judgment; this automates the part with a
+    right answer and leaves the rest to you, with :func:`correlations` as the evidence.
+    """
+    pinned = {keep} if isinstance(keep, str) else {str(k) for k in keep}
+    own = {str(c) for c in frame.attrs.get("omnisea_carried") or ()}
+
+    pairs = correlations(frame, threshold=threshold, min_overlap=min_overlap, method=method)
+    dropped: dict[str, str] = {}
+    for row in pairs.itertuples():
+        a, b = row.feature_a, row.feature_b
+        if a in dropped or b in dropped or a in own or b in own:
+            continue
+        if a in pinned and b in pinned:
+            continue
+        if a in pinned:
+            victim, kept = b, a
+        elif b in pinned:
+            victim, kept = a, b
+        else:
+            coverage_a = int(frame[a].notna().sum())
+            coverage_b = int(frame[b].notna().sum())
+            if coverage_a != coverage_b:
+                victim, kept = (a, b) if coverage_a < coverage_b else (b, a)
+            else:
+                first_is_a = frame.columns.get_loc(a) <= frame.columns.get_loc(b)
+                victim, kept = (b, a) if first_is_a else (a, b)
+        dropped[victim] = f"|r|={abs(row.r):.3f} with {kept} over {row.n} samples"
+
+    out = frame.drop(columns=list(dropped))
+    out.attrs = {**frame.attrs, "omnisea_dropped": dropped}
     return out
 
 
