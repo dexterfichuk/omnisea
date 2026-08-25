@@ -314,6 +314,46 @@ omnisea.fetch(..., providers="dfo_tides")   # one dataset
 omnisea.fetch(..., providers="eccc")        # every ECCC dataset, all thirteen
 ```
 
+### Any ERDDAP server
+
+ERDDAP is the same software running at IOOS, CIOOS, NOAA CoastWatch, Hakai, EMODnet and a few
+hundred other institutions, so **one adapter reaches all of them** — point it at a different
+server and that institution's whole catalogue is queryable with no new code:
+
+```python
+omnisea.fetch(lat=48.8353, lon=-125.1358, radius_km=30, time=("2024-07-01", "2024-07-08"),
+              providers="erddap_tabledap",
+              erddap_server="https://catalogue.hakai.org/erddap")
+```
+
+| Server | `erddap_server=` |
+|---|---|
+| IOOS Sensors (default) | `https://erddap.sensors.ioos.us/erddap` |
+| DFO Pacific / CIOOS | `https://data.cioospacific.ca/erddap` |
+| Hakai Institute | `https://catalogue.hakai.org/erddap` |
+| NOAA CoastWatch | `https://coastwatch.pfeg.noaa.gov/erddap` |
+| SalishSeaCast | `https://salishsea.eos.ubc.ca/erddap` |
+| NW Environmental Moorings | `https://nwem.apl.uw.edu/erddap` |
+
+**No field table is hardcoded.** Each dataset publishes its own `standard_name`, `units`,
+`cell_methods` and QARTOD `ancillary_variables`, and omnisea reads that rather than replacing
+it — so `align()` resamples an ERDDAP variable by the author's own metadata. `tabledap` joins
+the point path (a table holding many platforms is split per station rather than collapsed);
+`griddap` returns a **lazy** dataset, so a decade of a global analysis can sit in your tree and
+you pay only for the pixels you read.
+
+Discovery consults both `allDatasets` and the search index and unions them, because they
+disagree in practice. A dataset whose publisher declared no extent is invisible to both — name
+it directly to bypass the metadata filters:
+
+```python
+omnisea.fetch(..., erddap_datasets=["PRIMED_wavebuoy"], erddap_server=...)
+```
+
+If a named dataset can't be served as a time series — CIOOS Pacific's `IOS_P26_Annualized` is
+indexed by an integer `Year` column and publishes no `time` variable at all — you get an
+`omnisea` error saying so, not an upstream `400`.
+
 ### CIOOS metadata records
 
 `cioos_metadata` reads records authored in the
@@ -503,7 +543,7 @@ test validates every emitted `standard_name` against the published table.
 ## Tests
 
 ```bash
-pytest -m "not network"   # 549 offline tests over committed real API responses
+pytest -m "not network"   # 557 offline tests over committed real API responses
 pytest -m network         # 52 live integration tests
 ```
 

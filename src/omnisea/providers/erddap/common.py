@@ -116,6 +116,18 @@ class ErddapSource(RetrievalSource):
         wanted = cf.resolve_names(query.variables)
         matches: list[StationMatch] = []
         for info in infos:
+            unusable = self.unusable_reason(info)
+            if unusable:
+                if named:
+                    # They asked for this one by name, so silence would look like "no data
+                    # here". Name the dataset and the reason instead.
+                    raise ProviderError(
+                        f"{info.dataset_id} on {server} cannot be read as a time series: "
+                        f"{unusable}",
+                        provider=self.name,
+                    )
+                log.debug("%s: skipping %s — %s", self.name, info.dataset_id, unusable)
+                continue
             match = self._match_for(query, server, info, wanted, explicit=bool(named))
             if match is not None:
                 # _match_for already attached the site and, for datasets with real extent,
@@ -123,6 +135,15 @@ class ErddapSource(RetrievalSource):
                 matches.append(match)
         log.debug("%s discovered %d dataset(s) on %s", self.name, len(matches), server)
         return matches
+
+    def unusable_reason(self, info: DatasetInfo) -> str | None:
+        """Why this adapter cannot read ``info``, or ``None`` when it can.
+
+        Checked before a match is built, so a dataset omnisea cannot serve is refused with an
+        explanation rather than becoming a request the server rejects for reasons the user
+        cannot act on.
+        """
+        return None
 
     def _match_for(
         self,

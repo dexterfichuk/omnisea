@@ -64,6 +64,28 @@ class ErddapTableSource(ErddapSource):
     protocol = "tabledap"
     data_structure = "table"
 
+    def unusable_reason(self, info: DatasetInfo) -> str | None:
+        """Refuse a table with no ``time`` variable, and say what it has instead.
+
+        Not every tabledap dataset is a time series. CIOOS Pacific's ``IOS_P26_Annualized``
+        (Ocean Station Papa) is indexed by an integer ``Year`` column and publishes no ``time``
+        at all, so the ``&time>=`` constraint every request carries comes back as
+        ``400 Unrecognized constraint variable="time"`` — an upstream error the user can do
+        nothing with. Turning a year column into a time axis would mean inventing an instant
+        for each row, the same reason ``climate-normals`` is unsupported rather than guessed at.
+        """
+        if "time" in info.variables:
+            return None
+        candidates = [
+            name for name in info.variables
+            if any(word in name.lower() for word in ("year", "date", "month", "day"))
+        ]
+        hint = f" It is indexed by {', '.join(candidates)}." if candidates else ""
+        return (
+            "the dataset publishes no 'time' variable, so it has no time axis to place rows "
+            f"on.{hint} omnisea will not invent one"
+        )
+
     def fetch(self, query: Query, matches: list[StationMatch]) -> list[StationSeries]:
         results = map_threads(
             lambda m: self._fetch_dataset(query, m),
@@ -88,9 +110,23 @@ class ErddapTableSource(ErddapSource):
             )
 
         rows = self._download(query, server, info)
-        if not rows:
-            return []
-        return self.series_from_rows(query, match, info, rows)
+        series = self.series_from_rows(query, match, info, rows) if rows else []
+        if not series:
+            # Name it rather than returning nothing. A dataset can match on metadata and still
+            # hold no usable rows — CIOOS Pacific's IYS_2019_CTD declares a `time` variable
+            # that is entirely empty, so ERDDAP answers every window with "no matching
+            # results" — and a tree that simply lacks the node reads as "there is nothing
+            # here". An empty series is recorded in the tree's omnisea_empty_stations and
+            # reported by citation(), which is what the OGC sources have always done.
+            return [
+                StationSeries(
+                    match=match,
+                    frame=pd.DataFrame(),
+                    node_path=f"{self.node_path}/{safe_name(info.dataset_id)}",
+                    attrs=self._node_attrs(info, server),
+                )
+            ]
+        return series
 
     def _download(
         self, query: Query, server: str, info: DatasetInfo

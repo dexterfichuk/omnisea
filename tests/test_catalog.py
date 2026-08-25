@@ -127,6 +127,37 @@ class TestErrors:
         catalog = Catalog(query, [match()], {"eccc_swob": "boom"})
         assert catalog.filter(source="dfo_tides").errors == {"eccc_swob": "boom"}
 
+    def test_a_discovery_failure_reaches_the_tree(self, query):
+        """A one-shot fetch() never shows the Catalog, so the failure has to travel."""
+        catalog = Catalog(query, [], {"eccc_swob": "UpstreamError: HTTP 503"})
+        tree = catalog.fetch()
+        assert tree.attrs["omnisea_fetch_incomplete"] == 1
+        assert "eccc_swob (discovery)" in tree.attrs["omnisea_fetch_errors"]
+        assert "503" in tree.attrs["omnisea_fetch_errors"]
+
+    def test_an_empty_tree_from_a_dead_source_is_not_silent(self, query):
+        """Empty + no explanation reads as "there is nothing here" — the wrong conclusion."""
+        from omnisea.provenance import citation
+
+        catalog = Catalog(query, [], {"erddap_tabledap": "ProviderError: no time variable"})
+        assert "incomplete" in citation(catalog.fetch()).lower()
+
+    def test_retention_notes_reach_the_tree_and_the_citation(self, query):
+        from omnisea.provenance import citation
+
+        catalog = Catalog(
+            query, [], notes={"eccc_hydrometric": "holds only the last ~30 days"}
+        )
+        tree = catalog.fetch()
+        assert "30 days" in tree.attrs["omnisea_source_notes"]
+        assert "could not cover the requested window" in citation(tree)
+
+    def test_a_clean_retrieval_carries_no_failure_attributes(self, query):
+        tree = Catalog(query, []).fetch()
+        assert "omnisea_fetch_errors" not in tree.attrs
+        assert "omnisea_fetch_incomplete" not in tree.attrs
+        assert "omnisea_source_notes" not in tree.attrs
+
 
 class TestFrame:
     def test_frame_has_the_documented_columns(self, catalog):

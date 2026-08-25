@@ -105,7 +105,12 @@ def citation(
 
     detail = provenance(tree, by="node")
     if detail.empty:
-        return "No data sources — this tree is empty."
+        # An empty tree is the case where saying *why* matters most: "no data" and "a server
+        # was down" look identical here, and only one of them means there is nothing to study.
+        reasons = _incompleteness_lines(tree, "- " if style == "markdown" else "  ")
+        if not reasons:
+            return "No data sources — this tree is empty."
+        return "\n".join(["No data was retrieved. Why:", "", *reasons])
 
     summary = provenance(tree, by="source")
     accessed = str(tree.attrs.get("history", "")).split(" ", 1)[0] or "unknown"
@@ -149,9 +154,24 @@ def citation(
                     prefix = "    - " if style == "markdown" else "      "
                     lines.append(f"{prefix}{url_row['station_id']}: {url_row['source_url']}")
 
+    caveats = _incompleteness_lines(tree, bullet)
+    if caveats:
+        lines.append("")
+        lines.extend(caveats)
+
+    return "\n".join(lines)
+
+
+def _incompleteness_lines(tree: xr.DataTree, bullet: str) -> list[str]:
+    """Everything that qualifies the result: failures, empty stations, coverage gaps.
+
+    Shared by the populated and the empty citation, so a retrieval that returned nothing still
+    explains itself instead of reading as "there is no data here".
+    """
+    lines: list[str] = []
+
     incomplete = tree.attrs.get("omnisea_fetch_errors")
     if incomplete:
-        lines.append("")
         lines.append(
             f"{bullet}NOTE: this retrieval was incomplete. Failed sources: {incomplete}"
         )
@@ -163,7 +183,13 @@ def citation(
             f"{bullet}NOTE: these stations were matched but returned no rows: {listed}"
         )
 
-    return "\n".join(lines)
+    notes = tree.attrs.get("omnisea_source_notes")
+    if notes:
+        lines.append(
+            f"{bullet}NOTE: a source could not cover the requested window: {notes}"
+        )
+
+    return lines
 
 
 def _describe_window(detail: pd.DataFrame) -> str:

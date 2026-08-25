@@ -287,7 +287,9 @@ class Catalog:
             by_source.setdefault(m.source, []).append(m)
 
         if not by_source:
-            return build_tree(query, [], group_by_site=group_by_site)
+            return self._record_incompleteness(
+                build_tree(query, [], group_by_site=group_by_site), {}
+            )
 
         failures: dict[str, str] = {}
 
@@ -310,12 +312,40 @@ class Catalog:
         ):
             results.extend(chunk)
 
-        tree = build_tree(query, results, group_by_site=group_by_site)
-        if failures:
+        return self._record_incompleteness(
+            build_tree(query, results, group_by_site=group_by_site), failures
+        )
+
+    def _record_incompleteness(
+        self, tree: xr.DataTree, failures: Mapping[str, str]
+    ) -> xr.DataTree:
+        """Stamp what went wrong onto the tree, from *both* steps of the retrieval.
+
+        Discovery failures used to stop at the :class:`Catalog`, which is fine when someone
+        prints it and decides — but a one-shot :func:`omnisea.fetch` never shows that object,
+        so a source that died during discovery produced a tree with no trace of it. An empty
+        tree then reads as "there is nothing here" when the truth was "a server was down",
+        which is exactly the silent wrongness this library exists to prevent.
+
+        Recorded rather than raised: :func:`omnisea.discover` deliberately survives one dead
+        API so the other sixteen still answer, and a caller who printed the catalogue could
+        already see the failure and chose to continue. What must not happen is that it
+        disappears — so it lands here, and :func:`omnisea.citation` reports it in the
+        attribution block a result gets published with.
+        """
+        problems = {f"{name} (discovery)": message for name, message in self.errors.items()}
+        problems.update({f"{name} (fetch)": message for name, message in failures.items()})
+        if problems:
             tree.attrs["omnisea_fetch_errors"] = "; ".join(
-                f"{name}: {message}" for name, message in sorted(failures.items())
+                f"{name}: {message}" for name, message in sorted(problems.items())
             )
             tree.attrs["omnisea_fetch_incomplete"] = 1
+        if self.notes:
+            # Not failures — a rolling archive that cannot reach the requested dates, say.
+            # Still the difference between "no station here" and "wrong collection for 2019".
+            tree.attrs["omnisea_source_notes"] = "; ".join(
+                f"{name}: {message}" for name, message in sorted(self.notes.items())
+            )
         return tree
 
     # ------------------------------------------------------------------ dunders

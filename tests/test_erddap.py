@@ -19,6 +19,7 @@ import xarray as xr
 from conftest import FIXTURES
 
 from omnisea.errors import PayloadTooLargeError, ProviderError, QueryError, UpstreamError
+from omnisea.provenance import citation
 from omnisea.providers import erddap
 from omnisea.providers.base import StationMatch
 from omnisea.providers.erddap import (
@@ -37,6 +38,7 @@ from omnisea.providers.erddap.common import _overlaps_query
 # Importing the adapter registers its own query knobs (erddap_server and friends), the same
 # way any third-party provider's would be.
 from omnisea.query import Query
+from omnisea.tree import build_tree
 
 WEEK = ("2024-07-01", "2024-07-08")
 HYDRO_HOUR = ("2024-07-01T00:00:00Z", "2024-07-01T01:00:00Z")
@@ -552,8 +554,14 @@ class TestDiscoveryFiltering:
     def test_a_named_dataset_is_used_even_without_geospatial_metadata(
         self, table_source, station_info, monkeypatch
     ):
-        """Six of CIOOS Pacific's nine datasets publish no extent; naming one must still work."""
-        bare = replace(station_info, global_attrs={}, variables={})
+        """Seven of CIOOS Pacific's eight datasets publish no extent; naming one must work.
+
+        No *geospatial* metadata is the case being simulated, so the variables stay — a
+        publisher who skipped the extent attributes still declares what the table contains,
+        and a dataset with no `time` variable at all is a different story (see
+        :class:`TestUnusableDatasets`).
+        """
+        bare = replace(station_info, global_attrs={}, variables={"time": {}})
         monkeypatch.setattr(table_source, "_info", lambda s, ds: bare)
         (match,) = table_source.discover(self.query(erddap_datasets=["ca_hydro_08HB048"]))
         assert match.station_id == "ca_hydro_08HB048"
@@ -786,17 +794,26 @@ class TestLiveDefaultServer:
         assert gauge.distance_km < 20
         assert gauge.first is not None and gauge.first < pd.Timestamp("2024-07-01T00:00:00Z")
 
-    def test_a_window_outside_the_record_returns_nothing_rather_than_raising(self):
-        """ERDDAP reports "no rows" as a 404, which must not surface as an error."""
+    def test_a_window_outside_the_record_yields_no_data_rather_than_raising(self):
+        """ERDDAP reports "no rows" as a 404, which must not surface as an error.
+
+        The result is an *empty* series rather than nothing at all, so the dataset is named in
+        the tree's ``omnisea_empty_stations`` — "this gauge had nothing for 1970" and "no gauge
+        was ever consulted" must not look identical.
+        """
         source = ErddapTableSource(ErddapProvider())
         query = Query.from_area(
             (-125.6, 48.5, -124.7, 49.2), ("1970-01-01", "1970-01-08"),
             erddap_datasets=["ca_hydro_08HB048"],
         )
         try:
-            assert source.fetch(query, source.discover(query)) == []
+            series = source.fetch(query, source.discover(query))
         except UpstreamError as exc:
             skip_if_unreachable(exc)
+        assert all(s.is_empty for s in series), "1970 predates this gauge entirely"
+        tree = build_tree(query, series)
+        assert not [n for n in tree.subtree if n.dataset.data_vars]
+        assert "ca_hydro_08HB048" in str(tree.attrs.get("omnisea_empty_stations", ""))
 
 
 @live
@@ -969,3 +986,73 @@ class TestLiveTheUnionSeam:
         assert not tree["/gridded/erddap/jplMURSST41"].dataset[
             "analysed_sst"
         ].variable._in_memory, "assembling the tree read the grid"
+
+
+class TestUnusableDatasets:
+    """Not every tabledap dataset is a time series, and the failure must be readable.
+
+    CIOOS Pacific's ``IOS_P26_Annualized`` — Ocean Station Papa, the deep end of Line P — is
+    indexed by an integer ``Year`` column and publishes no ``time`` variable at all. omnisea
+    puts ``&time>=`` on every tabledap request, so before this was caught the user got
+    ``400 Unrecognized constraint variable="time"`` from the server, which tells them nothing
+    they can act on.
+    """
+
+    def query(self, **options):
+        return Query.from_position(
+            **BAMFIELD, time=WEEK, radius_km=30, erddap_server=IOOS_SENSORS, **options
+        )
+
+    def annualized(self, station_info):
+        """A dataset whose axis is a Year column, as CIOOS Pacific really publishes it."""
+        return replace(
+            station_info,
+            dataset_id="IOS_P26_Annualized",
+            global_attrs={"title": "Station Papa annualized", "cdm_data_type": "Other"},
+            variables={"Year": {}, "temp_0_10_dbar": {"units": "degC"}},
+        )
+
+    def test_naming_one_explicitly_says_why_it_cannot_be_read(
+        self, table_source, station_info, monkeypatch
+    ):
+        monkeypatch.setattr(table_source, "_info", lambda s, ds: self.annualized(station_info))
+        with pytest.raises(ProviderError) as excinfo:
+            table_source.discover(self.query(erddap_datasets=["IOS_P26_Annualized"]))
+        message = str(excinfo.value)
+        assert "no 'time' variable" in message
+        assert "IOS_P26_Annualized" in message
+        assert "Year" in message, "the message should name what it IS indexed by"
+
+    def test_it_is_skipped_rather_than_fatal_during_an_ordinary_search(
+        self, table_source, station_info, monkeypatch
+    ):
+        """A wide box legitimately matches such datasets; they must not sink the query."""
+        good, bad = station_info, self.annualized(station_info)
+        monkeypatch.setattr(table_source, "_candidate_ids", lambda q, s: ["good", "bad"])
+        monkeypatch.setattr(
+            table_source, "_info", lambda s, ds: good if ds == "good" else bad
+        )
+        matches = table_source.discover(self.query())
+        assert [m.station_id for m in matches] == ["ca_hydro_08HB048"]
+
+    def test_a_griddap_dataset_without_a_time_axis_is_still_fine(
+        self, grid_source, station_info
+    ):
+        """The rule is tabledap's: a bathymetry grid has no time axis and needs none."""
+        assert grid_source.unusable_reason(self.annualized(station_info)) is None
+
+    def test_a_dataset_with_no_usable_rows_is_named_not_silently_absent(
+        self, table_source, station_info, monkeypatch
+    ):
+        """CIOOS Pacific's IYS_2019_CTD declares a `time` variable that is entirely empty, so
+        ERDDAP answers every window with "no matching results". A tree simply lacking the node
+        reads as "there is nothing here"; the dataset has to be named."""
+        monkeypatch.setattr(table_source, "_info", lambda s, ds: station_info)
+        monkeypatch.setattr(table_source, "_download", lambda q, s, i: [])
+        (series,) = table_source.fetch(self.query(), [a_match("ca_hydro_08HB048")])
+        assert series.is_empty
+        assert series.match.station_id == "ca_hydro_08HB048"
+
+        tree = build_tree(self.query(), [series])
+        assert "erddap_tabledap/ca_hydro_08HB048" in tree.attrs["omnisea_empty_stations"]
+        assert "returned no rows" in citation(tree)
