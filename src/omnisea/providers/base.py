@@ -259,6 +259,38 @@ class DataSource(ABC):
     def sites_for(self, query: Query) -> tuple[Site, ...]:
         return query.sites
 
+    def recognizes(self, name: str) -> bool:
+        """Is ``name`` one of this source's *curated* names (CF, omnisea, or raw field)?"""
+        for raw, spec in self.fields.items():
+            if name in (raw, spec.var) or (spec.standard_name and name == spec.standard_name):
+                return True
+        return False
+
+    def wants_anything(self, query: Query) -> bool:
+        """Could this source serve any of the requested variables?
+
+        Used to skip sources that plainly cannot help, so a tide query does not hit four weather
+        collections. The subtlety is that a curated CF table is a *floor*, not an inventory:
+        SWOB publishes about 74 fields and omnisea names 12 of them, and the rest come back as
+        passthrough. So an unrecognised name is not evidence the source lacks it — omnisea
+        simply cannot know without fetching.
+
+        The rule therefore is: match on the curated table when we can, and when a requested name
+        is one omnisea does not recognise *anywhere*, stay in rather than opt out. Being asked
+        for ``batry_volt`` and answering "no such variable" would be wrong; the field exists,
+        omnisea just has no CF name for it.
+        """
+        if query.variables is None:
+            return True
+        wanted = cf.resolve_names(query.variables) or frozenset()
+        if any(self.recognizes(name) for name in wanted):
+            return True
+
+        from ..registry import known_variable_names
+
+        known = known_variable_names()
+        return any(name not in known for name in wanted)
+
     def include_unmapped(self, query: Query) -> bool:
         """Whether to carry fields that have no CF mapping (default: yes, keep everything)."""
         return bool(query.option("include_unmapped", True))

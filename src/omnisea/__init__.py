@@ -50,7 +50,7 @@ from .providers.base import (
 )
 from .query import Query, Site, as_sites, register_option
 from .registry import register_provider, register_source
-from .tree import build_tree, coverage, stations, summary, to_dataframe
+from .tree import build_tree, coverage, fields, stations, summary, to_dataframe
 
 log = logging.getLogger("omnisea")
 
@@ -80,6 +80,7 @@ __all__ = [
     "aggregation_for",
     # tree helpers
     "summary",
+    "fields",
     "stations",
     "to_dataframe",
     "coverage",
@@ -129,8 +130,10 @@ def sources() -> list[str]:
 def variables() -> pd.DataFrame:
     """CF standard names omnisea can serve, and which sources serve each one.
 
-    This lists the *canonical* names only. Every source also returns its unmapped fields under
-    their original provider names, so this is a floor on what you get, not a ceiling.
+    This is a **floor, not an inventory**. It lists the names omnisea curates; every source also
+    returns whatever else the platform published, under the provider's own field names. SWOB
+    alone ships about 74 fields of which 12 are named here. To see what a particular fetch
+    really returned, use :func:`fields`.
     """
     rows: list[dict[str, Any]] = []
     for source in registry.all_sources():

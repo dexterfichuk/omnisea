@@ -171,6 +171,25 @@ water_surface_height..._at_extremum@08545          nearest within 30min (0/8 mat
 
 That last line is the point: what *couldn't* be matched is reported, not silently `NaN`.
 
+### Then build a model
+
+`examples/bamfield.ipynb` runs this end to end: a mock five-day logger deployment sampling every
+two hours, joined to the real tide and climate series, then a regression.
+
+The samples are **synthetic** — generated from the real fetched drivers with coefficients we
+choose, plus noise — which makes it a test of the *pipeline*. If the join were misaligned by the
+station's UTC offset, or a daily total had been interpolated, the fit would not recover them:
+
+```
+                                            fitted  true  error
+intercept                                    5.969  6.00 -0.031
+water_surface_height_above_reference_datum  -0.450 -0.45  0.000
+air_temperature_max                          0.301  0.30  0.001
+hour_sin                                     0.586  0.60 -0.014
+```
+
+![Observed vs predicted](docs/images/model-fit.png)
+
 ### Putting your data in the tree
 
 If your measurements are the thing being modelled and you want one object holding response and
@@ -189,7 +208,7 @@ would be.
 
 A plain `xarray.DataTree` — not a subclass, so it interoperates with the whole ecosystem.
 Conveniences are module functions: `omnisea.summary(tree)`, `omnisea.to_dataframe(tree)`,
-`omnisea.stations(tree)`, `omnisea.coverage(tree)`.
+`omnisea.stations(tree)`, `omnisea.coverage(tree)`, `omnisea.fields(tree)`.
 
 Each node is a CF discrete-sampling-geometry `timeSeries`: a `time` dimension, scalar
 `latitude`/`longitude`/`station_id`/`station_name` coordinates, and attributes recording
@@ -211,12 +230,31 @@ tree = omnisea.fetch(..., to_cf_units=True)   # degC -> K, km/h -> m/s, kPa -> P
 Encoding *repairs* are different and always applied — ECCC ships wind direction in tens of
 degrees, so a raw `25` means 250°. That is a storage encoding, not a unit choice.
 
-**Nothing is silently dropped.** Fields with a CF equivalent are renamed and described; fields
-without one travel under the provider's own name, tagged `omnisea_mapped = 0`. A SWOB station
-returns `air_temperature` *and* `batry_volt`. QC flags are carried as `<var>_qc`, never discarded.
+**Nothing is silently dropped — every field always comes back.** Fields with a CF equivalent are
+renamed and described; fields without one travel under the provider's own name, tagged
+`omnisea_mapped = 0`. SWOB ships about 74 fields and omnisea names 12 of them; the other 62 —
+battery voltage, solar panel current, 24-hour rainfall totals — arrive too. QC flags are carried
+as `<var>_qc`, never discarded.
+
+`variables=` chooses **which sources and stations to fetch**, and is deliberately *not* a
+projection over what they return. The GeoJSON response already carries every property, so
+dropping columns would discard data that has already crossed the network:
 
 ```python
-omnisea.variables()   # the CF names available, and which source serves each
+tree = omnisea.fetch(..., variables=["air_temperature"])
+omnisea.fields(tree)     # -> 58 variables, from the 2 sources that have air_temperature
+```
+
+A name omnisea doesn't recognise doesn't get you an error, either — it keeps every source in
+play, because a curated table is a floor, not an inventory:
+
+```python
+omnisea.fetch(..., variables=["batry_volt"])   # not a CF name; SWOB still gets queried
+```
+
+```python
+omnisea.variables()      # the CF names omnisea curates — a floor, not an inventory
+omnisea.fields(tree)     # what a particular fetch actually returned
 ```
 
 ## Sources

@@ -148,9 +148,19 @@ A CI test checks every built-in name against the published table — yours shoul
 If no CF standard name exists for a quantity (humidex, battery voltage), set `standard_name=""`
 and give it a good `long_name`. Do not invent one.
 
-**You do not need to map everything.** Fields absent from `fields` are carried through under
-their own provider names, tagged `omnisea_mapped = 0`. Map what has a CF equivalent; the rest
-still travels.
+**You do not need to map everything — and you should not filter.** Fields absent from `fields`
+are carried through under their own provider names, tagged `omnisea_mapped = 0`. Map what has a
+CF equivalent; the rest still travels.
+
+Do **not** pass `requested=query.variables` to `cf.resolve_fields` if your response already
+contains every field. `variables=` selects which sources and stations to fetch; it is not a
+projection over what they return, and dropping columns you already downloaded is pure loss. The
+parameter exists only for upstreams that bill per field or require naming them in the request.
+
+The same reasoning governs `wants_anything()`, which you inherit: a curated table is a floor,
+not an inventory. If a caller asks for a name you do not recognise, the base class keeps your
+source in play rather than opting out, because the field may be one your platform publishes and
+omnisea has no CF name for.
 
 ---
 

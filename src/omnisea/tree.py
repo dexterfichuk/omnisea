@@ -25,6 +25,7 @@ from .query import Query
 
 __all__ = [
     "build_tree",
+    "fields",
     "series_to_dataset",
     "summary",
     "stations",
@@ -338,6 +339,51 @@ def to_dataframe(tree: xr.DataTree, *, wide: bool = False) -> pd.DataFrame:
     )
     long = long.dropna(subset=["value"])
     return long.sort_values(["time", "provider", "station_id", "variable"]).reset_index(drop=True)
+
+
+def fields(tree: xr.DataTree, *, mapped: bool | None = None) -> pd.DataFrame:
+    """Every variable actually returned, and what omnisea knows about each one.
+
+    ``omnisea.variables()`` lists what the curated CF tables *can* name; this lists what a
+    particular fetch really brought back, which is usually more. Platforms add channels, and
+    omnisea carries anything it has no CF mapping for under the provider's own field name — so
+    this is the honest inventory of a result.
+
+    ``mapped=True`` shows only the CF-described variables, ``mapped=False`` only the
+    carried-through ones, and the default shows both.
+    """
+    rows: list[dict[str, Any]] = []
+    for path, ds in _iter_data_nodes(tree):
+        for name, var in ds.data_vars.items():
+            name = str(name)
+            is_qc = name.endswith("_qc")
+            attrs = var.attrs
+            is_mapped = bool(attrs.get("standard_name")) or attrs.get("omnisea_mapped") == 1
+            rows.append(
+                {
+                    "variable": name,
+                    "standard_name": attrs.get("standard_name", ""),
+                    "units": attrs.get("units", ""),
+                    "long_name": attrs.get("long_name", ""),
+                    "cf_mapped": bool(is_mapped) and not is_qc,
+                    "kind": "qc flag" if is_qc else ("CF" if is_mapped else "carried"),
+                    "source_field": attrs.get("source_field", ""),
+                    "cell_methods": attrs.get("cell_methods", ""),
+                    "provider": ds.attrs.get("provider", ""),
+                    "source": ds.attrs.get("source_name", ""),
+                    "station_id": _scalar(ds, "station_id"),
+                    "node": path,
+                    "n_values": int(var.count().values) if var.size else 0,
+                }
+            )
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    if mapped is True:
+        frame = frame[frame["cf_mapped"]]
+    elif mapped is False:
+        frame = frame[~frame["cf_mapped"] & (frame["kind"] != "qc flag")]
+    return frame.sort_values(["node", "kind", "variable"]).reset_index(drop=True)
 
 
 def coverage(tree: xr.DataTree, query: Query | None = None) -> pd.DataFrame:

@@ -28,6 +28,7 @@ __all__ = [
     "all_sources",
     "all_providers",
     "select",
+    "known_variable_names",
 ]
 
 log = logging.getLogger("omnisea.registry")
@@ -162,3 +163,21 @@ def select(names: Iterable[str] | None) -> list[DataSource]:
                 seen.add(source.name)
                 chosen.append(source)
     return chosen
+
+
+def known_variable_names() -> frozenset[str]:
+    """Every name any registered source curates: CF standard names, omnisea variable names and
+    raw provider field names.
+
+    A name outside this set is not necessarily unavailable — it may be a field a platform
+    publishes that omnisea carries through without a CF mapping. It only means omnisea cannot
+    reason about which source holds it.
+    """
+    names: set[str] = set()
+    for source in all_sources():
+        for raw, spec in source.fields.items():
+            names.add(raw)
+            names.add(spec.var)
+            if spec.standard_name:
+                names.add(spec.standard_name)
+    return frozenset(names)

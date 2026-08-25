@@ -185,6 +185,11 @@ def resolve_fields(
     contained, so passthrough variables reflect real data rather than a guessed schema.
     Identity/time columns go in ``skip``; QC siblings are recognised by ``is_qc`` and attached
     to their parent variable instead of becoming variables of their own.
+
+    ``requested`` narrows the emitted columns. The built-in sources deliberately do **not** use
+    it: their responses already carry every property, so dropping columns would discard data
+    that has already crossed the network. It exists for sources whose upstream bills per field
+    or requires naming them in the request.
     """
     wanted = resolve_names(requested)
     out: dict[str, FieldSpec] = {}

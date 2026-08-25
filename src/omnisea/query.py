@@ -296,6 +296,9 @@ class Query:
     end: pd.Timestamp
     bbox: BBox | None = None
     sites: tuple[Site, ...] = ()
+    #: CF names, omnisea variable names or raw provider field names used to choose *which
+    #: sources and stations to fetch*. It is not a projection: whatever is fetched comes back
+    #: with every field the platform published, because the response already contains them.
     variables: frozenset[str] | None = None
     depth: tuple[float, float] | None = None
     providers: tuple[str, ...] | None = None

@@ -164,22 +164,6 @@ class OgcFeaturesSource(RetrievalSource):
         """The station's period of record, used to skip stations that cannot cover the window."""
         return None, None
 
-    def wants_anything(self, query: Query) -> bool:
-        """Does the caller's variable list intersect what this source offers?
-
-        Unrestricted queries always match. A restricted one matches on CF names, omnisea
-        variable names, or the provider's own raw field names.
-        """
-        if query.variables is None:
-            return True
-        wanted = cf.resolve_names(query.variables) or frozenset()
-        for raw, spec in self.fields.items():
-            if raw in wanted or spec.var in wanted or (
-                spec.standard_name and spec.standard_name in wanted
-            ):
-                return True
-        return False
-
     # ------------------------------------------------------------------ retrieval
 
     def fetch(self, query: Query, matches: list[StationMatch]) -> list[StationSeries]:
@@ -224,10 +208,13 @@ class OgcFeaturesSource(RetrievalSource):
     ) -> StationSeries | None:
         """Turn raw GeoJSON properties into a CF-described, time-indexed series."""
         available = _ordered_keys(rows)
+        # Deliberately not filtered by query.variables. The response already carries every
+        # property, so dropping columns here would discard data that has already crossed the
+        # network and cost nothing to keep. `variables=` selects which sources and stations to
+        # fetch; it is not a projection over what they returned.
         specs = cf.resolve_fields(
             self.fields,
             available,
-            requested=query.variables,
             include_unmapped=self.include_unmapped(query),
             skip=self.effective_skip(),
             is_qc=self.is_qc_field,

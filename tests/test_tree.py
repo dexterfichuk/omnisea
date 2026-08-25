@@ -9,7 +9,15 @@ import xarray as xr
 
 from omnisea.providers.base import StationMatch, StationSeries
 from omnisea.query import Query, Site
-from omnisea.tree import build_tree, coverage, series_to_dataset, stations, summary, to_dataframe
+from omnisea.tree import (
+    build_tree,
+    coverage,
+    fields,
+    series_to_dataset,
+    stations,
+    summary,
+    to_dataframe,
+)
 
 WEEK = ("2024-07-01", "2024-07-08")
 BAMFIELD = Site(48.8353, -125.1358, "Bamfield")
@@ -215,3 +223,46 @@ class TestReaders:
         frame = stations(tree)
         assert len(frame) == 1
         assert frame.iloc[0]["n_nodes"] == 2
+
+
+class TestFieldsInventory:
+    def test_it_lists_every_returned_variable(self):
+        q = Query.from_position(48.8353, -125.1358, WEEK)
+        s = make_series()
+        s.var_attrs["water_surface_height_above_reference_datum"] = {
+            "standard_name": "water_surface_height_above_reference_datum", "units": "m"
+        }
+        s.var_attrs["reviewed"] = {"long_name": "reviewed", "omnisea_mapped": 0}
+        frame = fields(build_tree(q, [s]))
+        assert set(frame["variable"]) == {
+            "water_surface_height_above_reference_datum",
+            "water_surface_height_above_reference_datum_qc",
+            "reviewed",
+        }
+
+    def test_it_separates_cf_named_from_carried_from_flags(self):
+        q = Query.from_position(48.8353, -125.1358, WEEK)
+        s = make_series()
+        s.var_attrs["water_surface_height_above_reference_datum"] = {
+            "standard_name": "water_surface_height_above_reference_datum", "units": "m"
+        }
+        s.var_attrs["reviewed"] = {"long_name": "reviewed", "omnisea_mapped": 0}
+        frame = fields(build_tree(q, [s]))
+        kinds = dict(zip(frame["variable"], frame["kind"], strict=False))
+        assert kinds["water_surface_height_above_reference_datum"] == "CF"
+        assert kinds["reviewed"] == "carried"
+        assert kinds["water_surface_height_above_reference_datum_qc"] == "qc flag"
+
+    def test_mapped_filter_selects_only_cf_variables(self):
+        q = Query.from_position(48.8353, -125.1358, WEEK)
+        s = make_series()
+        s.var_attrs["water_surface_height_above_reference_datum"] = {
+            "standard_name": "water_surface_height_above_reference_datum"
+        }
+        tree = build_tree(q, [s])
+        assert (fields(tree, mapped=True)["kind"] == "CF").all()
+        assert "reviewed" in set(fields(tree, mapped=False)["variable"])
+
+    def test_empty_tree_gives_an_empty_inventory(self):
+        q = Query.from_position(48.8353, -125.1358, WEEK)
+        assert fields(build_tree(q, [])).empty

@@ -333,3 +333,58 @@ class TestDiscoverToFetchHandoff:
         query = Query.from_area((-126, 48, -125, 49), WEEK)
         with pytest.raises(ProviderError):
             source._fetch_series(query, a_match("dfo_tides", "08545"), "wlo")
+
+
+class TestPullEverything:
+    """omnisea returns whatever the platform published; `variables=` only chooses sources."""
+
+    def test_variables_does_not_drop_columns_from_the_response(self, eccc, eccc_hourly_rows):
+        """The GeoJSON already carries every property; dropping them discards paid-for data."""
+        source = EcccClimateHourly(eccc)
+        narrow = Query.from_area((-124, 48, -123, 49), WEEK, variables=["air_temperature"])
+        series = source.series_from_rows(narrow, a_match("eccc_climate"), eccc_hourly_rows)
+        assert "air_temperature" in series.frame.columns
+        assert "wind_speed" in series.frame.columns, "unrequested fields were dropped"
+        assert "WEATHER_ENG_DESC" in series.frame.columns
+
+    def test_a_narrow_request_returns_as_much_as_a_broad_one(self, eccc, eccc_hourly_rows):
+        source = EcccClimateHourly(eccc)
+        match = a_match("eccc_climate")
+        narrow = source.series_from_rows(
+            Query.from_area((-124, 48, -123, 49), WEEK, variables=["air_temperature"]),
+            match, eccc_hourly_rows,
+        )
+        broad = source.series_from_rows(
+            Query.from_area((-124, 48, -123, 49), WEEK), match, eccc_hourly_rows
+        )
+        assert set(narrow.frame.columns) == set(broad.frame.columns)
+
+    def test_a_curated_name_still_selects_the_right_sources(self, eccc):
+        """Selection must stay precise, or a tide query hits four weather collections."""
+        tide_query = Query.from_area(
+            (-126, 48, -125, 49), WEEK,
+            variables=["water_surface_height_above_reference_datum"],
+        )
+        assert not EcccClimateHourly(eccc).wants_anything(tide_query)
+        assert EcccHydrometric(eccc).wants_anything(tide_query)
+
+    def test_an_unknown_field_keeps_every_source_in_play(self, eccc):
+        """SWOB publishes ~74 fields and omnisea names 12; the rest are still fetchable."""
+        query = Query.from_area((-126, 48, -125, 49), WEEK, variables=["batry_volt"])
+        assert EcccSwobRealtime(eccc).wants_anything(query)
+        assert EcccClimateHourly(eccc).wants_anything(query)
+
+    def test_recognizes_matches_cf_omnisea_and_raw_names(self, eccc):
+        source = EcccClimateHourly(eccc)
+        assert source.recognizes("air_temperature")   # CF standard name
+        assert source.recognizes("TEMP")              # raw provider field
+        assert not source.recognizes("batry_volt")
+
+    def test_the_known_vocabulary_spans_every_registered_source(self):
+        from omnisea.registry import known_variable_names
+
+        known = known_variable_names()
+        assert "air_temperature" in known          # eccc
+        assert "TEMP" in known                     # raw field
+        assert "wlo" in known                      # dfo series code
+        assert "batry_volt" not in known           # a real field omnisea does not curate

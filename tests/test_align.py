@@ -299,3 +299,98 @@ class TestAddLocal:
 def test_align_is_exported():
     assert omnisea.align is align
     assert omnisea.add_local is add_local
+
+
+class TestRegressions:
+    """Each of these is a bug that shipped and silently corrupted a column."""
+
+    def _tree(self, frame, node="in_situ/a", sid="X", attrs=None):
+        frame = frame.copy()
+        frame.index.name = "time"
+        return build_tree(
+            Query.from_sites([BAMFIELD], WEEK), [series(sid, node, frame, attrs)]
+        )
+
+    def test_upsampling_an_irregular_series_keeps_its_values(self):
+        """Binning an irregular series discarded every value: none sit on a grid boundary.
+
+        Tidal extrema are *always* at irregular times (03:33, 09:58, ...), so the whole
+        column came back NaN while every other column looked fine.
+        """
+        idx = pd.DatetimeIndex(
+            ["2024-07-01 03:33", "2024-07-01 09:58", "2024-07-01 16:12", "2024-07-01 22:40"]
+        )
+        tree = self._tree(pd.DataFrame({"extremum": [3.1, 0.4, 2.8, 0.9]}, index=idx))
+        hourly = align(tree, freq="1h")
+        assert hourly["extremum"].notna().sum() > 0, "irregular values were discarded"
+        # Interpolation samples the curve *at* grid points, so a peak occurring at 03:33 is
+        # approached but never reproduced exactly. What matters is that the shape survives.
+        assert 2.5 < hourly["extremum"].max() <= 3.1
+        assert 0.4 <= hourly["extremum"].min() < 1.0
+
+    def test_real_tidal_extrema_survive_resampling(self):
+        """The shape that actually broke: ~6 h irregular spacing upsampled to hourly."""
+        idx = pd.DatetimeIndex(
+            ["2024-07-01 03:33", "2024-07-01 09:58", "2024-07-01 16:12",
+             "2024-07-02 01:40", "2024-07-02 08:15"]
+        )
+        tree = self._tree(pd.DataFrame({"extremum": [3.1, 0.4, 2.8, 0.9, 3.3]}, index=idx))
+        assert align(tree, freq="1h")["extremum"].notna().sum() >= 20
+
+    def test_single_point_series_does_not_crash_the_grid(self):
+        """min == max produced a duplicate-labelled span index and a reindex ValueError."""
+        idx = pd.DatetimeIndex(["2024-07-03 12:00"])
+        tree = self._tree(pd.DataFrame({"v": [42.0]}, index=idx))
+        assert align(tree, freq="1h")["v"].notna().sum() == 1
+
+    def test_unbounded_join_is_labelled_as_such(self):
+        """A lone reading otherwise becomes a constant column across the whole query."""
+        idx = pd.DatetimeIndex(["2024-07-03 12:00"])
+        tree = self._tree(pd.DataFrame({"v": [42.0]}, index=idx))
+        joined = align(tree, on=pd.date_range("2024-07-01", periods=5, freq="D"))
+        assert "UNBOUNDED" in joined.attrs["omnisea_aggregation"]["v@X"]
+
+    def test_a_node_without_a_time_coordinate_warns_rather_than_vanishing(self, caplog):
+        import logging
+
+        odd = pd.DataFrame(
+            {"v": [1.0, 2.0]},
+            index=pd.DatetimeIndex(["2024-07-01", "2024-07-02"], name="obs_time"),
+        )
+        match = StationMatch(source="t", provider="t", station_id="O", name="O",
+                             lat=48.8, lon=-125.1)
+        tree = build_tree(
+            Query.from_sites([BAMFIELD], WEEK),
+            [StationSeries(match=match, frame=odd, node_path="in_situ/a/O",
+                           attrs={}, var_attrs={})],
+        )
+        with caplog.at_level(logging.WARNING, logger="omnisea.align"):
+            align(tree, freq="D")
+        assert "no 'time' coordinate" in caplog.text
+
+    def test_nodes_with_different_spans_share_one_index(self):
+        """Resampling each series independently could hand back frames that do not line up."""
+        q = Query.from_sites([BAMFIELD], WEEK)
+        early = pd.date_range("2024-07-01", "2024-07-03", freq="h", tz="UTC", name="time")
+        late = pd.date_range("2024-07-02", "2024-07-08", freq="h", tz="UTC", name="time")
+        tree = build_tree(q, [
+            series("A", "in_situ/a", pd.DataFrame({"va": range(len(early))}, index=early)),
+            series("B", "in_situ/b", pd.DataFrame({"vb": range(len(late))}, index=late)),
+        ])
+        wide = align(tree, freq="h")
+        assert wide.index.is_monotonic_increasing
+        assert wide["va"].notna().any() and wide["vb"].notna().any()
+
+    def test_calendar_frequencies_work(self):
+        """'ME' has no fixed length, so a nanosecond-based grid could not describe it."""
+        idx = pd.date_range("2024-07-01", "2024-09-30", freq="D", name="time")
+        tree = self._tree(pd.DataFrame({"v": np.arange(float(len(idx)))}, index=idx))
+        monthly = align(tree, freq="ME")
+        assert len(monthly) == 3
+
+    def test_an_all_empty_column_is_dropped_without_taking_others_with_it(self):
+        idx = pd.date_range("2024-07-01", periods=5, freq="D", name="time")
+        tree = self._tree(
+            pd.DataFrame({"good": [1.0, 2, 3, 4, 5], "bad": [np.nan] * 5}, index=idx)
+        )
+        assert list(align(tree, freq="D").columns) == ["good"]

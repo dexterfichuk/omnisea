@@ -74,7 +74,16 @@ def _node_frames(
     out = []
     for node in tree.subtree:
         ds = node.dataset
-        if not ds.data_vars or "time" not in ds.coords or ds["time"].size == 0:
+        if not ds.data_vars:
+            continue
+        if "time" not in ds.coords:
+            log.warning(
+                "skipping node %s in align(): no 'time' coordinate (has %s)",
+                node.path,
+                ", ".join(map(str, ds.coords)) or "none",
+            )
+            continue
+        if ds["time"].size == 0:
             continue
         keep = [
             str(v)
@@ -87,6 +96,12 @@ def _node_frames(
         # Scalar coords (latitude, station_id, ...) ride along as columns; drop them.
         frame = frame[[c for c in frame.columns if c in keep]]
         if not isinstance(frame.index, pd.DatetimeIndex):
+            log.warning(
+                "skipping node %s in align(): its time dimension is %r, not a DatetimeIndex "
+                "named 'time'",
+                node.path,
+                frame.index.name,
+            )
             continue
         label = _station_label(ds, node.path)
         attrs = {v: dict(ds[v].attrs) for v in keep}
@@ -209,6 +224,8 @@ def align(
     else:
         target, carried = None, None
 
+    grid = _grid_for(nodes, freq) if freq is not None else None
+
     pieces: list[pd.DataFrame] = []
     applied: dict[tuple[str, str], str] = {}
 
@@ -227,7 +244,7 @@ def align(
                 up = "ffill"
 
             if freq is not None:
-                aligned, rule = _resample(series, freq, down, up)
+                aligned, rule = _resample(series, freq, grid, down, up)
             else:
                 interval = bool(str(attrs.get(variable, {}).get("cell_methods") or "").strip())
                 aligned, rule = _join_to(series, target, tolerance, direction, interval)
@@ -270,38 +287,52 @@ def align(
     return wide
 
 
+def _grid_for(nodes: list[tuple[str, str, pd.DataFrame, Any]], freq: str) -> pd.DatetimeIndex:
+    """One time axis for every column in the call.
+
+    Built by binning the overall span the way pandas itself would, so it is valid for calendar
+    offsets ("ME", "QE") as well as fixed ones, and identical for every column — resampling each
+    series independently could otherwise hand back frames that do not line up.
+    """
+    starts = [frame.index.min() for _, _, frame, _ in nodes if len(frame)]
+    ends = [frame.index.max() for _, _, frame, _ in nodes if len(frame)]
+    if not starts:
+        return pd.DatetimeIndex([])
+    # A single instant (or a single-point node) makes min == max; a duplicated label there
+    # would propagate into the grid and break every reindex downstream.
+    bounds = pd.DatetimeIndex([min(starts), max(ends)]).unique()
+    span = pd.Series(0.0, index=bounds)
+    return span.resample(freq).asfreq().index
+
+
 def _resample(
-    series: pd.Series, freq: str, down: Any, up: str
+    series: pd.Series, freq: str, grid: pd.DatetimeIndex, down: Any, up: str
 ) -> tuple[pd.Series | None, str]:
-    """Resample one series onto ``freq``, choosing up- or down-sampling by its own cadence."""
+    """Put one series onto ``grid``, up- or down-sampling according to its own cadence."""
+    if len(grid) == 0:
+        return None, "empty grid"
     if len(series) < 2:
-        return series.resample(freq).first(), f"{down} (single sample)"
+        return series.reindex(grid, method="ffill"), f"{down} (single sample)"
 
     native = series.index.to_series().diff().median()
-    target_step = pd.Timedelta(pd.tseries.frequencies.to_offset(freq).nanos, unit="ns") \
-        if _has_fixed_nanos(freq) else None
+    grid_step = pd.Series(grid).diff().median()
 
-    resampler = series.resample(freq)
-    if target_step is not None and native > target_step:
-        # Upsampling: the series is coarser than the grid, so values must be spread forward.
-        upsampled = resampler.asfreq()
-        if up == "interpolate":
-            return upsampled.interpolate(method="time"), "interpolate (upsampled)"
-        return upsampled.ffill(), "ffill (upsampled)"
+    if pd.notna(grid_step) and native > grid_step:
+        # Upsampling. Reindex through the *union* of the series and the grid rather than
+        # resampling: an irregular series (tidal extrema at 03:33, 09:58, ...) has no values on
+        # the grid boundaries at all, and binning it would silently discard every one of them.
+        combined = series.reindex(series.index.union(grid))
+        filled = (
+            combined.interpolate(method="time")
+            if up == "interpolate"
+            else combined.ffill()
+        )
+        return filled.reindex(grid), f"{up} (upsampled)"
 
     try:
-        return resampler.agg(down), f"{down}"
+        return series.resample(freq).agg(down).reindex(grid), f"{down}"
     except (TypeError, ValueError, AttributeError):
-        return resampler.first(), "first (not aggregatable)"
-
-
-def _has_fixed_nanos(freq: str) -> bool:
-    """Calendar offsets like 'M' have no fixed length; treat them as always-downsampling."""
-    try:
-        _ = pd.tseries.frequencies.to_offset(freq).nanos
-    except (ValueError, AttributeError):
-        return False
-    return True
+        return series.resample(freq).first().reindex(grid), "first (not aggregatable)"
 
 
 def _native_cadence(series: pd.Series) -> pd.Timedelta | None:
@@ -339,7 +370,13 @@ def _join_to(
     else:
         window = pd.Timedelta(tolerance) if tolerance is not None else cadence
         used_direction = direction
-        described = f"{direction} within {_pretty(window)}" if window else direction
+        if window is not None:
+            described = f"{direction} within {_pretty(window)}"
+        else:
+            # One observation and no tolerance: there is no cadence to infer a sensible reach
+            # from, so this matches at any distance. Say so, or a lone reading silently becomes
+            # a constant column stretching across the whole query.
+            described = f"{direction} (UNBOUNDED: single observation, pass tolerance= to cap)"
 
     left = pd.DataFrame({"__t": target}).sort_values("__t")
     right = pd.DataFrame({"__t": series.index, "__v": series.to_numpy()}).sort_values("__t")

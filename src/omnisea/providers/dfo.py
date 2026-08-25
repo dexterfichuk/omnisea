@@ -331,8 +331,7 @@ class DfoTidesSource(RetrievalSource):
             )
         return resolution
 
-    @staticmethod
-    def _series_for(query: Query) -> list[str]:
+    def _series_for(self, query: Query) -> list[str]:
         requested = query.option("series")
         if requested:
             codes = [requested] if isinstance(requested, str) else list(requested)
@@ -342,10 +341,7 @@ class DfoTidesSource(RetrievalSource):
                     f"unknown IWLS series {unknown}; choose from {sorted(SERIES_NODES)}"
                 )
             return codes
-        if not query.wants(
-            "water_surface_height_above_reference_datum",
-            "sea_surface_height_above_reference_datum",
-        ):
+        if not self.wants_anything(query):
             return []
         return list(DEFAULT_SERIES)
 

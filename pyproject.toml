@@ -32,7 +32,7 @@ cmems  = ["copernicusmarine>=1.3"]
 stac   = ["pystac-client>=0.8"]
 cache  = ["requests-cache>=1.2"]
 cioos  = ["PyYAML>=6.0"]  # metadata-xml records are YAML
-examples = ["matplotlib>=3.8", "jupyter>=1.0"]  # to run examples/bamfield.ipynb
+examples = ["matplotlib>=3.8", "jupyter>=1.0", "scikit-learn>=1.4"]  # examples/bamfield.ipynb
 netcdf = ["netCDF4>=1.6"]
 dev = [
   "pytest>=8.0",

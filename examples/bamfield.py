@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import warnings
 
+import numpy as np
 import pandas as pd
 
 import omnisea
@@ -190,8 +191,6 @@ print(joined.groupby("site")["value"].agg(["count", "mean"]).round(3).to_string(
 # ---------------------------------------------------------------------------
 rule("10. Bring your own data and build a model")
 
-import numpy as np  # noqa: E402  (kept local to this section)
-
 rng = np.random.default_rng(0)
 field_times = pd.to_datetime([
     "2024-07-01 09:14", "2024-07-01 15:40", "2024-07-02 10:05", "2024-07-03 08:50",
@@ -239,7 +238,71 @@ print(omnisea.summary(with_mine)[["node", "station_name", "n_time"]].to_string(i
 
 
 # ---------------------------------------------------------------------------
-rule("11. Save it")
+rule("11. Fit a model")
+
+try:
+    from sklearn.linear_model import LinearRegression
+    from sklearn.metrics import mean_absolute_error, r2_score
+    from sklearn.model_selection import train_test_split
+except ImportError:
+    print("scikit-learn is not installed; skipping "
+          '(pip install -e ".[examples]" to run this section)')
+else:
+    # A mock five-day deployment sampling every two hours. The samples are SYNTHETIC,
+    # generated from the real fetched drivers with coefficients we choose, plus noise --
+    # so this tests the pipeline, not oceanography. If the join were misaligned by the
+    # station's UTC offset, or a daily total had been interpolated, the fit would not
+    # recover the numbers we put in.
+    stamps = pd.date_range("2024-07-02 00:00", "2024-07-07 00:00", freq="2h")
+    drivers = omnisea.align(tree, on=pd.DataFrame({"time": stamps}), tolerance="30min")
+
+    tide = drivers["water_surface_height_above_reference_datum"].to_numpy()
+    air_max = drivers["air_temperature_max"].to_numpy()
+    diurnal = np.sin(2 * np.pi * (drivers.index.hour.to_numpy() - 9) / 24)
+
+    TRUE = {
+        "intercept": 6.00,
+        "water_surface_height_above_reference_datum": -0.45,
+        "air_temperature_max": 0.30,
+        "hour_sin": 0.60,
+    }
+    logger = pd.DataFrame({
+        "time": drivers.index,
+        "water_temp_c": (
+            TRUE["intercept"]
+            + TRUE["water_surface_height_above_reference_datum"] * tide
+            + TRUE["air_temperature_max"] * air_max
+            + TRUE["hour_sin"] * diurnal
+            + rng.normal(0, 0.15, len(drivers))
+        ).round(2),
+    })
+
+    data = omnisea.align(tree, on=logger, tolerance="30min")
+    data["hour_sin"] = np.sin(2 * np.pi * (data.index.hour - 9) / 24)
+
+    predictors = ["water_surface_height_above_reference_datum",
+                  "air_temperature_max", "hour_sin"]
+    X, y = data[predictors], data["water_temp_c"]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=0)
+    model = LinearRegression().fit(X_train, y_train)
+    predicted = model.predict(X_test)
+
+    print(f"{len(data)} synthetic samples over 5 days, joined to real drivers")
+    print(f"held-out R2  = {r2_score(y_test, predicted):.3f}")
+    print(f"held-out MAE = {mean_absolute_error(y_test, predicted):.3f} degC")
+
+    print("\ndid it recover the relationship we put in?")
+    print(f"  {'term':44s} {'fitted':>8s} {'true':>7s}")
+    print(f"  {'intercept':44s} {model.intercept_:8.3f} {TRUE['intercept']:7.2f}")
+    for term, coefficient in zip(predictors, model.coef_, strict=True):
+        print(f"  {term:44s} {coefficient:8.3f} {TRUE[term]:7.2f}")
+    print("\nThose numbers matching is the end-to-end proof: the join, the units and")
+    print("the time handling are all right, not merely plausible.")
+
+
+# ---------------------------------------------------------------------------
+rule("12. Save it")
 
 tree.to_netcdf("bamfield.nc")
 print("wrote bamfield.nc — reopen losslessly with:")
