@@ -187,3 +187,65 @@ class TestFetchErrorPolicy:
         path = tmp_path / "partial.nc"
         tree.to_netcdf(path)
         assert xr.open_datatree(path).attrs["omnisea_fetch_incomplete"] == 1
+
+
+class TestPeriodTrimming:
+    """A period aggregate belongs to a window when its interval overlaps it.
+
+    Not when its label instant happens to fall inside. Daily summaries are stamped at 00:00Z,
+    so a request starting at noon would otherwise silently return one fewer day than the same
+    request starting at midnight.
+    """
+
+    def _source(self, period):
+        from omnisea.providers.eccc import EcccProvider
+        from omnisea.providers.ogc import OgcFeaturesSource
+
+        class _Periodic(OgcFeaturesSource):
+            name = "periodic"
+            node_path = "in_situ/periodic"
+
+        _Periodic.period = period
+        return _Periodic(EcccProvider())
+
+    def test_a_daily_source_grows_the_window_to_whole_days(self):
+        source = self._source("D")
+        start, end = source.trim_window(_window("2024-07-15T12:00", "2024-07-17T06:00"))
+        assert start == pd.Timestamp("2024-07-15", tz="UTC")
+        assert end.floor("D") == pd.Timestamp("2024-07-17", tz="UTC")
+
+    def test_a_monthly_source_grows_to_whole_calendar_months(self):
+        source = self._source("M")
+        start, end = source.trim_window(_window("2024-07-15", "2024-09-10"))
+        assert start == pd.Timestamp("2024-07-01", tz="UTC")
+        assert end.floor("D") == pd.Timestamp("2024-09-30", tz="UTC")
+
+    def test_growing_is_idempotent_so_a_source_may_widen_then_trim(self):
+        """hydrometric widens its own request and still lets the shared trim run."""
+        source = self._source("M")
+        query = _window("2024-07-15", "2024-09-10")
+        once = source.trim_window(query)
+        twice = source.trim_window(query.replace(start=once[0], end=once[1]))
+        assert once == twice
+
+    def test_an_instantaneous_source_is_not_widened(self):
+        source = self._source(None)
+        query = _window("2024-07-15T12:00", "2024-07-17")
+        assert source.trim_window(query) == (query.start, query.end)
+
+    def test_the_period_aggregate_sources_declare_their_period(self):
+        from omnisea.providers.eccc import (
+            EcccClimateDaily,
+            EcccClimateMonthly,
+            EcccHydrometricDailyMean,
+            EcccProvider,
+        )
+
+        provider = EcccProvider()
+        assert EcccClimateDaily(provider).period == "D"
+        assert EcccClimateMonthly(provider).period == "M"
+        assert EcccHydrometricDailyMean(provider).period == "D"
+        # An instantaneous series must not declare one.
+        from omnisea.providers.eccc import EcccClimateHourly
+
+        assert EcccClimateHourly(provider).period is None

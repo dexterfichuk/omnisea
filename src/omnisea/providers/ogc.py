@@ -74,6 +74,10 @@ class OgcFeaturesSource(RetrievalSource):
     station_id_field: str = ""
     #: Property naming the station in the *station catalogue* collection.
     catalogue_id_field: str = ""
+    #: Properties to read the station's human-readable name from, in order of preference.
+    #: Collections disagree: the climate ones use ``STATION_NAME``, AHCCD publishes a bilingual
+    #: ``station_name__nom_station``.
+    name_fields: tuple[str, ...] = ("STATION_NAME", "name")
     #: Property holding the observation time.
     time_field: str = ""
     #: Properties that identify or time-stamp a row rather than measure something.
@@ -82,6 +86,14 @@ class OgcFeaturesSource(RetrievalSource):
     qc_suffix: str = "_FLAG"
     #: Rough samples per day, used for the row estimate shown in the Catalog.
     samples_per_day: float = 24.0
+    #: pandas **Period** alias ("D", "M", "Y") for collections whose rows summarize a period
+    #: and are labelled by the period's first instant.
+    #:
+    #: Without it, asking for "15 July noon to 17 July" silently returns fewer days than
+    #: "15 July to 17 July": the 15 July summary is stamped 00:00Z, so the trim discards it even
+    #: though the day it describes overlaps the request. A period belongs to a window when its
+    #: *interval* overlaps, not when its label instant happens to fall inside.
+    period: str | None = None
     #: Reject stations whose period of record for *this* dataset is entirely absent. The ECCC
     #: station catalogue lists every station once and marks the datasets it lacks with null
     #: dates, so without this a query finds ~110 "stations" of which only a handful hold hourly
@@ -150,7 +162,7 @@ class OgcFeaturesSource(RetrievalSource):
 
         return self.new_match(
             station_id=str(station_id),
-            name=str(props.get("STATION_NAME") or props.get("name") or ""),
+            name=self.station_name(props),
             lat=lat,
             lon=lon,
             variables=tuple(sorted(self.variables)),
@@ -159,6 +171,14 @@ class OgcFeaturesSource(RetrievalSource):
             last=_maybe_ts(last),
             extra={"properties": dict(props)},
         )
+
+    def station_name(self, props: Mapping[str, Any]) -> str:
+        """The station's display name, from the first of :attr:`name_fields` that has one."""
+        for field_name in self.name_fields:
+            value = props.get(field_name)
+            if value:
+                return str(value)
+        return ""
 
     def record_period(self, props: Mapping[str, Any]) -> tuple[Any, Any]:
         """The station's period of record, used to skip stations that cannot cover the window."""
@@ -223,7 +243,8 @@ class OgcFeaturesSource(RetrievalSource):
 
         to_cf = self.to_cf_units(query)
         records: list[dict[str, Any]] = []
-        for row in rows:
+        for raw_row in rows:
+            row = self.clean_row(raw_row)
             time_value = self.extract_time(row)
             if time_value is None:
                 continue
@@ -236,7 +257,7 @@ class OgcFeaturesSource(RetrievalSource):
             records.append(record)
 
         frame = frame_from_records(records)
-        frame = trim_to_window(frame, query.start, query.end)
+        frame = trim_to_window(frame, *self.trim_window(query))
         frame = drop_orphan_qc(frame)
         var_attrs: dict[str, dict[str, Any]] = {}
         for raw, spec in specs.items():
@@ -267,6 +288,37 @@ class OgcFeaturesSource(RetrievalSource):
         )
 
     # ------------------------------------------------------------------ per-source hooks
+
+    def period_window(self, query: Query) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """The query window grown out to whole :attr:`period` aggregation periods.
+
+        Needed at both ends of the round trip. Upstream matches an aggregate against the period
+        it covers, so a window landing inside one period matches nothing:
+        ``hydrometric-annual-statistics`` returns 0 rows for ``2020-06-01/2020-09-30`` and 2 for
+        ``2020-01-01/2020-12-31``. And a row that did come back would then be trimmed away for
+        being stamped before the window opened, since a period is labelled by its first instant.
+        Growing both ends keeps every period that overlaps what was asked for.
+
+        Idempotent, so a source may widen its request and still let the shared trim run.
+        """
+        start = query.start.tz_convert("UTC").tz_localize(None).to_period(self.period)
+        end = query.end.tz_convert("UTC").tz_localize(None).to_period(self.period)
+        return start.start_time.tz_localize("UTC"), end.end_time.tz_localize("UTC")
+
+    def trim_window(self, query: Query) -> tuple[pd.Timestamp, pd.Timestamp]:
+        """The window the fetched frame is trimmed to."""
+        if not self.period:
+            return query.start, query.end
+        return self.period_window(query)
+
+    def clean_row(self, row: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Normalize one raw record before it is shaped.
+
+        The default is a pass-through. Override it for collections that spell "missing" as a
+        sentinel value rather than ``null`` — AHCCD writes ``-9999.9``, and left alone that
+        becomes a real number in a mean.
+        """
+        return row
 
     def extract_time(self, row: Mapping[str, Any]) -> Any:
         return row.get(self.time_field)

@@ -36,6 +36,13 @@ CLIMATE_SKIP = frozenset(
         "UTC_DAY",
         "LATITUDE_DECIMAL_DEGREES",
         "LONGITUDE_DECIMAL_DEGREES",
+        # climate-monthly publishes these as decimal-degree *strings*; unskipped they become
+        # variables competing with the geometry the coordinates actually come from.
+        "LATITUDE",
+        "LONGITUDE",
+        "LAST_UPDATED",
+        "ENG_PROVINCE_NAME",
+        "FRE_PROVINCE_NAME",
     }
 )
 

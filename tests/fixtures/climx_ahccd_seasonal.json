@@ -1,0 +1,163 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "6158355.1981.Fal",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -79.4,
+     43.67
+    ]
+   },
+   "properties": {
+    "lat__lat": 43.67,
+    "lon__long": -79.4,
+    "identifier__identifiant": "6158355.1981.Fal",
+    "station_id__id_station": "6158355",
+    "period_value__valeur_periode": "Fal",
+    "period_group__groupe_periode": "Seasonal",
+    "province__province": "ON",
+    "year__annee": 1981,
+    "temp_mean__temp_moyenne": 9.8,
+    "temp_mean_units__temp_moyenne_unites": "C",
+    "temp_max__temp_max": 12.7,
+    "temp_max_units__temp_max_unites": "C",
+    "temp_min__temp_min": 6.8,
+    "temp_min_units__temp_min_unites": "C",
+    "total_precip__precip_totale": null,
+    "total_precip_units__precip_totale_unites": "mm",
+    "rain__pluie": null,
+    "rain_units__pluie_unites": "mm",
+    "snow__neige": null,
+    "snow_units__neige_unites": "mm",
+    "pressure_sea_level__pression_niveau_mer": null,
+    "pressure_sea_level_units__pression_niveau_mer_unite": "hPa",
+    "pressure_station__pression_station": null,
+    "pressure_station_units__pression_station_unites": "hPa",
+    "wind_speed__vitesse_vent": null,
+    "wind_speed_units__vitesse_vent_unites": "kph"
+   }
+  },
+  {
+   "id": "6158355.1981.Smr",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -79.4,
+     43.67
+    ]
+   },
+   "properties": {
+    "lat__lat": 43.67,
+    "lon__long": -79.4,
+    "identifier__identifiant": "6158355.1981.Smr",
+    "station_id__id_station": "6158355",
+    "period_value__valeur_periode": "Smr",
+    "period_group__groupe_periode": "Seasonal",
+    "province__province": "ON",
+    "year__annee": 1981,
+    "temp_mean__temp_moyenne": 20.6,
+    "temp_mean_units__temp_moyenne_unites": "C",
+    "temp_max__temp_max": 24.5,
+    "temp_max_units__temp_max_unites": "C",
+    "temp_min__temp_min": 16.7,
+    "temp_min_units__temp_min_unites": "C",
+    "total_precip__precip_totale": null,
+    "total_precip_units__precip_totale_unites": "mm",
+    "rain__pluie": null,
+    "rain_units__pluie_unites": "mm",
+    "snow__neige": null,
+    "snow_units__neige_unites": "mm",
+    "pressure_sea_level__pression_niveau_mer": null,
+    "pressure_sea_level_units__pression_niveau_mer_unite": "hPa",
+    "pressure_station__pression_station": null,
+    "pressure_station_units__pression_station_unites": "hPa",
+    "wind_speed__vitesse_vent": null,
+    "wind_speed_units__vitesse_vent_unites": "kph"
+   }
+  },
+  {
+   "id": "6158355.1981.Win",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -79.4,
+     43.67
+    ]
+   },
+   "properties": {
+    "lat__lat": 43.67,
+    "lon__long": -79.4,
+    "identifier__identifiant": "6158355.1981.Win",
+    "station_id__id_station": "6158355",
+    "period_value__valeur_periode": "Win",
+    "period_group__groupe_periode": "Seasonal",
+    "province__province": "ON",
+    "year__annee": 1981,
+    "temp_mean__temp_moyenne": -4.2,
+    "temp_mean_units__temp_moyenne_unites": "C",
+    "temp_max__temp_max": -1,
+    "temp_max_units__temp_max_unites": "C",
+    "temp_min__temp_min": -7.3,
+    "temp_min_units__temp_min_unites": "C",
+    "total_precip__precip_totale": null,
+    "total_precip_units__precip_totale_unites": "mm",
+    "rain__pluie": null,
+    "rain_units__pluie_unites": "mm",
+    "snow__neige": null,
+    "snow_units__neige_unites": "mm",
+    "pressure_sea_level__pression_niveau_mer": null,
+    "pressure_sea_level_units__pression_niveau_mer_unite": "hPa",
+    "pressure_station__pression_station": null,
+    "pressure_station_units__pression_station_unites": "hPa",
+    "wind_speed__vitesse_vent": null,
+    "wind_speed_units__vitesse_vent_unites": "kph"
+   }
+  },
+  {
+   "id": "6158355.1981.Spr",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -79.4,
+     43.67
+    ]
+   },
+   "properties": {
+    "lat__lat": 43.67,
+    "lon__long": -79.4,
+    "identifier__identifiant": "6158355.1981.Spr",
+    "station_id__id_station": "6158355",
+    "period_value__valeur_periode": "Spr",
+    "period_group__groupe_periode": "Seasonal",
+    "province__province": "ON",
+    "year__annee": 1981,
+    "temp_mean__temp_moyenne": 7.8,
+    "temp_mean_units__temp_moyenne_unites": "C",
+    "temp_max__temp_max": 11.8,
+    "temp_max_units__temp_max_unites": "C",
+    "temp_min__temp_min": 3.8,
+    "temp_min_units__temp_min_unites": "C",
+    "total_precip__precip_totale": null,
+    "total_precip_units__precip_totale_unites": "mm",
+    "rain__pluie": null,
+    "rain_units__pluie_unites": "mm",
+    "snow__neige": null,
+    "snow_units__neige_unites": "mm",
+    "pressure_sea_level__pression_niveau_mer": null,
+    "pressure_sea_level_units__pression_niveau_mer_unite": "hPa",
+    "pressure_station__pression_station": null,
+    "pressure_station_units__pression_station_unites": "hPa",
+    "wind_speed__vitesse_vent": null,
+    "wind_speed_units__vitesse_vent_unites": "kph"
+   }
+  }
+ ],
+ "numberMatched": 4,
+ "numberReturned": 4
+}

@@ -145,20 +145,6 @@ class _HydrometricHistorical(OgcFeaturesSource):
 
     # ------------------------------------------------------------------ period windows
 
-    def period_window(self, query: Query) -> tuple[pd.Timestamp, pd.Timestamp]:
-        """The query window grown out to whole aggregation periods.
-
-        Needed at both ends of the round trip. Upstream matches an aggregate against the period
-        it covers, so a window landing inside one period matches nothing:
-        ``hydrometric-annual-statistics`` returns 0 rows for ``2020-06-01/2020-09-30`` and 2 for
-        ``2020-01-01/2020-12-31``. And a row that did come back would then be trimmed away for
-        being stamped before the window opened, since a period is labelled by its first instant.
-        Growing both ends keeps every period that overlaps what was asked for.
-        """
-        start = query.start.tz_convert("UTC").tz_localize(None).to_period(self.period)
-        end = query.end.tz_convert("UTC").tz_localize(None).to_period(self.period)
-        return start.start_time.tz_localize("UTC"), end.end_time.tz_localize("UTC")
-
     def period_count(self, query: Query) -> int:
         """How many periods the query touches — the exact row count for one station."""
         start, end = self.period_window(query)
