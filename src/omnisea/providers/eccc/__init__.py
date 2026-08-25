@@ -20,7 +20,9 @@ Three upstream traps are handled, all confirmed by inspection:
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import timedelta
 
+from ...http import NEVER_CACHE
 from ..ogc import OgcFeaturesProvider, OgcFeaturesSource
 from .climate import (
     EcccAhccdAnnual,
@@ -63,6 +65,26 @@ class EcccProvider(OgcFeaturesProvider):
     base_url = "https://api.weather.gc.ca"
     license = "Environment and Climate Change Canada — Open Government Licence – Canada"
     terms_url = "https://eccc-msc.github.io/open-data/licence/readme_en/"
+
+    #: Order matters — first match wins. The realtime collections are excluded outright (a
+    #: stale observation is a wrong number, not a slow one) and are listed before the broad
+    #: globs so nothing can claim them first. Station catalogues are near-static; the appended
+    #: archives are quality-controlled and published days behind real time, so an hour of
+    #: staleness cannot hide a measurement that was available when the query ran; the annual
+    #: products are re-issued about once a year. ``ahccd-stations`` is deliberately caught by
+    #: the ``*-stations`` rule above the ``ahccd-*`` one.
+    cache_policy = {
+        "*/collections/swob-realtime/items": NEVER_CACHE,
+        "*/collections/hydrometric-realtime/items": NEVER_CACHE,
+        "*/collections/*-stations/items": timedelta(days=7),
+        "*/collections/climate-hourly/items": timedelta(hours=1),
+        "*/collections/climate-daily/items": timedelta(hours=1),
+        "*/collections/climate-monthly/items": timedelta(hours=1),
+        "*/collections/hydrometric-daily-mean/items": timedelta(hours=1),
+        "*/collections/hydrometric-monthly-mean/items": timedelta(hours=1),
+        "*/collections/ahccd-*/items": timedelta(days=1),
+        "*/collections/hydrometric-annual-*/items": timedelta(days=1),
+    }
 
     def build_sources(self) -> Sequence[OgcFeaturesSource]:
         return [

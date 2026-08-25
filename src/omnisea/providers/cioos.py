@@ -30,6 +30,7 @@ import logging
 import os
 import re
 from collections.abc import Mapping, Sequence
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +63,14 @@ class CioosProvider(Provider):
     base_url = "https://form.cioos.ca"
     license = "Per-record; see each record's use_constraints/licence field"
     terms_url = "https://cioos.ca"
+
+    #: Published metadata records are read a few hundred files at a time out of a GitHub
+    #: repository, and unauthenticated GitHub allows 60 requests an hour — a day of caching is
+    #: the difference between discovery working twice in a row and not.
+    cache_policy = {
+        "api.github.com/repos/": timedelta(days=1),
+        "raw.githubusercontent.com/": timedelta(days=1),
+    }
 
     def build_sources(self) -> Sequence[DiscoverySource]:
         return [CioosMetadataSource(self)]

@@ -150,6 +150,28 @@ possibly help, and prints an explanation on the Catalog. Without it, a historica
 empty result — which a user reads as "there is no station here", a different and wrong
 conclusion from "this collection only keeps 30 days". Leave it `None` for a full archive.
 
+**Declare `cache_policy` on your `Provider` if any of your endpoints are safely cacheable.**
+When a user calls `omnisea.enable_cache()`, every registered provider's rules are merged — a
+plugin's exactly like a built-in's. You are the party that knows which of your endpoints serve
+near-static catalogues and which serve measurements a stale answer would corrupt, so say so:
+
+```python
+from datetime import timedelta
+from omnisea.http import NEVER_CACHE
+
+class MyProvider(Provider):
+    cache_policy = {
+        "api.example.org/v1/*/observations": NEVER_CACHE,     # volatile first — first match wins
+        "api.example.org/v1/stations": timedelta(days=7),
+    }
+```
+
+Patterns match against the URL minus its scheme (`fnmatch`, wildcards cross `/`; compiled
+regexes also work). List volatile endpoints **first** and mark them `NEVER_CACHE` explicitly
+rather than by omission — the explicit exclusion survives a caller who passes `expire_after=`
+to cache everything else. An empty policy means none of your endpoints are ever cached, which
+is the safe default.
+
 **Set `cell_methods` whenever a value summarizes an interval** — a total, a mean, a maximum
 over a period. It is not decoration: `omnisea.align()` reads it to decide how the variable
 resamples and how it joins to a user's own timestamps. A daily total without `cell_methods`

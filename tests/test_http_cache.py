@@ -282,6 +282,52 @@ def test_realtime_stays_uncached_even_when_caching_everything_else(cached):
     assert adapter.count(SWOB) == 2
 
 
+def test_a_third_party_providers_policy_is_honoured(cached):
+    # The endpoint judgment lives on the provider, so a plugin declares cacheability the same
+    # way the built-ins do — no core edit, no enable_cache() argument.
+    from datetime import timedelta
+
+    from omnisea import registry
+    from omnisea.providers.base import Provider, RetrievalSource
+
+    class PluginSource(RetrievalSource):
+        name = "plugin_sst"
+        title = "Plugin SST"
+        node_path = "in_situ/plugin"
+
+        def discover(self, query):
+            return []
+
+        def fetch(self, query, matches):
+            return []
+
+    class PluginProvider(Provider):
+        name = "plugin"
+        title = "Plugin Network"
+        base_url = "https://plugin.example.org"
+        license = "CC-BY-4.0"
+        cache_policy = {
+            "plugin.example.org/api/*/data": http.NEVER_CACHE,
+            "plugin.example.org/api/stations": timedelta(days=7),
+        }
+
+        def build_sources(self):
+            return [PluginSource(self)]
+
+    registry.register_provider(PluginProvider(), replace=True)
+    try:
+        session, adapter = cached()
+        stations = "https://plugin.example.org/api/stations"
+        data = "https://plugin.example.org/api/BAM01/data"
+        for url in (stations, stations, data, data):
+            session.get(url)
+        assert adapter.count(stations) == 1, "the plugin's catalogue rule must apply"
+        assert adapter.count(data) == 2, "the plugin's never-cache rule must apply"
+    finally:
+        registry._SOURCES.pop("plugin_sst", None)
+        registry._PROVIDERS.pop("plugin", None)
+
+
 def test_caller_rules_take_precedence_over_the_policy(cached):
     session, adapter = cached(
         urls_expire_after={"api-iwls.dfo-mpo.gc.ca/api/v1/stations": http.NEVER_CACHE}

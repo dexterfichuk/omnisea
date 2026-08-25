@@ -20,6 +20,7 @@ provider (``"eccc"``) selects all of its sources.
 from __future__ import annotations
 
 import logging
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -159,6 +160,14 @@ class Provider(ABC):
     license: str = ""
     #: Where the licence and terms live.
     terms_url: str = ""
+    #: How :func:`omnisea.enable_cache` may treat this provider's endpoints: ordered
+    #: ``{url pattern: expiry}`` rules, first match wins, with
+    #: :data:`omnisea.http.NEVER_CACHE` marking endpoints a stale answer would corrupt.
+    #: The provider is the party that knows which of its endpoints serve measurements and
+    #: which serve near-static catalogues, so the policy lives here — declared the same way by
+    #: built-in and third-party providers — and the cache merges every registered provider's
+    #: rules. Empty means "nothing of this provider's is ever cached", the safe default.
+    cache_policy: Mapping[str | re.Pattern[str], Any] = {}
 
     def __init__(self) -> None:
         self._sources: list[DataSource] | None = None

@@ -13,7 +13,6 @@ import re
 import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -31,6 +30,7 @@ __all__ = [
     "enable_cache",
     "disable_cache",
     "CACHE_POLICY",
+    "cache_policy",
     "NEVER_CACHE",
     "paginate_ogc_items",
     "chunk_time",
@@ -115,51 +115,39 @@ def get_session() -> requests.Session:
 #: by callers — without importing an optional dependency.
 NEVER_CACHE = "omnisea:never-cache"
 
-#: How long a response stays usable, by URL. Rules are tried in order and the first match wins.
+#: Core fallback rules, tried after every provider's own. Rules are ordered ``{pattern:
+#: expiry}`` pairs, first match wins; patterns are matched with ``fnmatch`` against the URL
+#: minus its scheme, and the wildcards cross ``/``.
 #:
-#: The judgment encoded here is that **catalogues are near-static and measurements are not**.
-#: IWLS ``GET /stations`` returns all 1573 stations in one ~2 MB payload and changes only when a
-#: station is commissioned, moved or retired — months apart — so re-fetching it every process is
-#: pure waste. A water level from one of those stations is minutes old, and serving a stale one
-#: is a wrong number rather than a slow one, which is a correctness bug and not a performance
-#: trade-off. So the volatile endpoints are listed first and excluded outright, and anything not
-#: named here is left uncached by default.
-#:
-#: Patterns are matched with ``fnmatch`` against the URL minus its scheme, and the wildcards
-#: cross ``/`` — hence the ordering, and hence the one anchored regex.
-CACHE_POLICY: dict[str | re.Pattern[str], Any] = {
-    # Measurements. These are the endpoints a stale hit would corrupt, so they are excluded
-    # explicitly rather than by omission: the exclusion then survives a caller who passes
-    # expire_after= to cache everything else.
-    "api-iwls.dfo-mpo.gc.ca/api/v1/stations/*/data": NEVER_CACHE,
-    "*/collections/swob-realtime/items": NEVER_CACHE,
-    "*/collections/hydrometric-realtime/items": NEVER_CACHE,
-    # Which stations exist and where they are. Anchored on the query string or end of URL so
-    # that only the collection itself matches; the glob form would append '**' and quietly
-    # swallow every future per-station endpoint, including the next volatile one.
-    re.compile(r"api-iwls\.dfo-mpo\.gc\.ca/api/v1/stations(\?|$)"): timedelta(days=7),
-    "api-iwls.dfo-mpo.gc.ca/api/v1/stations/*/metadata": timedelta(days=7),
-    "*/collections/*-stations/items": timedelta(days=7),
-    # Published metadata records, which CIOOS reads a few hundred files at a time out of a
-    # GitHub repository. Unauthenticated GitHub allows 60 requests an hour, so this is the
-    # difference between discovery working twice in a row and not.
-    "api.github.com/repos/": timedelta(days=1),
-    "raw.githubusercontent.com/": timedelta(days=1),
-    # Continuously-appended archives. These are quality-controlled and published days behind
-    # real time, so an hour of staleness cannot hide a measurement that was available when the
-    # query ran — short enough to stay honest, long enough that re-running a notebook cell is
-    # free.
-    "*/collections/climate-hourly/items": timedelta(hours=1),
-    "*/collections/climate-daily/items": timedelta(hours=1),
-    "*/collections/climate-monthly/items": timedelta(hours=1),
-    "*/collections/hydrometric-daily-mean/items": timedelta(hours=1),
-    "*/collections/hydrometric-monthly-mean/items": timedelta(hours=1),
-    # Annual products. AHCCD is re-issued about once a year and the hydrometric annual
-    # summaries are computed after the water year closes, so an hour would be pointlessly
-    # short. ``ahccd-stations`` is not caught here — the station rule above already claimed it.
-    "*/collections/ahccd-*/items": timedelta(days=1),
-    "*/collections/hydrometric-annual-*/items": timedelta(days=1),
-}
+#: The endpoint-specific judgment — which URLs serve near-static catalogues and which serve
+#: measurements a stale hit would corrupt — lives on each :class:`~omnisea.Provider` as its
+#: ``cache_policy``, because the provider is the party that knows. Built-in and third-party
+#: providers declare it identically, and :func:`enable_cache` merges every registered
+#: provider's rules. This table is deliberately empty: an endpoint nobody has claimed is
+#: assumed to serve measurements, because guessing wrong in that direction is only slow.
+CACHE_POLICY: dict[str | re.Pattern[str], Any] = {}
+
+
+def cache_policy() -> dict[str | re.Pattern[str], Any]:
+    """The merged cache policy: every registered provider's rules, then the core fallbacks.
+
+    Providers merge in registry order with each provider's internal ordering preserved, which
+    is what matters — a provider lists its volatile endpoints before its broad catalogue
+    globs, and its patterns name its own hosts, so rules from different providers do not
+    contend for the same URL.
+    """
+    # Imported here rather than at module top: the registry imports the provider base class,
+    # which imports this module for get_json. By the time anyone can call enable_cache the
+    # package is fully imported, so the late import is safe and breaks the cycle.
+    from .registry import all_providers
+
+    table: dict[str | re.Pattern[str], Any] = {}
+    for provider in all_providers():
+        for pattern, value in (provider.cache_policy or {}).items():
+            table.setdefault(pattern, value)
+    for pattern, value in CACHE_POLICY.items():
+        table.setdefault(pattern, value)
+    return table
 
 
 def _import_requests_cache() -> Any:
@@ -185,9 +173,9 @@ def _expiry(requests_cache: Any, value: Any) -> Any:
 def _expiry_table(
     requests_cache: Any, overrides: Mapping[str | re.Pattern[str], Any] | None
 ) -> dict[Any, Any]:
-    """Caller rules first (first match wins, so they can override), then :data:`CACHE_POLICY`."""
+    """Caller rules first (first match wins, so they can override), then :func:`cache_policy`."""
     table: dict[Any, Any] = {k: _expiry(requests_cache, v) for k, v in (overrides or {}).items()}
-    for pattern, value in CACHE_POLICY.items():
+    for pattern, value in cache_policy().items():
         table.setdefault(pattern, _expiry(requests_cache, value))
     return table
 
@@ -201,9 +189,10 @@ def enable_cache(
 ) -> requests.Session:
     """Route omnisea's requests through an on-disk response cache. Off unless you call this.
 
-    What is cached, and for how long, is decided per URL by :data:`CACHE_POLICY` — station
-    catalogues and station metadata for a week, published metadata records for a day, the ECCC
-    climate archive for an hour, and realtime observations never. Requires the ``cache`` extra
+    What is cached, and for how long, is decided per URL by each registered provider's
+    ``cache_policy`` (see :func:`cache_policy` for the merged table) — station catalogues and
+    station metadata for a week, published metadata records for a day, the ECCC climate archive
+    for an hour, and realtime observations never. Requires the ``cache`` extra
     (``pip install "omnisea[cache]"``).
 
     Call it once at startup: it replaces the process-wide session, so calling it while a fetch
@@ -224,8 +213,8 @@ def enable_cache(
             :data:`NEVER_CACHE` — an unrecognised endpoint is assumed to serve measurements,
             because guessing wrong in that direction is only slow. Pass seconds or a
             ``timedelta`` to cache the rest too.
-        urls_expire_after: extra ``{pattern: expiry}`` rules, matched *before* the built-in
-            ones so they can override them.
+        urls_expire_after: extra ``{pattern: expiry}`` rules, matched *before* the providers'
+            own so they can override them.
         backend: any requests-cache backend; ``"memory"`` caches for the life of the process
             and writes nothing to disk.
 

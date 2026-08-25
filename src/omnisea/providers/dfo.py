@@ -15,13 +15,15 @@ Two upstream behaviours shape this adapter, both verified against the live servi
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from collections.abc import Sequence
+from datetime import timedelta
 from typing import Any
 
 from .. import cf
 from ..errors import QueryError, UpstreamError
-from ..http import DEFAULT_MAX_WORKERS, chunk_time, get_json, map_threads
+from ..http import DEFAULT_MAX_WORKERS, NEVER_CACHE, chunk_time, get_json, map_threads
 from ..query import Query, register_option
 from .base import Provider, RetrievalSource, StationMatch, StationSeries, frame_from_records
 
@@ -82,6 +84,17 @@ class DfoProvider(Provider):
     base_url = BASE
     license = "Fisheries and Oceans Canada — Open Government Licence – Canada"
     terms_url = "https://open.canada.ca/en/open-government-licence-canada"
+
+    #: Water levels are minutes old and a stale one is a wrong number, so the data endpoint is
+    #: excluded explicitly — the exclusion then survives a caller who caches everything else.
+    #: The station list is ~2 MB of catalogue that changes a few times a year; the bare-list
+    #: rule is an anchored regex because the glob form would append ``**`` and quietly swallow
+    #: every per-station endpoint, including the volatile one above it.
+    cache_policy = {
+        "api-iwls.dfo-mpo.gc.ca/api/v1/stations/*/data": NEVER_CACHE,
+        re.compile(r"api-iwls\.dfo-mpo\.gc\.ca/api/v1/stations(\?|$)"): timedelta(days=7),
+        "api-iwls.dfo-mpo.gc.ca/api/v1/stations/*/metadata": timedelta(days=7),
+    }
 
     def build_sources(self) -> Sequence[RetrievalSource]:
         return [DfoTidesSource(self)]
