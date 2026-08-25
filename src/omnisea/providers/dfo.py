@@ -22,10 +22,16 @@ from typing import Any
 from .. import cf
 from ..errors import QueryError, UpstreamError
 from ..http import DEFAULT_MAX_WORKERS, chunk_time, get_json, map_threads
-from ..query import Query
+from ..query import Query, register_option
 from .base import Provider, RetrievalSource, StationMatch, StationSeries, frame_from_records
 
 log = logging.getLogger("omnisea.dfo")
+
+register_option(
+    "resolution",
+    "dfo_tides: ONE_MINUTE | THREE_MINUTES | FIVE_MINUTES | FIFTEEN_MINUTES | SIXTY_MINUTES",
+)
+register_option("series", "dfo_tides: which IWLS series to pull, e.g. ('wlo', 'wlp', 'wlp-hilo')")
 
 __all__ = ["DfoProvider", "clear_cache"]
 

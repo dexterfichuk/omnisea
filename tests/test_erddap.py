@@ -33,17 +33,10 @@ from omnisea.providers.erddap import (
     clear_cache,
     parse_info,
 )
-from omnisea.query import Query, register_option
 
-# The adapter's own query knobs. Registering here keeps the test file runnable on its own; the
-# same names belong in omnisea.query.KNOWN_OPTIONS, and register_option is idempotent.
-for _name, _doc in {
-    "erddap_server": "erddap: ERDDAP server root URL",
-    "erddap_datasets": "erddap: dataset ids to use instead of searching",
-    "erddap_search": "erddap: free-text searchFor passed to the ERDDAP search index",
-    "erddap_max_datasets": "erddap: ceiling on datasets discovery will describe",
-}.items():
-    register_option(_name, _doc)
+# Importing the adapter registers its own query knobs (erddap_server and friends), the same
+# way any third-party provider's would be.
+from omnisea.query import Query
 
 WEEK = ("2024-07-01", "2024-07-08")
 HYDRO_HOUR = ("2024-07-01T00:00:00Z", "2024-07-01T01:00:00Z")

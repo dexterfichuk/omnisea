@@ -43,7 +43,11 @@ class BBox(NamedTuple):
 
 EARTH_RADIUS_KM = 6371.0088
 
-#: Source-specific knobs accepted as keyword arguments, with what each one does.
+#: Options accepted as keyword arguments, with what each one does. Only the generic knobs live
+#: here; every source-specific one — ``resolution``, ``erddap_server``, ``cioos_records`` — is
+#: declared by its own provider module through :func:`register_option`, exactly as a
+#: third-party provider would declare its own.
+#:
 #: Validated on construction: a silently-ignored ``resolutio="ONE_MINUTE"`` would hand back
 #: minute data the caller believed was hourly, which is exactly the kind of quiet wrongness
 #: this library exists to prevent.
@@ -52,20 +56,15 @@ KNOWN_OPTIONS: dict[str, str] = {
     "to_cf_units": "convert values to canonical CF units instead of provider units",
     "max_workers": "thread pool size for per-station fetches",
     "max_items": "hard ceiling on features pulled from a paged OGC collection",
-    "resolution": "dfo_tides: ONE_MINUTE | THREE_MINUTES | FIVE_MINUTES | "
-    "FIFTEEN_MINUTES | SIXTY_MINUTES",
-    "series": "dfo_tides: which IWLS series to pull, e.g. ('wlo', 'wlp', 'wlp-hilo')",
-    "erddap_server": "erddap: ERDDAP server root URL (default CIOOS Pacific)",
-    "erddap_datasets": "erddap: dataset id(s) to use instead of searching the server",
-    "erddap_search": "erddap: free-text searchFor passed to the ERDDAP search index",
-    "erddap_max_datasets": "erddap: ceiling on datasets discovery will describe (default 25)",
-    "cioos_records": "cioos_metadata: path, directory, URL or owner/repo holding metadata records",
-    "cioos_token": "cioos_metadata: token for an authenticated records endpoint",
 }
 
 
 def register_option(name: str, description: str) -> None:
-    """Declare a query option, so third-party sources can accept their own knobs."""
+    """Declare a query option, so a source can accept its own knobs.
+
+    Built-in and third-party sources use the same call, at import time of the module that
+    understands the option — the validator cannot know about a knob whose owner is not loaded.
+    """
     KNOWN_OPTIONS[name] = description
 
 

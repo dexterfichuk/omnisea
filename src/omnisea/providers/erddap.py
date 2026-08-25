@@ -72,7 +72,7 @@ import xarray as xr
 from .. import cf
 from ..errors import PayloadTooLargeError, ProviderError, QueryError, UpstreamError
 from ..http import DEFAULT_MAX_WORKERS, chunk_time, get_json, map_threads
-from ..query import BBox, Query
+from ..query import BBox, Query, register_option
 from .base import (
     Provider,
     RetrievalSource,
@@ -84,6 +84,13 @@ from .base import (
 )
 
 log = logging.getLogger("omnisea.erddap")
+
+register_option("erddap_server", "erddap: ERDDAP server root URL (default IOOS Sensors)")
+register_option("erddap_datasets", "erddap: dataset id(s) to use instead of searching the server")
+register_option("erddap_search", "erddap: free-text searchFor passed to the ERDDAP search index")
+register_option(
+    "erddap_max_datasets", "erddap: ceiling on datasets discovery will describe (default 25)"
+)
 
 __all__ = [
     "ErddapProvider",

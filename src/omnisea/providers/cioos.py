@@ -38,10 +38,15 @@ import pandas as pd
 from .. import cf
 from ..errors import ProviderError
 from ..http import get_json, get_session
-from ..query import BBox, Query
+from ..query import BBox, Query, register_option
 from .base import DiscoverySource, Provider, StationMatch
 
 log = logging.getLogger("omnisea.cioos")
+
+register_option(
+    "cioos_records", "cioos_metadata: path, directory, URL or owner/repo holding metadata records"
+)
+register_option("cioos_token", "cioos_metadata: token for an authenticated records endpoint")
 
 __all__ = ["CioosProvider", "CioosMetadataSource", "parse_record"]
 
