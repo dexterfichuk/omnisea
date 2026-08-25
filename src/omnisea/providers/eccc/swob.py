@@ -72,6 +72,10 @@ _SWOB_SKIP = frozenset(
 
 class _SwobSource(OgcFeaturesSource):
     """What the land and marine SWOB collections share: their unit and flag conventions."""
+    #: Both SWOB collections are rolling archives of roughly the last month. Declared here so a
+    #: historical query is told that, rather than matching nothing and reading as "no station".
+    retention = pd.Timedelta(days=30)
+
 
     qc_suffix = "-qa"
     skip_fields = _SWOB_SKIP

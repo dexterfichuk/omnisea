@@ -21,6 +21,17 @@ mapping for a catalogue this size would be both impossible and wrong: the datase
 what they measured. The consequence is that :attr:`ErddapSource.fields` is empty at class level
 and the real table is built per dataset at fetch time.
 
+Two things that follow from reading the metadata rather than curating it, both worth knowing:
+
+* **``to_cf_units=True`` cannot convert anything here.** A dataset states the units its numbers
+  are in; it does not state how to reach canonical CF units, and omnisea will not guess a scale
+  factor for someone else's data. Values therefore always come back in the published units, with
+  those units in the ``units`` attribute — which is the invariant that matters.
+* **tabledap nodes go under ``in_situ/``.** Every ``cdm_data_type`` tabledap serves is a CF
+  discrete-sampling geometry, which is an observation by definition, so this holds for the
+  datasets that exist today. It is an inference and not a guarantee, so ``cdm_data_type`` and the
+  dataset's own ``source_url`` are recorded on every node for anyone who needs to check.
+
 **Why not erddapy.** ``erddapy`` builds these URLs and hands back a DataFrame, which is the easy
 half. The hard half is routing through :mod:`omnisea.http` so that the retry policy, the global
 concurrency cap, the User-Agent and the payload ceiling apply — and erddapy reads with its own
@@ -911,13 +922,21 @@ class ErddapGridSource(ErddapSource):
 # --------------------------------------------------------------------------- field tables
 
 
-def _field_table(info: DatasetInfo, *, present: Iterable[str]) -> dict[str, cf.FieldSpec]:
+def _field_table(
+    info: DatasetInfo, *, present: Iterable[str], include_unmapped: bool = True
+) -> dict[str, cf.FieldSpec]:
     """Build the CF field table for one dataset from its own published metadata.
 
     The output variable takes the CF standard name where the dataset gives one and that name is
     unambiguous within the dataset; where two variables share a standard name — the same quantity
     at two depths, say — both keep their ERDDAP names, because a ``_2`` suffix would tell a
     reader nothing about which is which.
+
+    A variable with no standard name is described here too rather than left to
+    :func:`cf.passthrough_spec`, because the dataset still published a ``long_name``, units and
+    possibly ``cell_methods`` for it, and the generic passthrough would throw all three away. It
+    is tagged ``omnisea_mapped = 0`` just the same, and dropped when the caller does not want
+    unmapped fields.
     """
     present = list(present)
     qc_map = info.qc_map()
@@ -939,12 +958,16 @@ def _field_table(info: DatasetInfo, *, present: Iterable[str]) -> dict[str, cf.F
     for name in emitted:
         attrs = info.variables[name]
         standard_name = str(attrs.get("standard_name") or "")
+        if not standard_name and not include_unmapped:
+            continue
         var = standard_name if (standard_name and counts.get(standard_name, 0) == 1) else name
         if name in _POSITION_RENAME:
             var = _POSITION_RENAME[name]
         qc_field = next((q for q in qc_map.get(name, ()) if q in primary_qc), None)
 
         extra: dict[str, Any] = {"source_field": name}
+        if not standard_name:
+            extra[cf.MAPPED_ATTR] = 0
         if name in _POSITION_RENAME:
             extra["comment"] = (
                 "Per-sample position as published by the dataset; the scalar latitude/longitude "

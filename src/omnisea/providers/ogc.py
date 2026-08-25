@@ -15,13 +15,14 @@ reading them naively puts every station in the same wrong place.
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 import pandas as pd
 
 from .. import cf
-from ..http import DEFAULT_MAX_WORKERS, map_threads, paginate_ogc_items
+from ..http import DEFAULT_MAX_WORKERS, get_json, map_threads, paginate_ogc_items
 from ..query import Query
 from .base import (
     Provider,
@@ -34,6 +35,11 @@ from .base import (
 )
 
 log = logging.getLogger("omnisea.ogc")
+
+#: Published temporal extents, memoized per collection URL. One small request per collection per
+#: process, and the cache extra makes even that free on a repeat run.
+_extent_cache: dict[str, tuple[pd.Timestamp | None, pd.Timestamp | None]] = {}
+_extent_lock = threading.Lock()
 
 __all__ = ["OgcFeaturesProvider", "OgcFeaturesSource", "point_from_feature"]
 
@@ -109,6 +115,60 @@ class OgcFeaturesSource(RetrievalSource):
     @property
     def stations_url(self) -> str:
         return self.provider.collection_url(self.station_collection)
+
+    # ------------------------------------------------------------------ coverage
+
+    def temporal_extent(self) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+        """The collection's own published time bounds, or ``(None, None)`` if it declares none.
+
+        OGC collections advertise this at ``/collections/{id}``, and taking them at their word
+        beats hardcoding: AHCCD ends 2020-12-31 and answers a 2024 request with **HTTP 400**,
+        not an empty list, so a source that does not check this fails the whole fetch over a
+        window that was never going to contain anything. Reading the extent also keeps working
+        as ECCC publishes more years.
+
+        A failure here is not fatal — if the metadata cannot be read, the query goes ahead.
+        """
+        url = f"{self.provider.base_url.rstrip('/')}/collections/{self.collection}"
+        with _extent_lock:
+            if url in _extent_cache:
+                return _extent_cache[url]
+        try:
+            payload = get_json(url, {"f": "json"}, provider=self.name)
+            interval = ((payload.get("extent") or {}).get("temporal") or {}).get("interval")
+            first, last = (interval or [[None, None]])[0][:2]
+            extent = (_maybe_ts(first), _maybe_ts(last))
+        except Exception:  # noqa: BLE001 - unreadable metadata must not block a real query
+            log.debug("could not read temporal extent for %s", self.collection, exc_info=True)
+            extent = (None, None)
+        with _extent_lock:
+            _extent_cache[url] = extent
+        return extent
+
+    def covers(self, query: Query, now: pd.Timestamp | None = None) -> bool:
+        if not super().covers(query, now):
+            return False
+        first, last = self.temporal_extent()
+        if last is not None and query.start > last:
+            return False
+        return not (first is not None and query.end < first)
+
+    def retention_gap(self, query: Query, now: pd.Timestamp | None = None) -> str | None:
+        gap = super().retention_gap(query, now)
+        if gap:
+            return gap
+        first, last = self.temporal_extent()
+        if last is not None and query.start > last:
+            return (
+                f"covers {first:%Y-%m-%d} to {last:%Y-%m-%d}; the requested window starts "
+                f"{query.start:%Y-%m-%d}, after the last data this collection publishes"
+            )
+        if first is not None and query.end < first:
+            return (
+                f"covers {first:%Y-%m-%d} to {last:%Y-%m-%d} " if last is not None
+                else f"starts at {first:%Y-%m-%d} "
+            ) + f"; the requested window ends {query.end:%Y-%m-%d}, before it begins"
+        return None
 
     # ------------------------------------------------------------------ discovery
 

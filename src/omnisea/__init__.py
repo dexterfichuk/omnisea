@@ -46,6 +46,7 @@ from .http import (
     map_threads,
     set_max_concurrency,
 )
+from .provenance import citation, provenance, sources_used
 from .providers import BUILTIN_PROVIDERS
 from .providers.base import (
     DataSource,
@@ -88,6 +89,9 @@ __all__ = [
     # tree helpers
     "summary",
     "fields",
+    "provenance",
+    "citation",
+    "sources_used",
     "stations",
     "to_dataframe",
     "coverage",
