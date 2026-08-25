@@ -625,3 +625,19 @@ class TestReopenedTree:
         stamps = pd.date_range("2024-07-02", "2024-07-06", freq="6h")
         aligned = align(reopened, on=pd.DataFrame({"time": stamps}), tolerance="4h")
         assert aligned["water_level"].notna().all()
+
+
+class TestCorrelationGuards:
+    def test_a_multiindex_frame_is_refused_with_directions(self, ragged_tree):
+        """columns='multi' labels stringify ambiguously; refusing beats silently misreading."""
+        multi = align(ragged_tree, freq="1h", columns="multi")
+        with pytest.raises(QueryError, match="columns='auto'"):
+            omnisea.correlations(multi)
+        with pytest.raises(QueryError, match="columns='auto'"):
+            omnisea.drop_correlated(multi)
+
+    def test_duplicate_column_names_are_refused(self):
+        frame = wide_frame()[["temp_mean", "temp_max"]]
+        frame.columns = ["same", "same"]
+        with pytest.raises(QueryError, match="duplicate column names"):
+            omnisea.correlations(frame)

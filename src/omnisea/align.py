@@ -540,6 +540,17 @@ def correlations(
     directions are excluded — see :func:`_correlation_columns` for why a linear r cannot
     describe a bearing.
     """
+    if isinstance(frame.columns, pd.MultiIndex):
+        raise QueryError(
+            "correlations() needs flat column names. align(columns='multi') frames are for "
+            "pipeline addressing; use the default columns='auto' (or 'qualified') here."
+        )
+    duplicated = frame.columns[frame.columns.duplicated()].unique()
+    if len(duplicated):
+        raise QueryError(
+            f"frame has duplicate column names: {sorted(map(str, duplicated))}. A correlation "
+            "over ambiguous columns would silently describe the wrong one — rename them first."
+        )
     columns = _correlation_columns(frame)
     if len(columns) < 2:
         return pd.DataFrame(columns=["feature_a", "feature_b", "r", "n"])

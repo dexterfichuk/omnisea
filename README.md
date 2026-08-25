@@ -9,8 +9,15 @@ adapters per source, CF-standard canonicalization, EDR-shaped spatial-temporal q
 lossy flat join.
 
 ```bash
-pip install -e ".[dev]"
+git clone https://github.com/dexterfichuk/omnisea && cd omnisea
+pip install ".[cache,netcdf]"    # to use it (both extras optional)
+pip install -e ".[dev]"          # to develop it
 ```
+
+Core dependencies are just `requests`, `pandas`, `numpy` and `xarray`; everything else —
+response caching, netCDF output, the example notebook's plotting — is an optional extra, and
+using a feature without its extra tells you exactly what to install. Python 3.11+; the test
+suite runs in CI against both the latest and the oldest supported dependency versions.
 
 **Want to see what it's like to use?** → **[examples/bamfield.ipynb](examples/bamfield.ipynb)**
 is a complete walkthrough with output and plots already rendered, or run
@@ -496,7 +503,7 @@ test validates every emitted `standard_name` against the published table.
 ## Tests
 
 ```bash
-pytest -m "not network"   # 547 offline tests over committed real API responses
+pytest -m "not network"   # 549 offline tests over committed real API responses
 pytest -m network         # 52 live integration tests
 ```
 
