@@ -1,0 +1,191 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "STATION_NAME": "NAHMINT RIVER NEAR PORT ALBERNI",
+    "IDENTIFIER": "08HB012",
+    "STATION_NUMBER": "08HB012",
+    "PROV_TERR_STATE_LOC": "BC",
+    "STATUS_EN": "Discontinued",
+    "STATUS_FR": "Fermée",
+    "CONTRIBUTOR_EN": "",
+    "CONTRIBUTOR_FR": "",
+    "VERTICAL_DATUM": "ASSUMED DATUM",
+    "REAL_TIME": 0,
+    "RHBN": 0,
+    "DRAINAGE_AREA_GROSS": 142.0,
+    "DRAINAGE_AREA_EFFECT": null
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.98999786376952,
+     49.122779846191406
+    ]
+   },
+   "id": "08HB012"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "IDENTIFIER": "08HB014",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "STATUS_EN": "Active",
+    "STATUS_FR": "En service",
+    "CONTRIBUTOR_EN": "WATER SURVEY OF CANADA (DOE) (CANADA)",
+    "CONTRIBUTOR_FR": "RELEVES HYDROLOGIQUES DU CANADA (MDE) (CANADA)",
+    "VERTICAL_DATUM": "ASSUMED DATUM",
+    "REAL_TIME": 1,
+    "RHBN": 0,
+    "DRAINAGE_AREA_GROSS": 162.0,
+    "DRAINAGE_AREA_EFFECT": null
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "id": "08HB014"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "STATION_NAME": "CARNATION CREEK AT THE MOUTH",
+    "IDENTIFIER": "08HB048",
+    "STATION_NUMBER": "08HB048",
+    "PROV_TERR_STATE_LOC": "BC",
+    "STATUS_EN": "Active",
+    "STATUS_FR": "En service",
+    "CONTRIBUTOR_EN": "WATER SURVEY OF CANADA (DOE) (CANADA)",
+    "CONTRIBUTOR_FR": "RELEVES HYDROLOGIQUES DU CANADA (MDE) (CANADA)",
+    "VERTICAL_DATUM": "ASSUMED DATUM",
+    "REAL_TIME": 1,
+    "RHBN": 0,
+    "DRAINAGE_AREA_GROSS": 10.210000038146973,
+    "DRAINAGE_AREA_EFFECT": null
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9977798461914,
+     48.91556167602539
+    ]
+   },
+   "id": "08HB048"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "STATION_NAME": "NAHMINT LAKE NEAR PORT ALBERNI",
+    "IDENTIFIER": "08HB060",
+    "STATION_NUMBER": "08HB060",
+    "PROV_TERR_STATE_LOC": "BC",
+    "STATUS_EN": "Discontinued",
+    "STATUS_FR": "Fermée",
+    "CONTRIBUTOR_EN": "B.C. MINISTRY OF ENVIRONMENT",
+    "CONTRIBUTOR_FR": "MINISTERE DE L'ENVIRONNEMENT DE LA COLOMBIE-BRITAN",
+    "VERTICAL_DATUM": "ASSUMED DATUM",
+    "REAL_TIME": 0,
+    "RHBN": 0,
+    "DRAINAGE_AREA_GROSS": 141.89999389648438,
+    "DRAINAGE_AREA_EFFECT": null
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.98999786376952,
+     49.122779846191406
+    ]
+   },
+   "id": "08HB060"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "STATION_NAME": "CARNATION CREEK AT 150 M CONTOUR",
+    "IDENTIFIER": "08HB069",
+    "STATION_NUMBER": "08HB069",
+    "PROV_TERR_STATE_LOC": "BC",
+    "STATUS_EN": "Discontinued",
+    "STATUS_FR": "Fermée",
+    "CONTRIBUTOR_EN": "",
+    "CONTRIBUTOR_FR": "",
+    "VERTICAL_DATUM": "ASSUMED DATUM",
+    "REAL_TIME": 0,
+    "RHBN": 0,
+    "DRAINAGE_AREA_GROSS": 2.5899999141693115,
+    "DRAINAGE_AREA_EFFECT": null
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.94110870361328,
+     48.92889022827149
+    ]
+   },
+   "id": "08HB069"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "STATION_NAME": "SUGSAW LAKE NEAR BAMFIELD",
+    "IDENTIFIER": "08HB076",
+    "STATION_NUMBER": "08HB076",
+    "PROV_TERR_STATE_LOC": "BC",
+    "STATUS_EN": "Discontinued",
+    "STATUS_FR": "Fermée",
+    "CONTRIBUTOR_EN": "B.C. MINISTRY OF ENVIRONMENT",
+    "CONTRIBUTOR_FR": "MINISTERE DE L'ENVIRONNEMENT DE LA COLOMBIE-BRITAN",
+    "VERTICAL_DATUM": "ASSUMED DATUM",
+    "REAL_TIME": 0,
+    "RHBN": 0,
+    "DRAINAGE_AREA_GROSS": 6.380000114440918,
+    "DRAINAGE_AREA_EFFECT": null
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -125.09166717529295,
+     48.84167098999024
+    ]
+   },
+   "id": "08HB076"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "STATION_NAME": "CHINA CREEK BELOW MCFARLAND CREEK",
+    "IDENTIFIER": "08HB077",
+    "STATION_NUMBER": "08HB077",
+    "PROV_TERR_STATE_LOC": "BC",
+    "STATUS_EN": "Discontinued",
+    "STATUS_FR": "Fermée",
+    "CONTRIBUTOR_EN": "",
+    "CONTRIBUTOR_FR": "",
+    "VERTICAL_DATUM": "ASSUMED DATUM",
+    "REAL_TIME": 0,
+    "RHBN": 0,
+    "DRAINAGE_AREA_GROSS": 97.4000015258789,
+    "DRAINAGE_AREA_EFFECT": null
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.7750015258789,
+     49.15972137451172
+    ]
+   },
+   "id": "08HB077"
+  }
+ ],
+ "numberMatched": 7,
+ "numberReturned": 7,
+ "links": [],
+ "timeStamp": "2026-08-25T13:04:38.188557Z"
+}

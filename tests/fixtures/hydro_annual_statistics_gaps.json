@@ -1,0 +1,90 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "02OJ034.1996.level-niveaux",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.2830581665039,
+     45.83250045776367
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "02OJ034.1996.level-niveaux",
+    "STATION_NAME": "SAINT-LAURENT (FLEUVE) A CONTRECOEUR IOC",
+    "STATION_NUMBER": "02OJ034",
+    "PROV_TERR_STATE_LOC": "QC",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "MAX_DATE": "1996-04-26",
+    "MAX_SYMBOL_EN": "",
+    "MAX_SYMBOL_FR": "",
+    "MAX_VALUE": 6.989999771118164,
+    "MIN_DATE": null,
+    "MIN_SYMBOL_EN": "",
+    "MIN_SYMBOL_FR": "",
+    "MIN_VALUE": null
+   }
+  },
+  {
+   "id": "02OJ034.1997.level-niveaux",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.2830581665039,
+     45.83250045776367
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "02OJ034.1997.level-niveaux",
+    "STATION_NAME": "SAINT-LAURENT (FLEUVE) A CONTRECOEUR IOC",
+    "STATION_NUMBER": "02OJ034",
+    "PROV_TERR_STATE_LOC": "QC",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "MAX_DATE": "1997-05-04",
+    "MAX_SYMBOL_EN": "",
+    "MAX_SYMBOL_FR": "",
+    "MAX_VALUE": 7.289999961853027,
+    "MIN_DATE": "1997-10-26",
+    "MIN_SYMBOL_EN": "",
+    "MIN_SYMBOL_FR": "",
+    "MIN_VALUE": 4.78000020980835
+   }
+  },
+  {
+   "id": "02OJ034.1998.level-niveaux",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.2830581665039,
+     45.83250045776367
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "02OJ034.1998.level-niveaux",
+    "STATION_NAME": "SAINT-LAURENT (FLEUVE) A CONTRECOEUR IOC",
+    "STATION_NUMBER": "02OJ034",
+    "PROV_TERR_STATE_LOC": "QC",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "MAX_DATE": "1998-04-02",
+    "MAX_SYMBOL_EN": "",
+    "MAX_SYMBOL_FR": "",
+    "MAX_VALUE": 8.050000190734863,
+    "MIN_DATE": null,
+    "MIN_SYMBOL_EN": "",
+    "MIN_SYMBOL_FR": "",
+    "MIN_VALUE": null
+   }
+  }
+ ],
+ "numberMatched": 3,
+ "numberReturned": 3,
+ "links": [],
+ "timeStamp": "2026-08-25T13:04:38.488624Z"
+}

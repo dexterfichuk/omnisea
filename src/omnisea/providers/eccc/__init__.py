@@ -23,7 +23,13 @@ from collections.abc import Sequence
 
 from ..ogc import OgcFeaturesProvider, OgcFeaturesSource
 from .climate import EcccClimateDaily, EcccClimateHourly
-from .hydrometric import EcccHydrometric
+from .hydrometric import (
+    EcccHydrometric,
+    EcccHydrometricAnnualPeaks,
+    EcccHydrometricAnnualStatistics,
+    EcccHydrometricDailyMean,
+    EcccHydrometricMonthlyMean,
+)
 from .swob import EcccSwobRealtime
 
 __all__ = [
@@ -32,6 +38,10 @@ __all__ = [
     "EcccClimateDaily",
     "EcccSwobRealtime",
     "EcccHydrometric",
+    "EcccHydrometricDailyMean",
+    "EcccHydrometricMonthlyMean",
+    "EcccHydrometricAnnualStatistics",
+    "EcccHydrometricAnnualPeaks",
 ]
 
 
@@ -48,4 +58,8 @@ class EcccProvider(OgcFeaturesProvider):
             EcccClimateDaily(self),
             EcccSwobRealtime(self),
             EcccHydrometric(self),
+            EcccHydrometricDailyMean(self),
+            EcccHydrometricMonthlyMean(self),
+            EcccHydrometricAnnualStatistics(self),
+            EcccHydrometricAnnualPeaks(self),
         ]

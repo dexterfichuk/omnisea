@@ -1,0 +1,171 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "08HB014.2018.level-niveaux",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2018.level-niveaux",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "MAX_DATE": "2018-01-21",
+    "MAX_SYMBOL_EN": "",
+    "MAX_SYMBOL_FR": "",
+    "MAX_VALUE": 4.15399980545044,
+    "MIN_DATE": "2018-09-06",
+    "MIN_SYMBOL_EN": "",
+    "MIN_SYMBOL_FR": "",
+    "MIN_VALUE": 1.340000033378601
+   }
+  },
+  {
+   "id": "08HB014.2019.level-niveaux",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2019.level-niveaux",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "MAX_DATE": "2019-01-03",
+    "MAX_SYMBOL_EN": "",
+    "MAX_SYMBOL_FR": "",
+    "MAX_VALUE": 4.091000080108643,
+    "MIN_DATE": "2019-06-26",
+    "MIN_SYMBOL_EN": "",
+    "MIN_SYMBOL_FR": "",
+    "MIN_VALUE": 1.343999981880188
+   }
+  },
+  {
+   "id": "08HB014.2020.level-niveaux",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2020.level-niveaux",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "MAX_DATE": "2020-01-31",
+    "MAX_SYMBOL_EN": "",
+    "MAX_SYMBOL_FR": "",
+    "MAX_VALUE": 3.5380001068115234,
+    "MIN_DATE": "2020-08-18",
+    "MIN_SYMBOL_EN": "",
+    "MIN_SYMBOL_FR": "",
+    "MIN_VALUE": 1.3830000162124634
+   }
+  },
+  {
+   "id": "08HB014.2018.discharge-debit",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2018.discharge-debit",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATA_TYPE_EN": "Discharge",
+    "DATA_TYPE_FR": "Débit",
+    "MAX_DATE": "2018-01-21",
+    "MAX_SYMBOL_EN": "Estimated",
+    "MAX_SYMBOL_FR": "Estimé",
+    "MAX_VALUE": 317.0,
+    "MIN_DATE": "2018-09-06",
+    "MIN_SYMBOL_EN": "",
+    "MIN_SYMBOL_FR": "",
+    "MIN_VALUE": 0.3109999895095825
+   }
+  },
+  {
+   "id": "08HB014.2019.discharge-debit",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2019.discharge-debit",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATA_TYPE_EN": "Discharge",
+    "DATA_TYPE_FR": "Débit",
+    "MAX_DATE": "2019-01-03",
+    "MAX_SYMBOL_EN": "Estimated",
+    "MAX_SYMBOL_FR": "Estimé",
+    "MAX_VALUE": 299.0,
+    "MIN_DATE": "2019-06-26",
+    "MIN_SYMBOL_EN": "",
+    "MIN_SYMBOL_FR": "",
+    "MIN_VALUE": 0.44699999690055847
+   }
+  },
+  {
+   "id": "08HB014.2020.discharge-debit",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2020.discharge-debit",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATA_TYPE_EN": "Discharge",
+    "DATA_TYPE_FR": "Débit",
+    "MAX_DATE": "2020-01-31",
+    "MAX_SYMBOL_EN": "Estimated",
+    "MAX_SYMBOL_FR": "Estimé",
+    "MAX_VALUE": 227.0,
+    "MIN_DATE": "2020-08-18",
+    "MIN_SYMBOL_EN": "",
+    "MIN_SYMBOL_FR": "",
+    "MIN_VALUE": 0.5789999961853027
+   }
+  }
+ ],
+ "numberMatched": 6,
+ "numberReturned": 6,
+ "links": [],
+ "timeStamp": "2026-08-25T13:04:37.690967Z"
+}

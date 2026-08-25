@@ -1,0 +1,345 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "SARITA RIVER NEAR BAMFIELD.2018.level-niveaux.maximum-maximale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "DATE": "2018-01-21T09:00",
+    "IDENTIFIER": "SARITA RIVER NEAR BAMFIELD.2018.level-niveaux.maximum-maximale",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "TIMEZONE_OFFSET": "-8",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "PEAK_CODE_EN": "Maximum",
+    "PEAK_CODE_FR": "Maximale",
+    "UNITS_EN": "in metres (to millimetres)",
+    "UNITS_FR": "En mètres (au millimètre près)",
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": 5.129000186920166
+   }
+  },
+  {
+   "id": "SARITA RIVER NEAR BAMFIELD.2018.level-niveaux.minimum-minimale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "DATE": "2018-09-05T04:30",
+    "IDENTIFIER": "SARITA RIVER NEAR BAMFIELD.2018.level-niveaux.minimum-minimale",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "TIMEZONE_OFFSET": "-8",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "PEAK_CODE_EN": "Minimum",
+    "PEAK_CODE_FR": "Minimale",
+    "UNITS_EN": "in metres (to millimetres)",
+    "UNITS_FR": "En mètres (au millimètre près)",
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": 1.3380000591278076
+   }
+  },
+  {
+   "id": "SARITA RIVER NEAR BAMFIELD.2019.level-niveaux.maximum-maximale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "DATE": "2019-01-03T12:35",
+    "IDENTIFIER": "SARITA RIVER NEAR BAMFIELD.2019.level-niveaux.maximum-maximale",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "TIMEZONE_OFFSET": "-8",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "PEAK_CODE_EN": "Maximum",
+    "PEAK_CODE_FR": "Maximale",
+    "UNITS_EN": "in metres (to millimetres)",
+    "UNITS_FR": "En mètres (au millimètre près)",
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": 4.855999946594238
+   }
+  },
+  {
+   "id": "SARITA RIVER NEAR BAMFIELD.2019.level-niveaux.minimum-minimale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "DATE": "2019-06-26T04:10",
+    "IDENTIFIER": "SARITA RIVER NEAR BAMFIELD.2019.level-niveaux.minimum-minimale",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "TIMEZONE_OFFSET": "-8",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "PEAK_CODE_EN": "Minimum",
+    "PEAK_CODE_FR": "Minimale",
+    "UNITS_EN": "in metres (to millimetres)",
+    "UNITS_FR": "En mètres (au millimètre près)",
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": 1.340999960899353
+   }
+  },
+  {
+   "id": "SARITA RIVER NEAR BAMFIELD.2020.level-niveaux.maximum-maximale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "DATE": "2020-01-31T20:40",
+    "IDENTIFIER": "SARITA RIVER NEAR BAMFIELD.2020.level-niveaux.maximum-maximale",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "TIMEZONE_OFFSET": "-8",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "PEAK_CODE_EN": "Maximum",
+    "PEAK_CODE_FR": "Maximale",
+    "UNITS_EN": "in metres (to millimetres)",
+    "UNITS_FR": "En mètres (au millimètre près)",
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": 5.111999988555908
+   }
+  },
+  {
+   "id": "SARITA RIVER NEAR BAMFIELD.2020.level-niveaux.minimum-minimale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "DATE": "2020-08-18T19:50",
+    "IDENTIFIER": "SARITA RIVER NEAR BAMFIELD.2020.level-niveaux.minimum-minimale",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "TIMEZONE_OFFSET": "-8",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "PEAK_CODE_EN": "Minimum",
+    "PEAK_CODE_FR": "Minimale",
+    "UNITS_EN": "in metres (to millimetres)",
+    "UNITS_FR": "En mètres (au millimètre près)",
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": 1.38100004196167
+   }
+  },
+  {
+   "id": "SARITA RIVER NEAR BAMFIELD.2018.discharge-debit.maximum-maximale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "DATE": "2018-01-21T09:00",
+    "IDENTIFIER": "SARITA RIVER NEAR BAMFIELD.2018.discharge-debit.maximum-maximale",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "TIMEZONE_OFFSET": "-8",
+    "DATA_TYPE_EN": "Discharge",
+    "DATA_TYPE_FR": "Débit",
+    "PEAK_CODE_EN": "Maximum",
+    "PEAK_CODE_FR": "Maximale",
+    "UNITS_EN": null,
+    "UNITS_FR": null,
+    "SYMBOL_EN": "Estimated",
+    "SYMBOL_FR": "Estimé",
+    "PEAK": 524.0
+   }
+  },
+  {
+   "id": "SARITA RIVER NEAR BAMFIELD.2018.discharge-debit.minimum-minimale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "DATE": "2018-09-06T22:00",
+    "IDENTIFIER": "SARITA RIVER NEAR BAMFIELD.2018.discharge-debit.minimum-minimale",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "TIMEZONE_OFFSET": "-8",
+    "DATA_TYPE_EN": "Discharge",
+    "DATA_TYPE_FR": "Débit",
+    "PEAK_CODE_EN": "Minimum",
+    "PEAK_CODE_FR": "Minimale",
+    "UNITS_EN": null,
+    "UNITS_FR": null,
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": 0.2949999868869781
+   }
+  },
+  {
+   "id": "SARITA RIVER NEAR BAMFIELD.2019.discharge-debit.maximum-maximale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "DATE": "2019-01-03T12:35",
+    "IDENTIFIER": "SARITA RIVER NEAR BAMFIELD.2019.discharge-debit.maximum-maximale",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "TIMEZONE_OFFSET": "-8",
+    "DATA_TYPE_EN": "Discharge",
+    "DATA_TYPE_FR": "Débit",
+    "PEAK_CODE_EN": "Maximum",
+    "PEAK_CODE_FR": "Maximale",
+    "UNITS_EN": null,
+    "UNITS_FR": null,
+    "SYMBOL_EN": "Estimated",
+    "SYMBOL_FR": "Estimé",
+    "PEAK": 458.0
+   }
+  },
+  {
+   "id": "SARITA RIVER NEAR BAMFIELD.2019.discharge-debit.minimum-minimale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "DATE": "2019-06-26T04:10",
+    "IDENTIFIER": "SARITA RIVER NEAR BAMFIELD.2019.discharge-debit.minimum-minimale",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "TIMEZONE_OFFSET": "-8",
+    "DATA_TYPE_EN": "Discharge",
+    "DATA_TYPE_FR": "Débit",
+    "PEAK_CODE_EN": "Minimum",
+    "PEAK_CODE_FR": "Minimale",
+    "UNITS_EN": null,
+    "UNITS_FR": null,
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": 0.42800000309944153
+   }
+  },
+  {
+   "id": "SARITA RIVER NEAR BAMFIELD.2020.discharge-debit.maximum-maximale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "DATE": "2020-01-31T20:40",
+    "IDENTIFIER": "SARITA RIVER NEAR BAMFIELD.2020.discharge-debit.maximum-maximale",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "TIMEZONE_OFFSET": "-8",
+    "DATA_TYPE_EN": "Discharge",
+    "DATA_TYPE_FR": "Débit",
+    "PEAK_CODE_EN": "Maximum",
+    "PEAK_CODE_FR": "Maximale",
+    "UNITS_EN": null,
+    "UNITS_FR": null,
+    "SYMBOL_EN": "Estimated",
+    "SYMBOL_FR": "Estimé",
+    "PEAK": 520.0
+   }
+  },
+  {
+   "id": "SARITA RIVER NEAR BAMFIELD.2020.discharge-debit.minimum-minimale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "DATE": "2020-08-19T10:15",
+    "IDENTIFIER": "SARITA RIVER NEAR BAMFIELD.2020.discharge-debit.minimum-minimale",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "TIMEZONE_OFFSET": "-8",
+    "DATA_TYPE_EN": "Discharge",
+    "DATA_TYPE_FR": "Débit",
+    "PEAK_CODE_EN": "Minimum",
+    "PEAK_CODE_FR": "Minimale",
+    "UNITS_EN": null,
+    "UNITS_FR": null,
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": 0.5649999976158142
+   }
+  }
+ ],
+ "numberMatched": 12,
+ "numberReturned": 12,
+ "links": [],
+ "timeStamp": "2026-08-25T13:04:37.941544Z"
+}

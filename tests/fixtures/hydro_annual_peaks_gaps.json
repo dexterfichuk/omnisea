@@ -1,0 +1,121 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "IROQUOIS RIVER AT MOULIN MORNEAULT.2025.level-niveaux.minimum-minimale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -68.35682678222656,
+     47.45782852172852
+    ]
+   },
+   "properties": {
+    "DATE": "2025-10-05T09:45",
+    "IDENTIFIER": "IROQUOIS RIVER AT MOULIN MORNEAULT.2025.level-niveaux.minimum-minimale",
+    "STATION_NAME": "IROQUOIS RIVER AT MOULIN MORNEAULT",
+    "STATION_NUMBER": "01AF009",
+    "PROV_TERR_STATE_LOC": "NB",
+    "TIMEZONE_OFFSET": "-4",
+    "DATA_TYPE_EN": "Water Level",
+    "DATA_TYPE_FR": "Niveaux d'eau",
+    "PEAK_CODE_EN": "Minimum",
+    "PEAK_CODE_FR": "Minimale",
+    "UNITS_EN": "in metres (to millimetres)",
+    "UNITS_FR": "En mètres (au millimètre près)",
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": 3.361999988555908
+   }
+  },
+  {
+   "id": "IROQUOIS RIVER AT MOULIN MORNEAULT.1991.discharge-debit.maximum-maximale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -68.35682678222656,
+     47.45782852172852
+    ]
+   },
+   "properties": {
+    "DATE": null,
+    "IDENTIFIER": "IROQUOIS RIVER AT MOULIN MORNEAULT.1991.discharge-debit.maximum-maximale",
+    "STATION_NAME": "IROQUOIS RIVER AT MOULIN MORNEAULT",
+    "STATION_NUMBER": "01AF009",
+    "PROV_TERR_STATE_LOC": "NB",
+    "TIMEZONE_OFFSET": "-4",
+    "DATA_TYPE_EN": "Discharge",
+    "DATA_TYPE_FR": "Débit",
+    "PEAK_CODE_EN": "Maximum",
+    "PEAK_CODE_FR": "Maximale",
+    "UNITS_EN": null,
+    "UNITS_FR": null,
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": null
+   }
+  },
+  {
+   "id": "IROQUOIS RIVER AT MOULIN MORNEAULT.1992.discharge-debit.maximum-maximale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -68.35682678222656,
+     47.45782852172852
+    ]
+   },
+   "properties": {
+    "DATE": "1992-04-23T03:01",
+    "IDENTIFIER": "IROQUOIS RIVER AT MOULIN MORNEAULT.1992.discharge-debit.maximum-maximale",
+    "STATION_NAME": "IROQUOIS RIVER AT MOULIN MORNEAULT",
+    "STATION_NUMBER": "01AF009",
+    "PROV_TERR_STATE_LOC": "NB",
+    "TIMEZONE_OFFSET": "-4",
+    "DATA_TYPE_EN": "Discharge",
+    "DATA_TYPE_FR": "Débit",
+    "PEAK_CODE_EN": "Maximum",
+    "PEAK_CODE_FR": "Maximale",
+    "UNITS_EN": null,
+    "UNITS_FR": null,
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": 44.20000076293945
+   }
+  },
+  {
+   "id": "IROQUOIS RIVER AT MOULIN MORNEAULT.1993.discharge-debit.maximum-maximale",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -68.35682678222656,
+     47.45782852172852
+    ]
+   },
+   "properties": {
+    "DATE": "1993-04-12T18:19",
+    "IDENTIFIER": "IROQUOIS RIVER AT MOULIN MORNEAULT.1993.discharge-debit.maximum-maximale",
+    "STATION_NAME": "IROQUOIS RIVER AT MOULIN MORNEAULT",
+    "STATION_NUMBER": "01AF009",
+    "PROV_TERR_STATE_LOC": "NB",
+    "TIMEZONE_OFFSET": "-4",
+    "DATA_TYPE_EN": "Discharge",
+    "DATA_TYPE_FR": "Débit",
+    "PEAK_CODE_EN": "Maximum",
+    "PEAK_CODE_FR": "Maximale",
+    "UNITS_EN": null,
+    "UNITS_FR": null,
+    "SYMBOL_EN": null,
+    "SYMBOL_FR": null,
+    "PEAK": 53.29999923706055
+   }
+  }
+ ],
+ "numberMatched": 75,
+ "numberReturned": 4,
+ "links": [],
+ "timeStamp": "2026-08-25T13:04:38.735347Z"
+}
