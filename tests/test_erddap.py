@@ -27,12 +27,12 @@ from omnisea.providers.erddap import (
     ErddapGridSource,
     ErddapProvider,
     ErddapTableSource,
-    _field_table,
-    _grid_selection,
-    _overlaps_query,
     clear_cache,
+    field_table,
+    grid_selection,
     parse_info,
 )
+from omnisea.providers.erddap.common import _overlaps_query
 
 # Importing the adapter registers its own query knobs (erddap_server and friends), the same
 # way any third-party provider's would be.
@@ -210,7 +210,7 @@ class TestInfoParsing:
 
 class TestFieldTable:
     def test_the_datasets_own_standard_name_becomes_the_variable_name(self, station_info):
-        table = _field_table(station_info, present=list(station_info.variables))
+        table = field_table(station_info, present=list(station_info.variables))
         spec = table["water_surface_height_above_reference_datum_above_localstationdatum"]
         assert spec.var == "water_surface_height_above_reference_datum"
         assert spec.standard_name == "water_surface_height_above_reference_datum"
@@ -218,41 +218,41 @@ class TestFieldTable:
     def test_no_standard_name_is_invented(self, station_info, ndbc_info, wavebuoy_info):
         """Every name emitted must be one the dataset itself published, character for character."""
         for info in (station_info, ndbc_info, wavebuoy_info):
-            table = _field_table(info, present=list(info.variables))
+            table = field_table(info, present=list(info.variables))
             for raw, spec in table.items():
                 declared = str(info.variables[raw].get("standard_name") or "")
                 assert spec.standard_name == declared, f"{info.dataset_id}.{raw}"
 
     def test_two_variables_sharing_a_standard_name_keep_their_own_names(self, ndbc_info):
         """NDBC publishes dpd and apd both as sea_surface_swell_wave_period."""
-        table = _field_table(ndbc_info, present=list(ndbc_info.variables))
+        table = field_table(ndbc_info, present=list(ndbc_info.variables))
         assert table["dpd"].var == "dpd"
         assert table["apd"].var == "apd"
         assert table["dpd"].standard_name == table["apd"].standard_name
 
     def test_cell_methods_are_carried_through(self, wavebuoy_info, grid_info):
         """align() reads cell_methods to decide resampling, so it must survive the trip."""
-        waves = _field_table(wavebuoy_info, present=list(wavebuoy_info.variables))
+        waves = field_table(wavebuoy_info, present=list(wavebuoy_info.variables))
         assert waves["waveHs"].cell_methods == "time: point"
         assert grid_info.variables["chlor_a"]["cell_methods"] == "time:mean(interval:1 week)"
 
     def test_units_come_from_the_dataset(self, station_info):
-        table = _field_table(station_info, present=list(station_info.variables))
+        table = field_table(station_info, present=list(station_info.variables))
         assert table["river_discharge"].units == "m3.s-1"
 
     def test_the_aggregate_flag_becomes_the_qc_field(self, station_info):
-        table = _field_table(station_info, present=list(station_info.variables))
+        table = field_table(station_info, present=list(station_info.variables))
         assert table["river_discharge"].qc_field == "river_discharge_qc_agg"
 
     def test_per_sample_position_is_renamed_so_it_cannot_be_overwritten(self, ndbc_info):
         """series_to_dataset assigns scalar latitude/longitude coords over any same-named column."""
-        table = _field_table(ndbc_info, present=list(ndbc_info.variables))
+        table = field_table(ndbc_info, present=list(ndbc_info.variables))
         assert table["latitude"].var == "sample_latitude"
         assert table["longitude"].var == "sample_longitude"
         assert table["latitude"].standard_name == "latitude"
 
     def test_provenance_records_the_providers_own_field_name(self, station_info):
-        table = _field_table(station_info, present=list(station_info.variables))
+        table = field_table(station_info, present=list(station_info.variables))
         spec = table["water_surface_height_above_reference_datum_above_localstationdatum"]
         assert spec.extra_attrs["source_field"] == (
             "water_surface_height_above_reference_datum_above_localstationdatum"
@@ -644,7 +644,7 @@ class TestUpstreamQuirks:
         def _get_json(url, params, provider=None, **kwargs):
             raise UpstreamError("upstream request failed", status=status, detail=detail)
 
-        monkeypatch.setattr(erddap, "get_json", _get_json)
+        monkeypatch.setattr(erddap.common, "get_json", _get_json)
 
     def test_an_empty_result_set_is_not_a_failure(self, table_source, monkeypatch):
         """ERDDAP answers "nothing matched" with a 404, on every endpoint."""
@@ -722,32 +722,32 @@ class TestGridSelection:
 
     def test_an_ascending_axis_slices_low_to_high(self):
         grid = self.grid(np.arange(48.0, 50.0, 0.1), np.arange(-126.0, -124.0, 0.1))
-        assert _grid_selection(grid, self.query())["latitude"] == slice(48.5, 49.2)
+        assert grid_selection(grid, self.query())["latitude"] == slice(48.5, 49.2)
 
     def test_a_descending_axis_slices_the_other_way(self):
         """CoastWatch chlorophyll runs latitude downwards; sel would return nothing otherwise."""
         grid = self.grid(np.arange(50.0, 48.0, -0.1), np.arange(-126.0, -124.0, 0.1))
-        selection = _grid_selection(grid, self.query())
+        selection = grid_selection(grid, self.query())
         assert selection["latitude"] == slice(49.2, 48.5)
         assert grid.sel(selection).sizes["latitude"] > 0
 
     def test_a_zero_to_three_sixty_grid_gets_the_query_shifted_onto_it(self):
         grid = self.grid(np.arange(48.0, 50.0, 0.1), np.arange(230.0, 240.0, 0.1))
-        selection = _grid_selection(grid, self.query())
+        selection = grid_selection(grid, self.query())
         assert selection["longitude"] == slice(pytest.approx(234.4), pytest.approx(235.3))
         assert grid.sel(selection).sizes["longitude"] > 0
 
     def test_the_window_is_applied_without_a_timezone(self):
         """griddap times decode naive; comparing them to a tz-aware bound raises."""
         grid = self.grid(np.arange(48.0, 50.0, 0.1), np.arange(-126.0, -124.0, 0.1))
-        selection = _grid_selection(grid, self.query())
+        selection = grid_selection(grid, self.query())
         assert selection["time"].start.tzinfo is None
         assert grid.sel(selection).sizes["time"] == 3
 
     def test_a_depth_range_is_honoured_when_the_grid_has_one(self):
         grid = self.grid(np.arange(48.0, 50.0, 0.1), np.arange(-126.0, -124.0, 0.1))
         grid = grid.expand_dims(depth=[0.0, 10.0, 50.0])
-        selection = _grid_selection(grid, self.query(depth=[0, 20]))
+        selection = grid_selection(grid, self.query(depth=[0, 20]))
         assert grid.sel(selection).sizes["depth"] == 2
 
 
