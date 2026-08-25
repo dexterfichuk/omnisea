@@ -82,6 +82,47 @@ class TestProvenance:
         assert sources_used(tree) == ["dfo_tides", "eccc_climate_daily"]
 
 
+@pytest.fixture
+def erddap_like_tree():
+    """One source holding datasets from two institutions under two licences.
+
+    This is ERDDAP's normal condition — the licence belongs to the dataset, not the server —
+    and the shape that makes "take the first institution per source" a mis-citation.
+    """
+    q = Query.from_sites([BAMFIELD], WEEK)
+    return build_tree(q, [
+        series("erddap_tabledap", "erddap", "ubc_mooring", "University of British Columbia",
+               "CC-BY-4.0", "https://ubc/terms", "https://erddap/tabledap/ubc"),
+        series("erddap_tabledap", "erddap", "hakai_buoy", "Hakai Institute",
+               "CC-BY-SA-4.0", "https://hakai/terms", "https://erddap/tabledap/hakai"),
+    ])
+
+
+class TestMixedAttributionWithinOneSource:
+    def test_distinct_institutions_are_not_collapsed(self, erddap_like_tree):
+        frame = provenance(erddap_like_tree, by="source")
+        assert len(frame) == 2
+        assert set(frame["institution"]) == {
+            "University of British Columbia", "Hakai Institute",
+        }
+        assert set(frame["license"]) == {"CC-BY-4.0", "CC-BY-SA-4.0"}
+
+    def test_the_citation_names_both_licences(self, erddap_like_tree):
+        text = citation(erddap_like_tree)
+        assert "CC-BY-4.0" in text
+        assert "CC-BY-SA-4.0" in text
+        assert "Hakai Institute" in text
+
+    def test_the_header_still_counts_one_source(self, erddap_like_tree):
+        assert "from 1 source(s) across 2 station(s)" in citation(erddap_like_tree)
+
+    def test_urls_are_listed_under_their_own_institution(self, erddap_like_tree):
+        text = citation(erddap_like_tree, include_urls=True)
+        # Each URL must appear exactly once — under its institution's entry, not under both.
+        assert text.count("https://erddap/tabledap/ubc") == 1
+        assert text.count("https://erddap/tabledap/hakai") == 1
+
+
 class TestCitation:
     def test_it_names_every_institution(self, tree):
         text = citation(tree)

@@ -25,7 +25,9 @@ from .query import Query
 
 __all__ = [
     "build_tree",
+    "data_nodes",
     "fields",
+    "scalar_coord",
     "series_to_dataset",
     "summary",
     "stations",
@@ -245,8 +247,13 @@ def _version() -> str:
 # --------------------------------------------------------------------------- readers
 
 
-def _iter_data_nodes(tree: xr.DataTree):
-    """Every group that actually holds variables, with its path."""
+def data_nodes(tree: xr.DataTree):
+    """Yield ``(path, dataset)`` for every group that actually holds variables.
+
+    The tree readers here and in :mod:`omnisea.provenance` are all built on this, and it is
+    public because "walk the nodes that hold data" is the natural first step of any custom
+    analysis over a fetched tree.
+    """
     for node in tree.subtree:
         ds = node.dataset
         if len(ds.data_vars) == 0:
@@ -260,18 +267,18 @@ def summary(tree: xr.DataTree) -> pd.DataFrame:
     This is the "did I get what I asked for?" view, and the first thing to print after a fetch.
     """
     rows: list[dict[str, Any]] = []
-    for path, ds in _iter_data_nodes(tree):
+    for path, ds in data_nodes(tree):
         data_vars = [v for v in ds.data_vars if not str(v).endswith("_qc")]
         times = ds["time"].values if "time" in ds.coords and ds["time"].size else np.array([])
         rows.append(
             {
                 "node": path,
                 "provider": ds.attrs.get("provider", ""),
-                "site": _scalar(ds, "site"),
-                "station_id": _scalar(ds, "station_id"),
-                "station_name": _scalar(ds, "station_name"),
-                "lat": _scalar(ds, "latitude"),
-                "lon": _scalar(ds, "longitude"),
+                "site": scalar_coord(ds, "site"),
+                "station_id": scalar_coord(ds, "station_id"),
+                "station_name": scalar_coord(ds, "station_name"),
+                "lat": scalar_coord(ds, "latitude"),
+                "lon": scalar_coord(ds, "longitude"),
                 "variables": ", ".join(str(v) for v in data_vars),
                 "n_time": int(times.size),
                 "start": pd.Timestamp(times.min()) if times.size else pd.NaT,
@@ -312,7 +319,7 @@ def to_dataframe(tree: xr.DataTree, *, wide: bool = False) -> pd.DataFrame:
     tree remains the lossless container; this is the convenience view for plotting and joins.
     """
     pieces: list[pd.DataFrame] = []
-    for path, ds in _iter_data_nodes(tree):
+    for path, ds in data_nodes(tree):
         if "time" not in ds.coords or ds["time"].size == 0:
             continue
         keep = [v for v in ds.data_vars if not str(v).endswith("_qc")]
@@ -321,7 +328,7 @@ def to_dataframe(tree: xr.DataTree, *, wide: bool = False) -> pd.DataFrame:
         frame = ds[keep].to_dataframe().reset_index()
         for col in ("latitude", "longitude", "station_id", "station_name", "site"):
             if col in ds.coords and col not in frame.columns:
-                frame[col] = _scalar(ds, col)
+                frame[col] = scalar_coord(ds, col)
         frame["node"] = path
         frame["provider"] = ds.attrs.get("provider", "")
         pieces.append(frame)
@@ -362,7 +369,7 @@ def fields(tree: xr.DataTree, *, mapped: bool | None = None) -> pd.DataFrame:
     carried-through ones, and the default shows both.
     """
     rows: list[dict[str, Any]] = []
-    for path, ds in _iter_data_nodes(tree):
+    for path, ds in data_nodes(tree):
         for name, var in ds.data_vars.items():
             name = str(name)
             is_qc = name.endswith("_qc")
@@ -380,7 +387,7 @@ def fields(tree: xr.DataTree, *, mapped: bool | None = None) -> pd.DataFrame:
                     "cell_methods": attrs.get("cell_methods", ""),
                     "provider": ds.attrs.get("provider", ""),
                     "source": ds.attrs.get("source_name", ""),
-                    "station_id": _scalar(ds, "station_id"),
+                    "station_id": scalar_coord(ds, "station_id"),
                     "node": path,
                     "n_values": _count_if_loaded(var),
                 }
@@ -464,7 +471,7 @@ def _count_if_loaded(var: xr.DataArray) -> int | None:
     return int(var.count().values)
 
 
-def _scalar(ds: xr.Dataset, name: str) -> Any:
+def scalar_coord(ds: xr.Dataset, name: str) -> Any:
     """A scalar coordinate's value, or ``None`` if the coordinate is not scalar.
 
     A gridded node's ``latitude`` is a whole vector; returning it would put the entire array in

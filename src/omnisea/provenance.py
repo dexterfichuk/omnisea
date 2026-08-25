@@ -16,7 +16,7 @@ from typing import Any
 import pandas as pd
 import xarray as xr
 
-from .tree import _iter_data_nodes, _scalar
+from .tree import data_nodes, scalar_coord
 
 __all__ = ["provenance", "citation", "sources_used"]
 
@@ -29,7 +29,7 @@ def provenance(tree: xr.DataTree, *, by: str = "source") -> pd.DataFrame:
     URL each series was read from.
     """
     rows: list[dict[str, Any]] = []
-    for path, ds in _iter_data_nodes(tree):
+    for path, ds in data_nodes(tree):
         attrs = ds.attrs
         times = ds["time"].values if "time" in ds.coords and ds["time"].size else None
         rows.append(
@@ -40,8 +40,8 @@ def provenance(tree: xr.DataTree, *, by: str = "source") -> pd.DataFrame:
                 "license": attrs.get("license", ""),
                 "terms": attrs.get("references", ""),
                 "collection": attrs.get("collection", ""),
-                "station_id": _scalar(ds, "station_id"),
-                "station_name": _scalar(ds, "station_name"),
+                "station_id": scalar_coord(ds, "station_id"),
+                "station_name": scalar_coord(ds, "station_name"),
                 "node": path,
                 "source_url": attrs.get("source_url", ""),
                 "n_time": int(times.size) if times is not None else 0,
@@ -62,12 +62,14 @@ def provenance(tree: xr.DataTree, *, by: str = "source") -> pd.DataFrame:
         raise ValueError(f"by must be 'source', 'provider' or 'node'; got {by!r}")
 
     keys = ["provider", "source"] if by == "source" else ["provider"]
+    # Attribution joins the grouping keys rather than being aggregated with "first": one ERDDAP
+    # source can serve datasets from several institutions under several licences, and collapsing
+    # them onto whichever row came first would mis-cite every other one. Sources with uniform
+    # attribution — which is all of the non-ERDDAP ones — still come out as one row each.
+    keys += ["institution", "license", "terms"]
     grouped = (
-        frame.groupby(keys, as_index=False)
+        frame.groupby(keys, as_index=False, dropna=False)
         .agg(
-            institution=("institution", "first"),
-            license=("license", "first"),
-            terms=("terms", "first"),
             n_stations=("station_id", "nunique"),
             n_nodes=("node", "count"),
             n_values=("n_time", "sum"),
@@ -82,7 +84,7 @@ def provenance(tree: xr.DataTree, *, by: str = "source") -> pd.DataFrame:
 
 def sources_used(tree: xr.DataTree) -> list[str]:
     """Just the source names present, for a quick check."""
-    return sorted({ds.attrs.get("source_name", "") for _, ds in _iter_data_nodes(tree)} - {""})
+    return sorted({ds.attrs.get("source_name", "") for _, ds in data_nodes(tree)} - {""})
 
 
 def citation(
@@ -113,10 +115,12 @@ def citation(
     lines: list[str] = []
     bullet = "- " if style == "markdown" else "  "
 
+    # Counted from the per-node detail, not from the summary rows: a source serving datasets
+    # from two institutions produces two attribution entries but is still one source.
     header = (
         f"Data were retrieved with omnisea {version} on {accessed} "
-        f"from {len(summary)} source(s) across {summary['n_stations'].sum()} station(s)"
-        f"{window}."
+        f"from {detail['source'].nunique()} source(s) across "
+        f"{detail['station_id'].nunique()} station(s){window}."
     )
     lines.append(f"**Data sources**\n\n{header}" if style == "markdown" else header)
     lines.append("")
@@ -133,7 +137,13 @@ def citation(
         lines.append(f"{bullet}{entry}")
 
         if include_urls:
-            urls = detail.loc[detail["source"] == row["source"], ["station_id", "source_url"]]
+            # Filtered on the attribution too, so a split source lists each institution's
+            # stations under its own entry rather than everything under both.
+            urls = detail.loc[
+                (detail["source"] == row["source"])
+                & (detail["institution"] == row["institution"]),
+                ["station_id", "source_url"],
+            ]
             for _, url_row in urls.iterrows():
                 if url_row["source_url"]:
                     prefix = "    - " if style == "markdown" else "      "
