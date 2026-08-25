@@ -30,7 +30,6 @@ __version__ = "0.1.0"
 from . import cf, registry
 from .align import add_local, aggregation_for, align
 from .catalog import Catalog
-from .conformance import check_all, check_source
 from .errors import (
     MissingDependencyError,
     OmniseaError,
@@ -123,6 +122,17 @@ __all__ = [
 
 for _provider in BUILTIN_PROVIDERS:
     registry.register_provider(_provider)
+
+
+def __getattr__(name: str) -> Any:
+    # The conformance checker is loaded on first use rather than at import, so that its
+    # documented invocation — ``python -m omnisea.conformance`` — does not trip runpy's
+    # "found in sys.modules" warning by having been pre-imported here.
+    if name in ("check_source", "check_all"):
+        from . import conformance
+
+        return getattr(conformance, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # --------------------------------------------------------------------------- introspection

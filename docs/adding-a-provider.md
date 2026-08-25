@@ -13,11 +13,11 @@ assembled into the tree alongside every built-in source, with no changes to omni
 | Organization | `Provider` | Who publishes the data. Owns base URL, licence, attribution, auth. | `eccc` |
 | Dataset | `DataSource` | One queryable thing. Owns the field table, node path, discover/fetch. | `eccc_climate` |
 
-One provider may publish many sources. ECCC publishes four. Users select either — naming a
+One provider may publish many sources. ECCC publishes thirteen. Users select either — naming a
 provider selects all of its sources:
 
 ```python
-omnisea.fetch(..., providers="eccc")          # all four ECCC datasets
+omnisea.fetch(..., providers="eccc")          # every ECCC dataset
 omnisea.fetch(..., providers="eccc_climate")  # just hourly climate
 ```
 

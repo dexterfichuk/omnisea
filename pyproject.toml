@@ -44,7 +44,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/omnisea/omnisea"
+Homepage = "https://github.com/dexterfichuk/omnisea"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/omnisea"]

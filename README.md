@@ -281,7 +281,7 @@ Select a single dataset or a whole organization:
 
 ```python
 omnisea.fetch(..., providers="dfo_tides")   # one dataset
-omnisea.fetch(..., providers="eccc")        # all four ECCC datasets
+omnisea.fetch(..., providers="eccc")        # every ECCC dataset, all thirteen
 ```
 
 ### CIOOS metadata records
@@ -406,6 +406,10 @@ working twice in a row and not); appended archives get an hour. **Measurement en
 never cached**, and are excluded explicitly rather than by omission, so the exclusion survives a
 caller who passes `expire_after=` to cache everything else.
 
+That judgment is part of the provider contract, not a core table: each provider declares a
+`cache_policy` for its own endpoints, and third-party providers' rules merge in exactly like the
+built-ins'. An endpoint nobody has claimed is never cached.
+
 One thing worth knowing: IWLS answers *every* request — including its near-static 1573-station
 list — with `Cache-Control: no-cache, no-store, must-revalidate`. Honouring that would reduce
 the feature to a no-op, so omnisea overrides it deliberately for the endpoints its policy
@@ -469,8 +473,8 @@ test validates every emitted `standard_name` against the published table.
 ## Tests
 
 ```bash
-pytest -m "not network"   # 161 unit tests over committed real API responses
-pytest -m network         # 21 live integration tests
+pytest -m "not network"   # 531 offline tests over committed real API responses
+pytest -m network         # 52 live integration tests
 ```
 
 The network suite covers the edge cases fixtures cannot: the IWLS interval caps and chunk

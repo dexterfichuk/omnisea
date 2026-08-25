@@ -69,7 +69,7 @@ def set_max_concurrency(n: int) -> None:
 def _user_agent() -> str:
     from . import __version__
 
-    return f"omnisea/{__version__} (+https://github.com/omnisea/omnisea) python-requests"
+    return f"omnisea/{__version__} (+https://github.com/dexterfichuk/omnisea) python-requests"
 
 
 def _configure(session: requests.Session) -> requests.Session:
