@@ -214,6 +214,13 @@ class DataSource(ABC):
     #: This dataset's raw-field to CF mapping. Defined on the class, next to the code that uses
     #: it, so adding a source is one new file rather than an edit in two places.
     fields: dict[str, cf.FieldSpec] = {}
+    #: How far back this dataset holds data, for the "realtime" collections that keep only a
+    #: rolling window. ``None`` means a full historical archive.
+    #:
+    #: This exists so that asking for 2024 river levels does not come back as a silent empty
+    #: tree, which reads as "there is no gauge here" when the truth is "this collection only
+    #: keeps 30 days, and the historical one is a different source".
+    retention: pd.Timedelta | None = None
 
     def __init__(self, provider: Provider):
         self.provider = provider
@@ -258,6 +265,40 @@ class DataSource(ABC):
 
     def sites_for(self, query: Query) -> tuple[Site, ...]:
         return query.sites
+
+    def retention_cutoff(self, now: pd.Timestamp | None = None) -> pd.Timestamp | None:
+        """The earliest instant this source can still serve, or ``None`` if it keeps everything."""
+        if self.retention is None:
+            return None
+        return (now or pd.Timestamp.now(tz="UTC")) - self.retention
+
+    def retention_gap(self, query: Query, now: pd.Timestamp | None = None) -> str | None:
+        """A plain explanation if the query reaches past what this source keeps.
+
+        Returns ``None`` when the window is fully covered. Otherwise the message says what the
+        source holds and what to use instead, because "no results" is the least useful possible
+        answer to "give me last year's river levels".
+        """
+        cutoff = self.retention_cutoff(now)
+        if cutoff is None:
+            return None
+        days = int(self.retention / pd.Timedelta(days=1))
+        if query.end <= cutoff:
+            return (
+                f"holds only the last ~{days} days (back to {cutoff:%Y-%m-%d}); the requested "
+                f"window ends {query.end:%Y-%m-%d} and is entirely outside it"
+            )
+        if query.start < cutoff:
+            return (
+                f"holds only the last ~{days} days (back to {cutoff:%Y-%m-%d}); the earlier "
+                f"part of the requested window is not available from this source"
+            )
+        return None
+
+    def covers(self, query: Query, now: pd.Timestamp | None = None) -> bool:
+        """False when the window lies entirely outside this source's retention."""
+        cutoff = self.retention_cutoff(now)
+        return cutoff is None or query.end > cutoff
 
     def recognizes(self, name: str) -> bool:
         """Is ``name`` one of this source's *curated* names (CF, omnisea, or raw field)?"""

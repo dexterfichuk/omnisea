@@ -264,6 +264,18 @@ def discover_query(query: Query, *, max_workers: int = DEFAULT_MAX_WORKERS) -> C
     """Run discovery for an already-built :class:`Query`."""
     selected = registry.select(query.providers)
     errors: dict[str, str] = {}
+    notes: dict[str, str] = {}
+
+    # Rolling archives are checked before we call them. A source that cannot reach back to the
+    # requested dates would otherwise return nothing, and "no results" reads as "there is no
+    # station here" — a different and wrong conclusion from "this collection only keeps 30 days".
+    runnable: list[DataSource] = []
+    for source in selected:
+        gap = source.retention_gap(query)
+        if gap:
+            notes[source.name] = gap
+        if source.covers(query):
+            runnable.append(source)
 
     def _discover(source: DataSource) -> list[StationMatch]:
         try:
@@ -274,10 +286,10 @@ def discover_query(query: Query, *, max_workers: int = DEFAULT_MAX_WORKERS) -> C
             return []
 
     matches: list[StationMatch] = []
-    for found in map_threads(_discover, selected, max_workers=max_workers, label="discovery"):
+    for found in map_threads(_discover, runnable, max_workers=max_workers, label="discovery"):
         matches.extend(found)
 
-    return Catalog(query, matches, errors)
+    return Catalog(query, matches, errors, notes)
 
 
 def fetch(
@@ -296,12 +308,16 @@ def fetch(
     to_cf_units: bool = False,
     group_by_site: bool = False,
     nearest: int | None = None,
+    on_error: str = "raise",
     **options: Any,
 ) -> xr.DataTree:
     """Discover and retrieve in one call, returning an :class:`xarray.DataTree`.
 
     ``nearest=n`` keeps only the ``n`` closest stations per site per source, which is the usual
     intent when querying a list of locations.
+
+    ``on_error="collect"`` keeps going when a source fails, recording the failures on the tree
+    instead of raising. See :meth:`Catalog.fetch` for why the default is strict.
     """
     catalog = discover(
         bbox=bbox,
@@ -323,6 +339,7 @@ def fetch(
         to_cf_units=to_cf_units,
         group_by_site=group_by_site,
         max_workers=max_workers,
+        on_error=on_error,
     )
 
 

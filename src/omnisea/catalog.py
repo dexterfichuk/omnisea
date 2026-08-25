@@ -53,12 +53,17 @@ class Catalog:
         query: Query,
         matches: Sequence[StationMatch],
         errors: Mapping[str, str] | None = None,
+        notes: Mapping[str, str] | None = None,
     ):
         self.query = query
         self.matches: list[StationMatch] = list(matches)
         #: Sources that failed during discovery, ``{source_name: message}``. Recorded rather
         #: than raised so one unreachable API cannot sink an otherwise good multi-source query.
         self.errors: dict[str, str] = dict(errors or {})
+        #: Sources that could not answer for a reason worth explaining — a rolling archive that
+        #: does not reach back far enough, say. Not failures, but "no results" alone would be
+        #: read as "there is nothing here", which is a different and wrong conclusion.
+        self.notes: dict[str, str] = dict(notes or {})
 
     # ------------------------------------------------------------------ views
 
@@ -224,7 +229,7 @@ class Catalog:
         if nearest is not None:
             matches = _nearest_per_site(matches, nearest)
 
-        return Catalog(self.query, matches, self.errors)
+        return Catalog(self.query, matches, self.errors, self.notes)
 
     # ------------------------------------------------------------------ retrieval
 
@@ -235,13 +240,27 @@ class Catalog:
         group_by_site: bool = False,
         max_workers: int = DEFAULT_MAX_WORKERS,
         max_rows: int | None = None,
+        on_error: str = "raise",
     ) -> xr.DataTree:
         """Download the catalogued stations and assemble them into a tree.
 
         The row-count ceiling is checked here, before any bulk request is made, so an
         accidentally enormous query fails with an estimate and the knob to change rather than
         hammering the upstream API.
+
+        ``on_error`` decides what a failing source does. The default ``"raise"`` is deliberately
+        stricter than :func:`omnisea.discover`, which collects failures and carries on. The two
+        steps answer different questions: discovery is a *survey*, and a source missing from it
+        costs you options you can see are missing on the catalogue. A fetch produces the data
+        you will actually analyse, and a tree quietly missing a source looks exactly like a tree
+        where that source had nothing to say.
+
+        Pass ``on_error="collect"`` for exploratory work where partial results are useful. The
+        failures are then recorded in the tree's ``omnisea_fetch_errors`` attribute and logged
+        as warnings, never dropped in silence.
         """
+        if on_error not in ("raise", "collect"):
+            raise ValueError(f"on_error must be 'raise' or 'collect'; got {on_error!r}")
         ceiling = max_rows if max_rows is not None else self.query.max_rows
         estimate = self.n_rows_est
         if ceiling and estimate > ceiling:
@@ -270,11 +289,20 @@ class Catalog:
         if not by_source:
             return build_tree(query, [], group_by_site=group_by_site)
 
+        failures: dict[str, str] = {}
+
         def _run(item: tuple[str, list[StationMatch]]) -> list[StationSeries | xr.Dataset]:
             name, matches = item
             source: DataSource = get_source(name)
             log.debug("fetching %d station(s) from %s", len(matches), name)
-            return source.fetch(query, matches)
+            try:
+                return source.fetch(query, matches)
+            except Exception as exc:  # noqa: BLE001 - re-raised below unless collecting
+                if on_error == "raise":
+                    raise
+                failures[name] = f"{type(exc).__name__}: {exc}"
+                log.warning("fetch failed for %s: %s", name, exc)
+                return []
 
         results: list[StationSeries | xr.Dataset] = []
         for chunk in map_threads(
@@ -282,7 +310,13 @@ class Catalog:
         ):
             results.extend(chunk)
 
-        return build_tree(query, results, group_by_site=group_by_site)
+        tree = build_tree(query, results, group_by_site=group_by_site)
+        if failures:
+            tree.attrs["omnisea_fetch_errors"] = "; ".join(
+                f"{name}: {message}" for name, message in sorted(failures.items())
+            )
+            tree.attrs["omnisea_fetch_incomplete"] = 1
+        return tree
 
     # ------------------------------------------------------------------ dunders
 
@@ -303,11 +337,17 @@ class Catalog:
             hint = ""
             if self.query.sites:
                 hint = f" for {len(self.query.sites)} site(s)"
-            return (
-                f"<Catalog: no stations found{hint} in {self.query!r}>\n"
-                "  Try a larger radius_km, a wider time window, or omnisea.providers() to see "
-                "which sources are registered."
-            )
+            lines = [f"<Catalog: no stations found{hint} in {self.query!r}>"]
+            for name, message in self.notes.items():
+                lines.append(f"  - {name}: {message}")
+            for name, message in self.errors.items():
+                lines.append(f"  ! {name} failed during discovery: {message}")
+            if not self.notes and not self.errors:
+                lines.append(
+                    "  Try a larger radius_km, a wider time window, or omnisea.sources() to "
+                    "see what is registered."
+                )
+            return "\n".join(lines)
         header = (
             f"<Catalog: {len(self.matches)} station(s) from {len(self.sources)} source(s), "
             f"~{self.n_rows_est:,} rows>"
@@ -318,6 +358,8 @@ class Catalog:
         if missing:
             shown = ", ".join(missing[:8]) + (" ..." if len(missing) > 8 else "")
             footer = f"\n\n  {len(missing)} site(s) with no match: {shown}"
+        for name, message in self.notes.items():
+            footer += f"\n  - {name}: {message}"
         for name, message in self.errors.items():
             footer += f"\n  ! {name} failed during discovery: {message}"
         return f"{header}\n{body}{footer}"
