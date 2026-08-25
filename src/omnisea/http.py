@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, TypeVar
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pandas as pd
 import requests
@@ -25,6 +26,9 @@ from .errors import MissingDependencyError, PayloadTooLargeError, UpstreamError
 
 __all__ = [
     "get_json",
+    "redact_url",
+    "redact_params",
+    "SENSITIVE_PARAMS",
     "set_max_concurrency",
     "get_session",
     "enable_cache",
@@ -277,6 +281,26 @@ def disable_cache(*, clear: bool = False) -> None:
     log.debug("response cache disabled")
 
 
+def _scrub_secrets(text: str | None, params: Mapping[str, Any] | None) -> str | None:
+    """Remove the secret values *we sent* from text an upstream sent back.
+
+    Redacting the URL is not enough on its own. Ocean Networks Canada answers a bad request by
+    quoting a corrected URL — with the caller's token still in it — inside the JSON error body,
+    which then lands in an exception message, a log, and any traceback a user pastes into an
+    issue. Since this function knows exactly which values were secret, it removes those literal
+    strings wherever they appear rather than trying to guess a format.
+    """
+    if not text or not params:
+        return text
+    for key, value in params.items():
+        if str(key).lower() not in SENSITIVE_PARAMS:
+            continue
+        secret = str(value)
+        if len(secret) >= 6 and secret in text:
+            text = text.replace(secret, _REDACTED)
+    return text
+
+
 def _extract_detail(resp: requests.Response) -> str | None:
     """Pull the human-readable complaint out of an error body.
 
@@ -298,6 +322,45 @@ def _extract_detail(resp: requests.Response) -> str | None:
     return str(body)[:400]
 
 
+#: Query parameters that carry a secret. Their values are replaced with ``REDACTED`` wherever
+#: omnisea prints, logs or stores a URL.
+#:
+#: Some services authenticate in the query string rather than a header — Ocean Networks Canada
+#: takes ``?token=``. A URL like that reaches three places that outlive the request: the debug
+#: log, the message of every :class:`~omnisea.errors.UpstreamError`, and the ``source_url``
+#: attribute stamped on each node, which is then written into netCDF files people share and
+#: commit. Leaking a credential that way is the kind of mistake nobody notices until it is
+#: published, so redaction happens here, once, for every provider.
+SENSITIVE_PARAMS = frozenset({"token", "apptoken", "api_key", "apikey", "auth", "key",
+                              "access_token", "password", "secret"})
+
+_REDACTED = "REDACTED"
+
+
+def redact_url(url: str) -> str:
+    """A URL safe to log, raise or store: secret query values replaced with ``REDACTED``."""
+    try:
+        parts = urlsplit(str(url))
+    except ValueError:  # pragma: no cover - defensive; urlsplit is very forgiving
+        return str(url)
+    if not parts.query:
+        return str(url)
+    pairs = parse_qsl(parts.query, keep_blank_values=True)
+    if not any(k.lower() in SENSITIVE_PARAMS for k, _ in pairs):
+        return str(url)
+    cleaned = [(k, _REDACTED if k.lower() in SENSITIVE_PARAMS else v) for k, v in pairs]
+    return urlunsplit(parts._replace(query=urlencode(cleaned)))
+
+
+def redact_params(params: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The same, for a parameter mapping on its way to a log line."""
+    if not params:
+        return None if params is None else {}
+    return {
+        k: (_REDACTED if str(k).lower() in SENSITIVE_PARAMS else v) for k, v in params.items()
+    }
+
+
 def get_json(
     url: str,
     params: dict[str, Any] | None = None,
@@ -305,25 +368,30 @@ def get_json(
     provider: str | None = None,
     timeout: tuple[int, int] = DEFAULT_TIMEOUT,
 ) -> Any:
-    """GET and decode JSON, converting any failure into an :class:`UpstreamError`."""
+    """GET and decode JSON, converting any failure into an :class:`UpstreamError`.
+
+    Credentials passed in the query string are redacted from the log line and from every error
+    this raises — see :data:`SENSITIVE_PARAMS`.
+    """
     session = get_session()
-    log.debug("GET %s params=%s", url, params)
+    log.debug("GET %s params=%s", redact_url(url), redact_params(params))
     slots = _request_slots
     with slots:
         try:
             resp = session.get(url, params=params, timeout=timeout)
         except requests.RequestException as exc:
+            safe = redact_url(url)
             raise UpstreamError(
-                f"request to {url} failed: {exc}", provider=provider, url=url
+                f"request to {safe} failed: {exc}", provider=provider, url=safe
             ) from exc
 
     if not resp.ok:
         raise UpstreamError(
             "upstream request failed",
             provider=provider,
-            url=resp.url,
+            url=redact_url(resp.url),
             status=resp.status_code,
-            detail=_extract_detail(resp),
+            detail=_scrub_secrets(_extract_detail(resp), params),
         )
     try:
         return resp.json()
@@ -331,7 +399,7 @@ def get_json(
         raise UpstreamError(
             f"upstream returned non-JSON body: {(resp.text or '')[:200]!r}",
             provider=provider,
-            url=resp.url,
+            url=redact_url(resp.url),
             status=resp.status_code,
         ) from exc
 

@@ -305,6 +305,7 @@ omnisea.fields(tree)     # what a particular fetch actually returned
 | `eccc_swob_marine` | `eccc` | Moored buoys: waves, sea surface temperature (~30 days) |
 | `erddap_tabledap` | `erddap` | Any ERDDAP server's station/point datasets |
 | `erddap_griddap` | `erddap` | Any ERDDAP server's gridded datasets, returned lazily |
+| `onc_scalardata` | `onc` | Ocean Networks Canada cabled observatories and moorings — **needs a token** |
 | `cioos_metadata` | `cioos` | CIOOS metadata records — discovery only, contributes catalogue rows |
 
 Select a single dataset or a whole organization:
@@ -353,6 +354,44 @@ omnisea.fetch(..., erddap_datasets=["PRIMED_wavebuoy"], erddap_server=...)
 If a named dataset can't be served as a time series — CIOOS Pacific's `IOS_P26_Annualized` is
 indexed by an integer `Year` column and publishes no `time` variable at all — you get an
 `omnisea` error saying so, not an upstream `400`.
+
+### Ocean Networks Canada
+
+ONC runs cabled observatories, moorings and autonomous platforms off both Canadian coasts and in
+the Arctic — 1,992 locations, 219 measured properties. It is the one built-in source that needs
+a credential. Register at [data.oceannetworks.ca](https://data.oceannetworks.ca), then
+**Profile → Web Services API**:
+
+```python
+omnisea.fetch(lat=48.8145, lon=-125.2825, radius_km=6, time=("2024-07-01", "2024-07-02"),
+              providers="onc_scalardata", onc_token="…")     # or export ONC_TOKEN=…
+```
+
+```
+                  node    station_name  n_time  variables
+ /in_situ/onc/FGPD/CTD     Folger Deep    1440  sea_water_temperature, sea_water_pressure, …
+/in_situ/onc/FGPPN/CTD Folger Pinnacle    1440  sea_water_temperature, sea_water_practical_salinity, …
+```
+
+**Your token stays out of everything omnisea writes down.** ONC authenticates with a `?token=`
+query parameter, and a URL like that would otherwise reach the debug log, the message of every
+error, and the `source_url` recorded on each node — which gets written into netCDF files people
+share and commit. All three are redacted, and so is the token ONC helpfully echoes back *inside*
+its own error bodies.
+
+One node per (location, instrument), because a location can carry a CTD and a hydrophone and a
+current meter and those are not one time series. Raw ONC data can be 1 Hz — a day of one CTD is
+86,400 rows per sensor — so requests are resampled server-side to a minute by default; pass
+`onc_resample_seconds=0` for raw, or any interval you like.
+
+ONC returns the exact citation it wants credited plus a **resolvable DOI** per deployment, and
+omnisea carries both onto the node rather than inventing its own attribution:
+
+```python
+omnisea.citation(tree)
+# Ocean Networks Canada Society. 2023. Folger Deep Conductivity Temperature Depth
+# Deployed 2023-09-15. https://doi.org/10.34943/5629c51a-f715-44fe-b418-a289048c56fd
+```
 
 ### CIOOS metadata records
 
@@ -544,7 +583,7 @@ test validates every emitted `standard_name` against the published table.
 
 ```bash
 pytest -m "not network"   # 557 offline tests over committed real API responses
-pytest -m network         # 52 live integration tests
+pytest -m network         # 55 live integration tests (3 need ONC_TOKEN)
 ```
 
 The network suite covers the edge cases fixtures cannot: the IWLS interval caps and chunk

@@ -1,0 +1,540 @@
+[
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": []
+  },
+  "description": "Amperage",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "amperage",
+  "propertyName": "Amperage",
+  "uom": "A"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UPCT/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Battery Charge",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "batterycharge",
+  "propertyName": "Battery Charge",
+  "uom": "%"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UECA/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Conductivity: siemens per metre",
+  "hasDeviceData": "true",
+  "hasPropertyData": "true",
+  "propertyCode": "conductivity",
+  "propertyName": "Conductivity",
+  "uom": "S/m"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UKMC/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Density",
+  "hasDeviceData": "true",
+  "hasPropertyData": "true",
+  "propertyCode": "density",
+  "propertyName": "Density",
+  "uom": "kg/m3"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/ULAA/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Depth",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "depth",
+  "propertyName": "Depth",
+  "uom": "m"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UPDB/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Pressure: differential Pressure Gauge",
+  "hasDeviceData": "true",
+  "hasPropertyData": "true",
+  "propertyCode": "differentialpressuregauge",
+  "propertyName": "Differential Pressure Gauge",
+  "uom": "decibar"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UOHM/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Electrical Resistance",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "electricalresistance",
+  "propertyName": "Electrical Resistance",
+  "uom": "ohm"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": []
+  },
+  "description": "Electric Charge",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "electriccharge",
+  "propertyName": "Electric Charge",
+  "uom": "mAh"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UCNT/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Count: engineering data",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "engineeringcount",
+  "propertyName": "Engineering Count",
+  "uom": "Count"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UPCT/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Saturation: of gas",
+  "hasDeviceData": "false",
+  "hasPropertyData": "true",
+  "propertyCode": "gassaturation",
+  "propertyName": "Gas Saturation",
+  "uom": "%"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UTBB/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Time: GPS interval time of week",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "gpsintervaltimeofweek",
+  "propertyName": "GPS Interval Time of Week",
+  "uom": "s"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": []
+  },
+  "description": "Time: Gregorian days since 19700101T000000Z",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "gregoriantime",
+  "propertyName": "Gregorian Time",
+  "uom": "Gregorian days since 19700101T000000Z"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UPCT/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Ground Fault",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "groundfault",
+  "propertyName": "Ground Fault",
+  "uom": "%"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UPCT/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Humidity: internal to calibrate instrument",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "internalhumidity",
+  "propertyName": "Internal Humidity",
+  "uom": "%"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UPDB/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Pressure: internal pressure of instrument",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "internalpressure",
+  "propertyName": "Internal Pressure",
+  "uom": "decibar"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UPAA/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Temperature: instrument internal temperature",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "internaltemperature",
+  "propertyName": "Internal Temperature",
+  "uom": "C"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UAAA/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Magnetic Heading",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "magneticheading",
+  "propertyName": "Magnetic Heading",
+  "uom": "deg"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": []
+  },
+  "description": "Magnetic flux density",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "magnetometer",
+  "propertyName": "Magnetometer",
+  "uom": "uT"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": []
+  },
+  "description": "Acceleration: micro-g",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "microgacceleration",
+  "propertyName": "Micro-g Acceleration",
+  "uom": "ug"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": []
+  },
+  "description": "Unclassified sensor type",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "other",
+  "propertyName": "Other",
+  "uom": "NA"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UMLL/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Oxygen: optode sensor",
+  "hasDeviceData": "false",
+  "hasPropertyData": "true",
+  "propertyCode": "oxygen",
+  "propertyName": "Oxygen",
+  "uom": "ml/l"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UAAA/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Pitch",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "pitch",
+  "propertyName": "Pitch",
+  "uom": "deg"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UPDB/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Pressure",
+  "hasDeviceData": "true",
+  "hasPropertyData": "true",
+  "propertyCode": "pressure",
+  "propertyName": "Pressure",
+  "uom": "decibar"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UAAA/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Roll",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "roll",
+  "propertyName": "Roll",
+  "uom": "deg"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UTBB/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Runtime Sensor",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "runtimesensor",
+  "propertyName": "Runtime Sensor",
+  "uom": "s"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": []
+  },
+  "description": "Salinity",
+  "hasDeviceData": "true",
+  "hasPropertyData": "true",
+  "propertyCode": "salinity",
+  "propertyName": "Salinity",
+  "uom": "psu"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UPAA/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Temperature: sea water",
+  "hasDeviceData": "true",
+  "hasPropertyData": "true",
+  "propertyCode": "seawatertemperature",
+  "propertyName": "Sea Water Temperature",
+  "uom": "C"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UKMC/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Sigma-t",
+  "hasDeviceData": "true",
+  "hasPropertyData": "true",
+  "propertyCode": "sigmat",
+  "propertyName": "Sigma-t",
+  "uom": "kg/m3"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UKMC/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Sigma-theta",
+  "hasDeviceData": "true",
+  "hasPropertyData": "true",
+  "propertyCode": "sigmatheta",
+  "propertyName": "Sigma-theta",
+  "uom": "kg/m3"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UVAA/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Sound Speed: sound velocity sensor",
+  "hasDeviceData": "true",
+  "hasPropertyData": "true",
+  "propertyCode": "soundspeed",
+  "propertyName": "Sound Speed",
+  "uom": "m/s"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": []
+  },
+  "description": "Status Code",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "statuscode",
+  "propertyName": "Status Code",
+  "uom": "NA"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UTBB/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Timeout",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "timeout",
+  "propertyName": "Timeout",
+  "uom": "s"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UPDB/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Pressure: total depth pressure sensor",
+  "hasDeviceData": "true",
+  "hasPropertyData": "true",
+  "propertyCode": "totalpressure",
+  "propertyName": "Total Pressure",
+  "uom": "decibar"
+ },
+ {
+  "cvTerm": {
+   "property": [],
+   "uom": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/P06/current/UVLT/",
+     "vocabulary": "BODC data storage units"
+    }
+   ]
+  },
+  "description": "Voltage: voltage sensor",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "propertyCode": "voltage",
+  "propertyName": "Voltage",
+  "uom": "V"
+ }
+]

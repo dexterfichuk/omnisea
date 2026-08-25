@@ -150,6 +150,13 @@ possibly help, and prints an explanation on the Catalog. Without it, a historica
 empty result — which a user reads as "there is no station here", a different and wrong
 conclusion from "this collection only keeps 30 days". Leave it `None` for a full archive.
 
+**If your API needs a credential, keep it out of everything omnisea writes down.** Read it from
+a query option *and* an environment variable, and never put it in `source_url` or any node
+attribute — those are written into netCDF files people share. `omnisea.http` redacts the
+parameter names in `SENSITIVE_PARAMS` (`token`, `api_key`, `auth`, …) from log lines, from error
+URLs, and from any response body that echoes it back; add yours to that set if it is spelled
+differently. `providers/onc.py` is the worked example.
+
 **Declare `cache_policy` on your `Provider` if any of your endpoints are safely cacheable.**
 When a user calls `omnisea.enable_cache()`, every registered provider's rules are merged — a
 plugin's exactly like a built-in's. You are the party that knows which of your endpoints serve
