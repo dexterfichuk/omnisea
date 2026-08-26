@@ -90,7 +90,7 @@ class TestAggregationRules:
 class TestResampleToGrid:
     def test_downsampling_averages_an_instantaneous_series(self, ragged_tree):
         hourly = align(ragged_tree, freq="1h")
-        assert hourly.attrs["omnisea_aggregation"]["water_level@08545"] == "mean"
+        assert hourly.attrs["omnisea_aggregation"]["water_level"] == "mean"
 
     def test_downsampling_sums_an_accumulation(self, ragged_tree):
         """Weekly precipitation must be the sum of the daily totals, not their mean."""
@@ -105,14 +105,14 @@ class TestResampleToGrid:
     def test_upsampling_an_accumulation_forward_fills(self, ragged_tree):
         """Interpolating a daily total to hourly would invent an intra-day distribution."""
         hourly = align(ragged_tree, freq="1h")
-        rule = hourly.attrs["omnisea_aggregation"]["precipitation_amount@1031316"]
+        rule = hourly.attrs["omnisea_aggregation"]["precipitation_amount"]
         assert "ffill" in rule
         july2 = hourly.loc["2024-07-02", "precipitation_amount"].dropna()
         assert (july2 == 5.0).all()
 
     def test_upsampling_an_instantaneous_series_interpolates(self, ragged_tree):
         fine = align(ragged_tree, freq="5min")
-        assert "interpolate" in fine.attrs["omnisea_aggregation"]["water_level@08545"]
+        assert "interpolate" in fine.attrs["omnisea_aggregation"]["water_level"]
 
     def test_result_is_one_row_per_grid_step(self, ragged_tree):
         hourly = align(ragged_tree, freq="1h")
@@ -157,11 +157,11 @@ class TestJoinToOwnTimestamps:
 
     def test_instantaneous_values_respect_the_tolerance(self, ragged_tree, field_sheet):
         joined = align(ragged_tree, on=field_sheet, tolerance="30min")
-        assert "within 30min" in joined.attrs["omnisea_aggregation"]["water_level@08545"]
+        assert "within 30min" in joined.attrs["omnisea_aggregation"]["water_level"]
 
     def test_match_counts_are_reported(self, ragged_tree, field_sheet):
         joined = align(ragged_tree, on=field_sheet)
-        assert "4/4 matched" in joined.attrs["omnisea_aggregation"]["water_level@08545"]
+        assert "4/4 matched" in joined.attrs["omnisea_aggregation"]["water_level"]
 
     def test_a_datetime_index_works_as_the_target(self, ragged_tree):
         target = pd.date_range("2024-07-01", periods=5, freq="D")
@@ -348,7 +348,7 @@ class TestRegressions:
         idx = pd.DatetimeIndex(["2024-07-03 12:00"])
         tree = self._tree(pd.DataFrame({"v": [42.0]}, index=idx))
         joined = align(tree, on=pd.date_range("2024-07-01", periods=5, freq="D"))
-        assert "UNBOUNDED" in joined.attrs["omnisea_aggregation"]["v@X"]
+        assert "UNBOUNDED" in joined.attrs["omnisea_aggregation"]["v"]
 
     def test_a_node_without_a_time_coordinate_warns_rather_than_vanishing(self, caplog):
         import logging
@@ -461,7 +461,7 @@ class TestCircularQuantities:
             "wind_from_direction": {"units": "degree", "standard_name": "wind_from_direction"}
         })])
         assert "circular" in align(tree, freq="1h").attrs["omnisea_aggregation"][
-            "wind_from_direction@A"
+            "wind_from_direction"
         ]
 
 

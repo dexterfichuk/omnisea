@@ -26,6 +26,7 @@ result records what it did per column, so the choice is auditable rather than im
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
@@ -115,8 +116,8 @@ def aggregation_for(
 
 def _node_frames(
     tree: xr.DataTree, *, include_qc: bool
-) -> list[tuple[str, str, pd.DataFrame, dict[str, dict[str, Any]]]]:
-    """Every data-bearing node as ``(station_label, node_path, frame, per-variable attrs)``."""
+) -> list[tuple[str, str, pd.DataFrame, dict[str, dict[str, Any]], dict[str, Any]]]:
+    """Every data-bearing node as ``(label, path, frame, per-variable attrs, node attrs)``."""
     out = []
     for node in tree.subtree:
         ds = node.dataset
@@ -162,7 +163,14 @@ def _node_frames(
             )
         label = _station_label(ds, node.path)
         attrs = {v: dict(ds[v].attrs) for v in keep}
-        out.append((label, node.path, frame.sort_index(), attrs))
+        # The node's own attributes matter to the join, not just the variables': a source
+        # that labels rows by LOCAL calendar date has to be matched in local time.
+        node_meta = {
+            "time_reference": str(ds.attrs.get("time_reference") or ""),
+            "longitude": _scalar_or_none(ds, "longitude"),
+            "source_name": str(ds.attrs.get("source_name") or ""),
+        }
+        out.append((label, node.path, frame.sort_index(), attrs, node_meta))
     return out
 
 
@@ -200,16 +208,16 @@ def _normalize_target(on: Any) -> tuple[pd.DatetimeIndex, pd.DataFrame | None]:
                     "(named time/datetime/date/timestamp)"
                 )
             frame = frame.set_index(time_col)
-        frame.index = _to_naive_utc(pd.DatetimeIndex(frame.index))
+        frame.index = _to_naive_utc(pd.DatetimeIndex(frame.index), warn=True)
         frame = frame.sort_index()
         carried = frame
         index = frame.index
     elif isinstance(on, pd.Series):
-        index = _to_naive_utc(pd.DatetimeIndex(pd.to_datetime(on.values)))
+        index = _to_naive_utc(pd.DatetimeIndex(pd.to_datetime(on.values)), warn=True)
     elif isinstance(on, pd.DatetimeIndex):
-        index = _to_naive_utc(on)
+        index = _to_naive_utc(on, warn=True)
     elif isinstance(on, Iterable):
-        index = _to_naive_utc(pd.DatetimeIndex(pd.to_datetime(list(on))))
+        index = _to_naive_utc(pd.DatetimeIndex(pd.to_datetime(list(on))), warn=True)
     else:
         raise QueryError(f"could not interpret on={on!r} as timestamps")
 
@@ -226,9 +234,26 @@ def _find_time_column(frame: pd.DataFrame) -> str | None:
     return None
 
 
-def _to_naive_utc(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
+def _to_naive_utc(index: pd.DatetimeIndex, *, warn: bool = False) -> pd.DatetimeIndex:
+    """Normalize to naive UTC, saying so when the caller's input carried no timezone.
+
+    Every field sheet worth the name is kept in local time, and reading those stamps as UTC
+    silently shifts a join by the offset: at Tofino that is 7 hours, which on a tide series is
+    a mean error of 1.3 m and a worst case of 3.4 m — the entire tidal range. omnisea assumes
+    UTC because marine APIs speak it, but assuming it in *silence* is the failure this library
+    exists to prevent, so an unlabelled index gets said out loud once.
+    """
     if index.tz is not None:
         return index.tz_convert("UTC").tz_localize(None)
+    if warn and len(index):
+        message = (
+            "align(on=...) received timestamps with no timezone and is reading them as UTC. "
+            "If they are local times, every join is shifted by your UTC offset — on a tide "
+            "series that is metres. Localize them first, e.g. "
+            "frame['time'] = frame['time'].dt.tz_localize('America/Vancouver')."
+        )
+        warnings.warn(message, UserWarning, stacklevel=3)
+        log.warning("%s", message)
     return index
 
 
@@ -272,6 +297,15 @@ def align(
     """
     if (freq is None) == (on is None):
         raise QueryError("give exactly one of freq= (a regular grid) or on= (your timestamps)")
+    if on is not None and agg:
+        # An on= join is a lookup, not an aggregation: nothing is being combined, so an agg
+        # rule has nothing to act on. It used to be accepted and discarded, leaving the audit
+        # trail asserting a rule that never ran.
+        raise QueryError(
+            "agg= applies to freq= resampling, not to an on= join — joining onto your own "
+            f"timestamps looks each value up rather than combining several. Got agg={dict(agg)}. "
+            "Resample with freq= first if you need an aggregation."
+        )
 
     nodes = _node_frames(tree, include_qc=include_qc)
     overrides = dict(agg or {})
@@ -285,9 +319,13 @@ def align(
 
     pieces: list[pd.DataFrame] = []
     applied: dict[tuple[str, str], str] = {}
+    # Units per emitted column. align() used to drop them entirely, which left a modelling
+    # frame holding wind in km/h beside wind in m/s with nothing to say so — and let
+    # drop_correlated() prune one for the other, since correlation is scale-invariant.
+    units_seen: dict[str, str] = {}
 
     used: set[tuple[str, str]] = set()
-    for label, node_path, frame, attrs in nodes:
+    for label, node_path, frame, attrs, node_meta in nodes:
         for variable in frame.columns:
             series = frame[variable].dropna()
             if series.empty:
@@ -306,7 +344,10 @@ def align(
                 aligned, rule = _resample(series, freq, grid, down, up)
             else:
                 interval = bool(str(attrs.get(variable, {}).get("cell_methods") or "").strip())
-                aligned, rule = _join_to(series, target, tolerance, direction, interval)
+                aligned, rule = _join_to(
+                    series, target, tolerance, direction, interval,
+                    local_offset=_local_day_offset(node_meta),
+                )
 
             if aligned is None:
                 continue
@@ -328,6 +369,9 @@ def align(
             aligned.name = key
             pieces.append(aligned.to_frame())
             applied[key] = rule
+            unit = str(attrs.get(variable, {}).get("units") or "")
+            if unit:
+                units_seen[f"{key[0]}@{key[1]}" if key[1] else key[0]] = unit
 
     if not pieces:
         if carried is not None:
@@ -350,12 +394,25 @@ def align(
         wide = own.join(wide, how="left")
 
     wide = _name_columns(wide, columns)
-    wide.attrs["omnisea_aggregation"] = {f"{v}@{s}" if s else v: r for (v, s), r in applied.items()}
+    # Keyed by the names the frame actually carries. With the default columns="auto" the audit
+    # used to say "water_level@08615" while the column was "water_level", so a methods table of
+    # "column -> how it was joined" could not be built mechanically.
+    emitted = _emitted_names(applied.keys(), columns)
+    wide.attrs["omnisea_aggregation"] = {
+        emitted[key]: rule for key, rule in applied.items()
+    }
+    units_seen = {
+        emitted[key]: unit
+        for key in applied
+        if (unit := units_seen.get(f"{key[0]}@{key[1]}" if key[1] else key[0]))
+    }
     # Which columns are the caller's own rather than fetched features. drop_correlated() reads
     # this so it can never prune someone's response variable out of their own model matrix.
     wide.attrs["omnisea_carried"] = (
         [] if carried is None else [str(c) for c in carried.columns]
     )
+    wide.attrs["omnisea_units"] = units_seen
+    wide.attrs["omnisea_time_zone"] = "UTC (naive index; all omnisea times are UTC)"
     wide.attrs["omnisea_alignment"] = (
         f"resampled to {freq}" if freq else f"joined to {len(target)} supplied timestamps"
         + (f" within {tolerance}" if tolerance else "")
@@ -363,15 +420,15 @@ def align(
     return wide
 
 
-def _grid_for(nodes: list[tuple[str, str, pd.DataFrame, Any]], freq: str) -> pd.DatetimeIndex:
+def _grid_for(nodes: list[tuple[str, str, pd.DataFrame, Any, Any]], freq: str) -> pd.DatetimeIndex:
     """One time axis for every column in the call.
 
     Built by binning the overall span the way pandas itself would, so it is valid for calendar
     offsets ("ME", "QE") as well as fixed ones, and identical for every column — resampling each
     series independently could otherwise hand back frames that do not line up.
     """
-    starts = [frame.index.min() for _, _, frame, _ in nodes if len(frame)]
-    ends = [frame.index.max() for _, _, frame, _ in nodes if len(frame)]
+    starts = [frame.index.min() for *_, frame, _, _ in nodes if len(frame)]
+    ends = [frame.index.max() for *_, frame, _, _ in nodes if len(frame)]
     if not starts:
         return pd.DatetimeIndex([])
     # A single instant (or a single-point node) makes min == max; a duplicated label there
@@ -442,6 +499,7 @@ def _join_to(
     tolerance: str | pd.Timedelta | None,
     direction: str,
     interval: bool,
+    local_offset: pd.Timedelta | None = None,
 ) -> tuple[pd.Series | None, str]:
     """Join a series onto supplied timestamps, matching by what the variable actually is.
 
@@ -456,6 +514,15 @@ def _join_to(
     is close enough" is a real judgement the caller should make.
     """
     cadence = _native_cadence(series)
+
+    described_shift = ""
+    if interval and local_offset is not None:
+        # This source labels each row by its LOCAL calendar date. Shift the caller's UTC
+        # timestamps into the station's approximate local time so a sample lands on the day it
+        # actually happened, rather than on the next day's summary. See _local_day_offset.
+        target = target + local_offset
+        hours = local_offset / pd.Timedelta(hours=1)
+        described_shift = f", matched in station-local time (UTC{hours:+.1f}h)"
 
     if interval:
         used_direction = "backward"
@@ -495,11 +562,15 @@ def _join_to(
     merged = pd.merge_asof(
         left, right, on="__t", direction=used_direction, tolerance=window
     )
-    out = pd.Series(merged["__v"].to_numpy(), index=pd.DatetimeIndex(merged["__t"]))
+    index = pd.DatetimeIndex(merged["__t"])
+    if local_offset is not None:
+        # Hand back the caller's own timestamps, not the shifted ones used for matching.
+        index = index - local_offset
+    out = pd.Series(merged["__v"].to_numpy(), index=index)
     matched = int(out.notna().sum())
     if matched == 0:
         log.debug("no rows within %s for a series of %d points", described, len(series))
-    return out, f"{described} ({matched}/{len(target)} matched)"
+    return out, f"{described}{described_shift} ({matched}/{len(target)} matched)"
 
 
 def _pretty(delta: pd.Timedelta | None) -> str:
@@ -513,6 +584,23 @@ def _pretty(delta: pd.Timedelta | None) -> str:
     if total % 60 == 0:
         return f"{int(total // 60)}min"
     return str(delta)
+
+
+def _emitted_names(keys: Any, style: str) -> dict[tuple[str, str], str]:
+    """Map each (variable, station) key to the column name ``_name_columns`` will produce."""
+    keys = list(keys)
+    counts: dict[str, int] = {}
+    for variable, _station in keys:
+        counts[variable] = counts.get(variable, 0) + 1
+    out: dict[tuple[str, str], str] = {}
+    for variable, station in keys:
+        if style == "multi" or not station:
+            out[(variable, station)] = variable if not station else f"{variable}@{station}"
+        elif style == "auto" and counts[variable] == 1:
+            out[(variable, station)] = variable
+        else:
+            out[(variable, station)] = f"{variable}@{station}"
+    return out
 
 
 def _name_columns(wide: pd.DataFrame, style: str) -> pd.DataFrame:
@@ -680,12 +768,24 @@ def drop_correlated(
     """
     pinned = {keep} if isinstance(keep, str) else {str(k) for k in keep}
     own = {str(c) for c in frame.attrs.get("omnisea_carried") or ()}
+    units = {str(k): str(v) for k, v in (frame.attrs.get("omnisea_units") or {}).items()}
 
     pairs = correlations(frame, threshold=threshold, min_overlap=min_overlap, method=method)
     dropped: dict[str, str] = {}
     for row in pairs.itertuples():
         a, b = row.feature_a, row.feature_b
         if a in dropped or b in dropped or a in own or b in own:
+            continue
+        unit_a, unit_b = units.get(a), units.get(b)
+        if unit_a and unit_b and unit_a != unit_b:
+            # Correlation is scale-invariant, so wind in km/h and wind in m/s correlate at
+            # r=1.0 and one would be pruned for the other — leaving a frame whose surviving
+            # columns silently disagree about units. Two different units are two different
+            # measurements as far as this is concerned.
+            log.debug(
+                "keeping both %s (%s) and %s (%s): correlated but not in the same units",
+                a, unit_a, b, unit_b,
+            )
             continue
         if a in pinned and b in pinned:
             continue
@@ -708,7 +808,13 @@ def drop_correlated(
     return out
 
 
-def model_matrix(frame: pd.DataFrame, *, keep: Any = ()) -> pd.DataFrame:
+def model_matrix(
+    frame: pd.DataFrame,
+    *,
+    keep: Any = (),
+    max_missing: float = 0.2,
+    drop_circular: bool = True,
+) -> pd.DataFrame:
     """The numeric, constant-free columns of an aligned frame — what a model can actually take.
 
     :func:`align` is deliberately lossless, so its result carries whatever the providers
@@ -717,11 +823,16 @@ def model_matrix(frame: pd.DataFrame, *, keep: Any = ()) -> pd.DataFrame:
     "straight into scikit-learn" one-liner untrue for a real query.
 
     This drops what a linear model cannot use and says what went, in
-    ``attrs["omnisea_excluded"]``. Columns you carried through ``align(on=...)`` are kept when
-    numeric — your response variable belongs in the matrix — and anything named in ``keep`` is
-    kept regardless.
+    ``attrs["omnisea_excluded"]``: text and flag columns, columns that never vary, columns that
+    are mostly missing (``max_missing``, because keeping one costs you every row it lacks once
+    you call ``dropna()``), and raw compass bearings (``drop_circular``, since 359 deg and
+    1 deg are adjacent on a compass and two degrees apart in a regression).
+
+    Anything named in ``keep`` survives whatever it looks like — that is how you keep a
+    response variable, or a bearing you have decided to handle yourself.
     """
     pinned = {keep} if isinstance(keep, str) else {str(k) for k in keep}
+    units = {str(k): str(v) for k, v in (frame.attrs.get("omnisea_units") or {}).items()}
     excluded: dict[str, str] = {}
     columns: list[str] = []
     for column in frame.columns:
@@ -738,6 +849,25 @@ def model_matrix(frame: pd.DataFrame, *, keep: Any = ()) -> pd.DataFrame:
             continue
         if values.nunique() <= 1:
             excluded[name] = f"constant ({values.iloc[0]!r}) — no information for a model"
+            continue
+        missing = 1.0 - len(values) / len(frame)
+        if missing > max_missing:
+            # A column that is mostly gaps is not a predictor, it is a row filter: keeping it
+            # and then calling .dropna() silently costs most of the samples. One user lost 89%
+            # of theirs to a variable present in 4 rows of 35.
+            excluded[name] = (
+                f"{missing:.0%} missing (over max_missing={max_missing:.0%}); keeping it would "
+                "cost most of your rows to dropna()"
+            )
+            continue
+        if drop_circular and is_circular({"units": units.get(name, "")}, name):
+            # A compass bearing is not a linear predictor: 359 deg and 1 deg are two degrees
+            # apart and the model would read them as 358. Decompose it into sin/cos yourself if
+            # you want direction in the model.
+            excluded[name] = (
+                "a compass bearing — not linear (359 deg and 1 deg are adjacent). Decompose to "
+                "sin/cos components if you want direction as a predictor."
+            )
             continue
         columns.append(column)
 
@@ -832,3 +962,40 @@ def add_local(
 
 def _safe(text: Any) -> str:
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in str(text)) or "local"
+
+
+def _scalar_or_none(ds: xr.Dataset, name: str) -> float | None:
+    """A scalar coordinate as a float, or ``None`` — used for the station's longitude."""
+    if name not in ds.coords:
+        return None
+    coord = ds[name]
+    if coord.size != 1:
+        return None
+    try:
+        return float(coord.values.item())
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def _local_day_offset(node_meta: Mapping[str, Any]) -> pd.Timedelta | None:
+    """How far this node's timestamps sit from the local day they are labelled with.
+
+    Some sources label a daily or monthly summary by its **local calendar date** and stamp it
+    at 00:00Z — ECCC's ``climate-daily`` publishes no UTC date at all, and omnisea records that
+    in the node's ``time_reference``. Matching such a row against a UTC instant then lands a
+    late-afternoon sample on the *following* day's summary: at Tofino a 18:38 PDT cast is
+    01:38Z the next day, so it collected rain, Tmax and Tmin for weather that had not yet
+    happened — systematically, for every afternoon sample.
+
+    There is no UTC offset in the response, so it is estimated from the station's longitude
+    (solar time, 15 deg per hour). That is approximate near a timezone boundary and near local
+    midnight, but it is wrong by at most an hour where reading the stamp as UTC is wrong by a
+    whole day. ``None`` when the node does not label by local date, or has no longitude.
+    """
+    reference = str(node_meta.get("time_reference") or "").upper()
+    if "LOCAL" not in reference:
+        return None
+    longitude = node_meta.get("longitude")
+    if longitude is None or pd.isna(longitude):
+        return None
+    return pd.Timedelta(hours=float(longitude) / 15.0)

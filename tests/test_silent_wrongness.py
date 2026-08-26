@@ -12,6 +12,7 @@ assertion is defending and why it is worth the line.
 from __future__ import annotations
 
 import io
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -79,7 +80,7 @@ class TestASingleSampleIsNotStretched:
     def test_the_audit_line_says_it_was_not_extended(self):
         _, tree = self.tree()
         out = align(tree, freq="1D")
-        assert "not extended" in out.attrs["omnisea_aggregation"]["precipitation_amount@A"]
+        assert "not extended" in out.attrs["omnisea_aggregation"]["precipitation_amount"]
 
 
 class TestASingleIntervalSampleRespectsTolerance:
@@ -99,7 +100,7 @@ class TestASingleIntervalSampleRespectsTolerance:
 
     def test_with_no_tolerance_the_unbounded_reach_is_declared(self):
         got = align(self.tree(), on=self.july(3))
-        rule = got.attrs["omnisea_aggregation"]["precipitation_amount@C"]
+        rule = got.attrs["omnisea_aggregation"]["precipitation_amount"]
         assert "UNBOUNDED" in rule, f"an unbounded match must say so; got {rule!r}"
 
 
@@ -441,3 +442,207 @@ class TestKeywordMistakes:
         message = str(excinfo.value)
         assert "latitude" in message and "longitude" in message
         assert "did you mean" in message
+
+
+# --------------------------------------------------------------------------- the join itself
+
+
+def daily_local_node(station_id="1034600", lon=-125.77):
+    """An ECCC-style daily summary: labelled by LOCAL calendar date, stamped 00:00Z."""
+    idx = pd.DatetimeIndex(
+        ["2024-07-27", "2024-07-28", "2024-07-29"], tz="UTC", name="time"
+    )
+    frame = pd.DataFrame({"precipitation_amount": [1.0, 14.6, 14.2]}, index=idx)
+    match = StationMatch(source="eccc_climate_daily", provider="eccc", station_id=station_id,
+                         name="TOFINO", lat=49.08, lon=lon, site="Tofino")
+    return StationSeries(
+        match=match, frame=frame, node_path=f"in_situ/weather_daily/{station_id}",
+        attrs={
+            "provider": "eccc",
+            "source_name": "eccc_climate_daily",
+            "time_reference": (
+                "LOCAL_DATE: daily aggregates are labelled by local calendar date and stamped "
+                "at 00:00Z. climate-daily publishes no UTC_DATE, so no offset is applied."
+            ),
+        },
+        var_attrs={"precipitation_amount": {"units": "mm", "cell_methods": "time: sum"}},
+    )
+
+
+class TestLocalDateSourcesDoNotLeakTheFuture:
+    """Found by a researcher: 20% of samples got the NEXT day's weather.
+
+    ECCC daily summaries carry a local calendar date stamped 00:00Z. A late-afternoon Pacific
+    sample is the following day in UTC, so a backward interval match on the UTC stamp handed
+    it tomorrow's rain, Tmax and Tmin — weather that had not yet happened — while the audit
+    line asserted "backward within its own 1d interval". Systematic, and correlated with time
+    of day, which is worse than noise.
+    """
+
+    def tree(self):
+        q = Query.from_sites([Site(49.08, -125.77, "Tofino", radius_km=30)],
+                             ("2024-07-27", "2024-07-30"))
+        return build_tree(q, [daily_local_node()])
+
+    def test_an_evening_sample_gets_its_own_local_day(self):
+        # 18:38 PDT on 28 July == 01:38Z on 29 July.
+        sample = pd.DataFrame({"time": [pd.Timestamp("2024-07-29T01:38:00Z")]})
+        got = align(self.tree(), on=sample)["precipitation_amount"].iloc[0]
+        assert got == 14.6, (
+            f"got {got} — the 29 July total, for a sample taken on the afternoon of the 28th"
+        )
+
+    def test_a_morning_sample_is_unaffected(self):
+        # 09:00 PDT on 28 July == 16:00Z the same day; this one was always right.
+        sample = pd.DataFrame({"time": [pd.Timestamp("2024-07-28T16:00:00Z")]})
+        assert align(self.tree(), on=sample)["precipitation_amount"].iloc[0] == 14.6
+
+    def test_the_audit_line_says_the_match_was_made_in_local_time(self):
+        sample = pd.DataFrame({"time": [pd.Timestamp("2024-07-29T01:38:00Z")]})
+        out = align(self.tree(), on=sample)
+        assert "station-local time" in out.attrs["omnisea_aggregation"]["precipitation_amount"]
+
+    def test_the_returned_index_is_the_callers_own_timestamps(self):
+        stamps = pd.DatetimeIndex(["2024-07-29T01:38:00Z", "2024-07-28T16:00:00Z"])
+        out = align(self.tree(), on=pd.DataFrame({"time": stamps}))
+        assert list(out.index) == sorted(stamps.tz_convert("UTC").tz_localize(None))
+
+    def test_a_utc_stamped_source_is_not_shifted(self):
+        """Only sources that say they are local-date labelled get the offset."""
+        q = Query.from_sites([Site(49.08, -125.77, "Tofino", radius_km=30)],
+                             ("2024-07-27", "2024-07-30"))
+        plain = daily_local_node()
+        plain.attrs.pop("time_reference")
+        out = align(build_tree(q, [plain]),
+                    on=pd.DataFrame({"time": [pd.Timestamp("2024-07-29T01:38:00Z")]}))
+        assert "station-local time" not in out.attrs["omnisea_aggregation"][
+            "precipitation_amount"
+        ]
+
+
+class TestNaiveTimestampsAreAnnounced:
+    """A field sheet in local time joined 7 hours off — 1.3 m mean error on a tide series,
+    3.4 m worst case, the whole tidal range — with every audit line reading '35/35 matched'."""
+
+    def tree(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=48, freq="h", tz="UTC", name="time")
+        frame = pd.DataFrame({"v": np.sin(np.arange(48) / 3.0)}, index=idx)
+        return build_tree(q, [node("A", "in_situ/t", frame, {"v": {"units": "m"}})])
+
+    def test_a_naive_frame_warns(self):
+        mine = pd.DataFrame({"time": pd.date_range("2024-07-01 09:00", periods=5, freq="6h")})
+        with pytest.warns(UserWarning, match="no timezone"):
+            align(self.tree(), on=mine, tolerance="2h")
+
+    def test_a_tz_aware_frame_does_not_warn(self):
+        mine = pd.DataFrame({
+            "time": pd.date_range("2024-07-01 09:00", periods=5, freq="6h",
+                                  tz="America/Vancouver")
+        })
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            align(self.tree(), on=mine, tolerance="2h")
+
+    def test_the_convention_is_recorded_on_the_frame(self):
+        mine = pd.DataFrame({
+            "time": pd.date_range("2024-07-01 09:00", periods=5, freq="6h", tz="UTC")
+        })
+        assert "UTC" in align(self.tree(), on=mine, tolerance="2h").attrs["omnisea_time_zone"]
+
+
+class TestAggIsNotSilentlyIgnored:
+    def test_agg_with_on_raises_rather_than_being_discarded(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=5, freq="D", tz="UTC", name="time")
+        tree = build_tree(q, [node("A", "in_situ/rain",
+                                   pd.DataFrame({"precipitation_amount": [1.0] * 5}, index=idx),
+                                   RAIN)])
+        mine = pd.DataFrame({"time": pd.date_range("2024-07-01", periods=3, freq="D", tz="UTC")})
+        with pytest.raises(QueryError, match="agg= applies to freq="):
+            align(tree, on=mine, agg={"precipitation_amount": "mean"})
+
+
+class TestUnitsTravelWithTheModelFrame:
+    def test_align_records_the_units_of_every_column(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=6, freq="h", tz="UTC", name="time")
+        tree = build_tree(q, [node("A", "in_situ/w",
+                                   pd.DataFrame({"wind_speed": np.arange(6.0)}, index=idx),
+                                   {"wind_speed": {"units": "km h-1"}})])
+        out = align(tree, freq="1h")
+        assert out.attrs["omnisea_units"]["wind_speed"] == "km h-1"
+
+    def test_drop_correlated_will_not_prune_across_a_unit_mismatch(self):
+        """Correlation is scale-invariant, so km/h and m/s wind correlate at r=1.0 — pruning
+        one for the other leaves a frame whose survivors silently disagree about units."""
+        n = 40
+        frame = pd.DataFrame({
+            "wind_kmh": np.arange(n) * 3.6,
+            "wind_ms": np.arange(n) * 1.0,
+        })
+        frame.attrs["omnisea_units"] = {"wind_kmh": "km h-1", "wind_ms": "m s-1"}
+        pruned = omnisea.drop_correlated(frame, threshold=0.95)
+        assert set(pruned.columns) == {"wind_kmh", "wind_ms"}
+
+    def test_matching_units_still_prune_normally(self):
+        n = 40
+        frame = pd.DataFrame({"a": np.arange(n) * 1.0, "b": np.arange(n) * 2.0})
+        frame.attrs["omnisea_units"] = {"a": "m", "b": "m"}
+        assert len(omnisea.drop_correlated(frame, threshold=0.95).columns) == 1
+
+
+class TestAuditKeysMatchColumnNames:
+    def test_every_column_can_be_looked_up_in_the_audit_trail(self):
+        """With the default columns='auto' the audit said 'v@A' while the column was 'v', so a
+        methods table of 'column -> how it was joined' could not be built mechanically."""
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=6, freq="h", tz="UTC", name="time")
+        tree = build_tree(q, [
+            node("A", "in_situ/a", pd.DataFrame({"v": np.arange(6.0)}, index=idx),
+                 {"v": {"units": "m"}}),
+            node("B", "in_situ/b", pd.DataFrame({"w": np.arange(6.0)}, index=idx),
+                 {"w": {"units": "m"}}),
+        ])
+        out = align(tree, freq="1h")
+        audit = out.attrs["omnisea_aggregation"]
+        assert set(out.columns) <= set(audit), f"unjoinable: {set(out.columns) - set(audit)}"
+
+    def test_it_holds_when_two_stations_share_a_variable(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=6, freq="h", tz="UTC", name="time")
+        tree = build_tree(q, [
+            node("A", "in_situ/a", pd.DataFrame({"v": np.arange(6.0)}, index=idx),
+                 {"v": {"units": "m"}}),
+            node("B", "in_situ/b", pd.DataFrame({"v": np.arange(6.0)}, index=idx),
+                 {"v": {"units": "m"}}),
+        ])
+        out = align(tree, freq="1h")
+        assert set(out.columns) <= set(out.attrs["omnisea_aggregation"])
+
+
+class TestModelMatrixIsActuallyModelReady:
+    def test_a_mostly_missing_column_is_excluded_rather_than_eating_the_rows(self):
+        frame = wide_frame(n=35)
+        frame["humidex"] = np.nan
+        frame.loc[frame.index[:4], "humidex"] = [20.0, 21.5, 19.0, 22.3]  # 4 of 35
+        matrix = omnisea.model_matrix(frame)
+        assert "humidex" not in matrix.columns
+        assert "missing" in matrix.attrs["omnisea_excluded"]["humidex"]
+        assert len(matrix.dropna()) >= 30, "dropna() should not cost most of the samples"
+
+    def test_a_compass_bearing_is_excluded_from_a_linear_model(self):
+        frame = wide_frame(n=30)
+        frame["wind_from_direction"] = np.linspace(0, 359, 30)
+        frame.attrs["omnisea_units"] = {"wind_from_direction": "degree"}
+        matrix = omnisea.model_matrix(frame)
+        assert "wind_from_direction" not in matrix.columns
+        assert "compass bearing" in matrix.attrs["omnisea_excluded"]["wind_from_direction"]
+
+    def test_a_bearing_you_pinned_is_kept(self):
+        frame = wide_frame(n=30)
+        frame["wind_from_direction"] = np.linspace(0, 359, 30)
+        frame.attrs["omnisea_units"] = {"wind_from_direction": "degree"}
+        assert "wind_from_direction" in omnisea.model_matrix(
+            frame, keep="wind_from_direction"
+        ).columns
