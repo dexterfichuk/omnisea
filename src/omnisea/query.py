@@ -44,6 +44,10 @@ class BBox(NamedTuple):
 
 EARTH_RADIUS_KM = 6371.0088
 
+#: Largest search radius accepted for one site. Half the Earth's circumference is ~20,000 km,
+#: so anything approaching this is a slipped decimal point rather than an intention.
+MAX_RADIUS_KM = 2000.0
+
 #: Options accepted as keyword arguments, with what each one does. Only the generic knobs live
 #: here; every source-specific one — ``resolution``, ``erddap_server``, ``cioos_records`` — is
 #: declared by its own provider module through :func:`register_option`, exactly as a
@@ -209,6 +213,16 @@ class Site:
         if self.radius_km <= 0:
             raise QueryError(
                 f"site {self.label!r}: radius_km must be positive; got {self.radius_km}"
+            )
+        if self.radius_km > MAX_RADIUS_KM:
+            # A slipped decimal point matched 1152 stations at only ~49k estimated rows —
+            # comfortably under the row ceiling — and became roughly 2,800 requests, which
+            # tripped a provider's rate limiter. The row ceiling bounds rows, not requests.
+            raise QueryError(
+                f"site {self.label!r}: radius_km={self.radius_km:,.0f} is larger than the "
+                f"{MAX_RADIUS_KM:,.0f} km ceiling — that is most of the planet, and it becomes "
+                "one request per matching station. Use bbox= for a genuinely global query, or "
+                "raise omnisea.query.MAX_RADIUS_KM if you mean it."
             )
 
     @property

@@ -363,7 +363,9 @@ class TestAnEmptyFetchExplainsItself:
 
     def test_a_failure_is_reported_instead_of_the_no_match_hint(self):
         q = Query.from_sites([Site(0.0, 0.0, "Null Island", radius_km=5)], WEEK)
-        tree = Catalog(q, [], {"dfo_tides": "UpstreamError: HTTP 503"}).fetch()
+        tree = Catalog(q, [], {"dfo_tides": "UpstreamError: HTTP 503"}).fetch(
+            on_error="collect"
+        )
         assert "omnisea_empty_reason" not in tree.attrs, "a real failure is not 'no match'"
         assert "503" in tree.attrs["omnisea_fetch_errors"]
 
@@ -751,3 +753,139 @@ class TestRegisteringASourceDoesNotCorruptTheRegistry:
             assert [s.name for s in registry.select(["dfo"])] == ["dfo_tides"]
         finally:
             registry._SOURCES.pop("dfo_tides_variant", None)
+
+
+class TestTimeoutsAreBoundedAndConfigurable:
+    """A server that accepts a connection and then never answers cost ~480 s before the caller
+    saw anything: a 120 s read timeout multiplied by a retry ladder that kept trying. A
+    pipeline cannot wait eight minutes on one dead endpoint."""
+
+    def test_the_default_is_documented_and_readable(self):
+        assert http.get_timeout() == http.DEFAULT_TIMEOUT
+
+    def test_a_pipeline_can_shorten_it(self):
+        try:
+            omnisea.set_timeout(5, 20)
+            assert http.get_timeout() == (5, 20)
+        finally:
+            omnisea.set_timeout()
+
+    def test_a_nonsense_timeout_is_refused(self):
+        with pytest.raises(ValueError, match="positive"):
+            omnisea.set_timeout(5, 0)
+
+    def test_read_timeouts_are_not_retried_into_a_long_wait(self):
+        """A hung server does not un-hang; retrying only multiplies the wait."""
+        adapter = http.get_session().get_adapter("https://example.org/")
+        assert adapter.max_retries.read <= 1
+        assert adapter.max_retries.connect >= 1, "a refused connection is worth retrying"
+
+    def test_get_json_uses_the_configured_timeout(self, monkeypatch):
+        seen = {}
+
+        class Session:
+            def get(self, url, params=None, timeout=None, **kwargs):
+                seen["timeout"] = timeout
+                raise __import__("requests").RequestException("stop here")
+
+        monkeypatch.setattr(http, "get_session", lambda: Session())
+        try:
+            omnisea.set_timeout(3, 7)
+            with pytest.raises(omnisea.UpstreamError):
+                http.get_json("https://example.org/x")
+            assert seen["timeout"] == (3, 7)
+        finally:
+            omnisea.set_timeout()
+
+
+class TestAFailedSourceIsNotSilentSuccess:
+    """The README's strongest operational promise: fetch() raises by default, because a tree
+    quietly missing a source looks exactly like a tree where that source had nothing to say.
+    It was true for the retrieval phase and false for the discovery phase — which is the
+    dominant real-world class: expired credentials, DNS, upstream 5xx, timeouts. A nightly job
+    published an empty product with exit code 0."""
+
+    def catalog(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        return Catalog(q, [], {"erddap_tabledap": "UpstreamError: HTTP 401 (expired token)"})
+
+    def test_a_discovery_failure_raises_by_default(self):
+        with pytest.raises(omnisea.ProviderError) as excinfo:
+            self.catalog().fetch()
+        message = str(excinfo.value)
+        assert "erddap_tabledap" in message
+        assert "401" in message
+        assert "on_error='collect'" in message, "the message must name the escape hatch"
+
+    def test_collect_still_returns_what_answered(self):
+        tree = self.catalog().fetch(on_error="collect")
+        assert "401" in tree.attrs["omnisea_fetch_errors"]
+
+    def test_a_clean_discovery_does_not_raise(self):
+        assert Catalog(Query.from_sites([BAMFIELD], WEEK), []).fetch() is not None
+
+    def test_a_retention_note_is_not_a_failure(self):
+        """"That collection only keeps 30 days" is an explanation, not an error."""
+        q = Query.from_sites([BAMFIELD], WEEK)
+        tree = Catalog(q, [], notes={"eccc_swob": "holds only the last ~30 days"}).fetch()
+        assert "30 days" in tree.attrs["omnisea_source_notes"]
+
+
+class TestResponseBytesAreBounded:
+    """The row ceiling bounds a catalogue's *estimate*. Nothing bounded the bytes on the wire,
+    so a server streaming an endless body grew the process to 2.2 GB in 146 s — the read
+    timeout only fires on an idle socket, never on a slow trickle."""
+
+    def response(self, body: bytes, declared: str | None = None):
+        class R:
+            ok = True
+            status_code = 200
+            url = "https://example.org/x"
+            headers = {"Content-Length": declared} if declared else {}
+            content = body
+            text = ""
+
+            def json(self):
+                return {"ok": True}
+
+            def close(self):
+                pass
+
+        return R()
+
+    def test_a_declared_oversize_body_is_refused_before_reading_it(self, monkeypatch):
+        monkeypatch.setattr(http, "MAX_RESPONSE_BYTES", 1000)
+        with pytest.raises(PayloadTooLargeError, match="declares"):
+            http._check_size(self.response(b"", declared=str(10_000)), "https://example.org/x")
+
+    def test_an_undeclared_oversize_body_is_refused_after_it_arrives(self, monkeypatch):
+        monkeypatch.setattr(http, "MAX_RESPONSE_BYTES", 1000)
+        with pytest.raises(PayloadTooLargeError, match="returned"):
+            http._check_size(self.response(b"x" * 5000), "https://example.org/x")
+
+    def test_an_ordinary_body_passes(self, monkeypatch):
+        monkeypatch.setattr(http, "MAX_RESPONSE_BYTES", 1_000_000)
+        http._check_size(self.response(b"x" * 100), "https://example.org/x")
+
+    def test_the_message_does_not_leak_a_token(self, monkeypatch):
+        monkeypatch.setattr(http, "MAX_RESPONSE_BYTES", 10)
+        r = self.response(b"x" * 5000)
+        r.url = "https://example.org/x?token=SECRET-VALUE"
+        with pytest.raises(PayloadTooLargeError) as excinfo:
+            http._check_size(r, r.url)
+        assert "SECRET-VALUE" not in str(excinfo.value)
+
+
+class TestARadiusTypoDoesNotBecomeARequestStorm:
+    def test_an_absurd_radius_is_refused(self):
+        """radius_km=20000 matched 1152 stations at only ~49k estimated rows — under the row
+        ceiling — and became ~2,800 requests, which tripped a provider's rate limiter."""
+        with pytest.raises(QueryError, match="ceiling"):
+            Site(48.8, -125.1, "typo", radius_km=20_000)
+
+    def test_a_large_but_sane_radius_is_fine(self):
+        assert Site(48.8, -125.1, "regional", radius_km=500).radius_km == 500
+
+    def test_the_message_says_what_to_do_instead(self):
+        with pytest.raises(QueryError, match="bbox="):
+            Site(48.8, -125.1, "typo", radius_km=1e9)

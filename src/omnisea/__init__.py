@@ -52,6 +52,7 @@ from .http import (
     enable_cache,
     map_threads,
     set_max_concurrency,
+    set_timeout,
 )
 from .provenance import citation, provenance, sources_used
 from .providers import BUILTIN_PROVIDERS
@@ -129,6 +130,7 @@ __all__ = [
     "check_source",
     "check_all",
     "set_max_concurrency",
+    "set_timeout",
     "enable_cache",
     "disable_cache",
     # errors

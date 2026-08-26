@@ -49,6 +49,10 @@ Homepage = "https://github.com/dexterfichuk/omnisea"
 [tool.hatch.build.targets.wheel]
 packages = ["src/omnisea"]
 
+# py.typed tells mypy/pyright the annotations are real; the CF table ships as package data.
+[tool.hatch.build.targets.wheel.force-include]
+"src/omnisea/py.typed" = "omnisea/py.typed"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

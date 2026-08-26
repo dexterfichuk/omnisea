@@ -294,6 +294,23 @@ class Catalog:
         """
         if on_error not in ("raise", "collect"):
             raise ValueError(f"on_error must be 'raise' or 'collect'; got {on_error!r}")
+
+        if on_error == "raise" and self.errors:
+            # The documented default. A one-shot omnisea.fetch() runs discovery internally and
+            # never shows the Catalog, so a source that died there produced an empty tree, exit
+            # code 0, and a nightly job publishing nothing while claiming success. Discovery
+            # still *collects* — one dead API must not sink a survey — but turning that
+            # collection into a silent success at fetch time is the failure this library exists
+            # to prevent. Pass on_error="collect" to proceed with what did answer.
+            failed = "; ".join(
+                f"{name}: {message}" for name, message in sorted(self.errors.items())
+            )
+            raise ProviderError(
+                f"{len(self.errors)} source(s) failed during discovery, so this result would be "
+                f"incomplete: {failed}\n"
+                "  Pass on_error='collect' to fetch what did answer; the failures are then "
+                "recorded in the tree's omnisea_fetch_errors attribute."
+            )
         ceiling = max_rows if max_rows is not None else self.query.max_rows
         estimate = self.n_rows_est
         if ceiling and estimate > ceiling:

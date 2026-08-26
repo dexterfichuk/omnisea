@@ -537,6 +537,25 @@ list — with `Cache-Control: no-cache, no-store, must-revalidate`. Honouring th
 the feature to a no-op, so omnisea overrides it deliberately for the endpoints its policy
 considers static.
 
+## Running it in a pipeline
+
+Three knobs worth setting when this runs unattended:
+
+```python
+omnisea.set_timeout(connect=5, read=20)   # per request; default (10, 120)
+omnisea.set_max_concurrency(4)            # simultaneous HTTP requests; default 8
+omnisea.enable_cache()                    # catalogues cached, measurements never
+```
+
+The timeout is the one that bites. A public server that accepts a connection and then never
+answers costs `read` seconds per attempt, and omnisea retries once — so the default worst case
+for a single dead endpoint is about four minutes, and `set_timeout(5, 20)` brings it under one.
+Longer reads exist for a reason (some of these payloads are megabytes), so pick for your data.
+
+Logging goes to the `omnisea` logger hierarchy — `omnisea.http`, `omnisea.catalog`, one per
+provider — at `INFO` and `DEBUG`, with `WARNING` reserved for things that changed your result.
+Nothing is printed to stdout.
+
 ## When a source can't help
 
 Several ECCC collections are rolling archives — `swob-realtime` and `hydrometric-realtime` keep
@@ -595,7 +614,7 @@ test validates every emitted `standard_name` against the published table.
 ## Tests
 
 ```bash
-pytest -m "not network"   # 670 offline tests over committed real API responses
+pytest -m "not network"   # 686 offline tests over committed real API responses
 pytest -m network         # 55 live integration tests (3 need ONC_TOKEN)
 ```
 

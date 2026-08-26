@@ -22,7 +22,12 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .errors import MissingDependencyError, PayloadTooLargeError, UpstreamError
+from .errors import (
+    MissingDependencyError,
+    OmniseaError,
+    PayloadTooLargeError,
+    UpstreamError,
+)
 
 __all__ = [
     "get_json",
@@ -30,6 +35,9 @@ __all__ = [
     "redact_params",
     "SENSITIVE_PARAMS",
     "set_max_concurrency",
+    "set_timeout",
+    "get_timeout",
+    "MAX_RESPONSE_BYTES",
     "get_session",
     "enable_cache",
     "disable_cache",
@@ -48,8 +56,33 @@ T = TypeVar("T")
 R = TypeVar("R")
 
 DEFAULT_MAX_WORKERS = 8
-DEFAULT_TIMEOUT = (10, 120)  # (connect, read) seconds
 OGC_PAGE_SIZE = 10_000  # pygeoapi accepts large limits; fewer round-trips than the 10-row default
+
+#: ``(connect, read)`` seconds for every request. The read half is generous because some of
+#: these payloads are megabytes over a slow public server.
+DEFAULT_TIMEOUT = (10, 120)
+
+#: The live timeout, which :func:`set_timeout` replaces.
+_timeout: tuple[int, int] = DEFAULT_TIMEOUT
+
+
+def set_timeout(connect: int = 10, read: int = 120) -> None:
+    """Change the per-request timeout for every source.
+
+    Worth setting in a pipeline. A server that accepts a connection and then never answers
+    costs ``read`` seconds per attempt, and the retry ladder tries twice — so the default
+    worst case for one dead endpoint is about four minutes. ``set_timeout(5, 20)`` brings that
+    under a minute, at the cost of giving up on genuinely slow large payloads.
+    """
+    global _timeout
+    if connect <= 0 or read <= 0:
+        raise ValueError(f"timeouts must be positive; got ({connect}, {read})")
+    _timeout = (int(connect), int(read))
+
+
+def get_timeout() -> tuple[int, int]:
+    """The ``(connect, read)`` timeout in force."""
+    return _timeout
 
 _session: requests.Session | None = None
 
@@ -86,7 +119,10 @@ def _configure(session: requests.Session) -> requests.Session:
     retry = Retry(
         total=4,
         connect=3,
-        read=3,
+        # Deliberately low. A server that accepts the connection and then never answers is not
+        # going to answer on the third attempt either — retrying only multiplies the wait, and
+        # a read timeout used to cost 4 x 120 s before the caller saw anything.
+        read=1,
         status=4,
         backoff_factor=0.7,  # 0.7s, 1.4s, 2.8s, 5.6s
         status_forcelist=(429, 500, 502, 503, 504),
@@ -253,6 +289,19 @@ def enable_cache(
         **backend_kwargs,
     )
 
+    try:
+        # Touch the store so a corrupt or unusable file fails here, where the path is known,
+        # rather than as a bare sqlite3.DatabaseError on the first request. A cache truncated
+        # by a full disk must not turn an optional performance feature into a hard crash.
+        session.cache.urls()
+    except Exception as exc:  # noqa: BLE001 - re-raised as an omnisea error
+        session.close()
+        raise OmniseaError(
+            f"the response cache at {cache_name!r} could not be opened ({exc}). Delete that "
+            "file and call enable_cache() again, pass a different path=, or run without a "
+            "cache — it is purely a speed-up."
+        ) from exc
+
     global _session
     previous = _session
     _session = _configure(session)
@@ -361,12 +410,42 @@ def redact_params(params: Mapping[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
+#: Ceiling on a single response body. The row ceiling protects against a *catalogue's*
+#: estimate; nothing protected against the bytes actually on the wire, so a server streaming
+#: an endless body grew the process to 2.2 GB in 146 s without tripping the read timeout —
+#: which only fires on an idle socket, not on a slow trickle.
+MAX_RESPONSE_BYTES = 512 * 1024 * 1024
+
+
+def _check_size(resp: requests.Response, url: str) -> None:
+    """Refuse a response that declares itself larger than :data:`MAX_RESPONSE_BYTES`."""
+    declared = resp.headers.get("Content-Length")
+    if declared and declared.isdigit() and int(declared) > MAX_RESPONSE_BYTES:
+        resp.close()
+        raise PayloadTooLargeError(
+            f"{redact_url(url)} declares a {int(declared):,}-byte body, over the "
+            f"{MAX_RESPONSE_BYTES:,}-byte ceiling. Narrow the query, or raise "
+            "omnisea.http.MAX_RESPONSE_BYTES if you really want it in memory.",
+            estimate=int(declared),
+            limit=MAX_RESPONSE_BYTES,
+        )
+    body = resp.content  # requests has already buffered it; this is the size check, not a read
+    if len(body) > MAX_RESPONSE_BYTES:
+        raise PayloadTooLargeError(
+            f"{redact_url(url)} returned {len(body):,} bytes, over the "
+            f"{MAX_RESPONSE_BYTES:,}-byte ceiling. Narrow the query, or raise "
+            "omnisea.http.MAX_RESPONSE_BYTES.",
+            estimate=len(body),
+            limit=MAX_RESPONSE_BYTES,
+        )
+
+
 def get_json(
     url: str,
     params: dict[str, Any] | None = None,
     *,
     provider: str | None = None,
-    timeout: tuple[int, int] = DEFAULT_TIMEOUT,
+    timeout: tuple[int, int] | None = None,
 ) -> Any:
     """GET and decode JSON, converting any failure into an :class:`UpstreamError`.
 
@@ -378,7 +457,7 @@ def get_json(
     slots = _request_slots
     with slots:
         try:
-            resp = session.get(url, params=params, timeout=timeout)
+            resp = session.get(url, params=params, timeout=timeout or _timeout)
         except requests.RequestException as exc:
             safe = redact_url(url)
             raise UpstreamError(
@@ -393,6 +472,7 @@ def get_json(
             status=resp.status_code,
             detail=_scrub_secrets(_extract_detail(resp), params),
         )
+    _check_size(resp, url)
     try:
         return resp.json()
     except ValueError as exc:

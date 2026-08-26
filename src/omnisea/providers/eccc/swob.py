@@ -32,8 +32,8 @@ from ... import cf
 from ...errors import PayloadTooLargeError, UpstreamError
 from ...http import (
     DEFAULT_MAX_WORKERS,
-    DEFAULT_TIMEOUT,
     get_session,
+    get_timeout,
     map_threads,
     paginate_ogc_items,
 )
@@ -639,7 +639,7 @@ def _get_text(url: str, *, source: str) -> str | None:
     session = get_session()
     log.debug("GET %s", url)
     try:
-        resp = session.get(url, timeout=DEFAULT_TIMEOUT, headers={"Accept": "*/*"})
+        resp = session.get(url, timeout=get_timeout(), headers={"Accept": "*/*"})
     except requests.RequestException as exc:
         raise UpstreamError(f"request to {url} failed: {exc}", provider=source, url=url) from exc
     if resp.status_code == 404:

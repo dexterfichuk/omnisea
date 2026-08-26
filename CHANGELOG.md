@@ -45,6 +45,10 @@ is executable: `python -m omnisea.conformance`.
 - Antimeridian-crossing bounding boxes are refused rather than silently mishandled.
 - Row estimates are cadence x window, not inventory-aware, so a part-time station can return
   fewer rows than its catalogue entry advertised.
+- A single response body is capped at 512 MB (`omnisea.http.MAX_RESPONSE_BYTES`); a server
+  streaming an endless body is refused rather than growing the process without bound.
+- `radius_km` is capped at 2,000 km per site — a slipped decimal point otherwise becomes
+  thousands of requests. Use `bbox=` for a genuinely global query.
 - ERDDAP's `to_cf_units=True` is a no-op: those datasets state the units their numbers are in,
   not how to reach canonical CF units, and omnisea will not guess a scale factor for someone
   else's data.

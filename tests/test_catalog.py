@@ -130,7 +130,7 @@ class TestErrors:
     def test_a_discovery_failure_reaches_the_tree(self, query):
         """A one-shot fetch() never shows the Catalog, so the failure has to travel."""
         catalog = Catalog(query, [], {"eccc_swob": "UpstreamError: HTTP 503"})
-        tree = catalog.fetch()
+        tree = catalog.fetch(on_error="collect")
         assert tree.attrs["omnisea_fetch_incomplete"] == 1
         assert "eccc_swob (discovery)" in tree.attrs["omnisea_fetch_errors"]
         assert "503" in tree.attrs["omnisea_fetch_errors"]
@@ -140,7 +140,7 @@ class TestErrors:
         from omnisea.provenance import citation
 
         catalog = Catalog(query, [], {"erddap_tabledap": "ProviderError: no time variable"})
-        assert "incomplete" in citation(catalog.fetch()).lower()
+        assert "incomplete" in citation(catalog.fetch(on_error="collect")).lower()
 
     def test_retention_notes_reach_the_tree_and_the_citation(self, query):
         from omnisea.provenance import citation
