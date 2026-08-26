@@ -9,9 +9,14 @@ adapters per source, CF-standard canonicalization, EDR-shaped spatial-temporal q
 lossy flat join.
 
 ```bash
+pip install "omnisea[cache,netcdf] @ git+https://github.com/dexterfichuk/omnisea"
+```
+
+Not on PyPI yet, so install from the repository. To develop it:
+
+```bash
 git clone https://github.com/dexterfichuk/omnisea && cd omnisea
-pip install ".[cache,netcdf]"    # to use it (both extras optional)
-pip install -e ".[dev]"          # to develop it
+pip install -e ".[dev]"
 ```
 
 Core dependencies are just `requests`, `pandas`, `numpy` and `xarray`; everything else —
@@ -32,33 +37,41 @@ within 30 km of it:
 import omnisea
 
 cat = omnisea.discover(lat=48.8353, lon=-125.1358, radius_km=30,
-                       time=("2024-07-01", "2024-07-08"))
+                       time=("2024-07-01", "2024-07-08"),
+                       providers=["dfo_tides", "eccc_climate_daily", "eccc_hydrometric_daily"])
 print(cat)
 ```
 
 ```
-            source station_id                         name  distance_km  n_rows_est
-         dfo_tides      08545                     Bamfield     0.079201         700
-eccc_climate_daily    1031316             CAPE BEALE LIGHT     8.031310           7
-eccc_climate_daily    1035940                PACHENA POINT    12.827256           7
-  eccc_hydrometric    08HB048 CARNATION CREEK AT THE MOUTH    13.473495         672
-  eccc_hydrometric    08HB014   SARITA RIVER NEAR BAMFIELD    13.731407         672
-         dfo_tides      08585                Effingham Bay    13.806121          28
+<Catalog: 12 station(s) from 3 source(s), ~886 rows>
+                source station_id                             name  distance_km  n_rows_est                          variables
+             dfo_tides      08545                         Bamfield         0.08         700 water_surface_height_above_refere…
+eccc_hydrometric_daily    08HB076        SUGSAW LAKE NEAR BAMFIELD         3.31           8 water_surface_height_above_refere…
+    eccc_climate_daily    1031316                 CAPE BEALE LIGHT         8.03           7 air_temperature, integral_wrt_tim…
+    eccc_climate_daily    1035940                    PACHENA POINT        12.83           7 air_temperature, integral_wrt_tim…
+eccc_hydrometric_daily    08HB048     CARNATION CREEK AT THE MOUTH        13.47           8 water_surface_height_above_refere…
+             dfo_tides      08585                    Effingham Bay        13.81          28 water_surface_height_above_refere…
+  ...
+
+  (showing 6 of 12 columns; catalog.frame has them all: provider, site, lat, lon, first, last)
 ```
 
-The DFO tide gauge is 80 m from the research station. Now pull the nearest station per source:
+Drop the `providers=` argument to search all eighteen sources at once. The DFO tide gauge is
+80 m from the research station — now pull the nearest station per source:
 
 ```python
 tree = cat.filter(nearest=1).fetch()
-print(omnisea.summary(tree))
+print(omnisea.describe(tree))
 ```
 
 ```
-                          node     station_name  n_time  variables
-          /in_situ/tides/08545         Bamfield     672  water_surface_height_above_reference_datum, reviewed
- /predictions/tides_hilo/08545         Bamfield      27  water_surface_height_above_reference_datum_at_extremum, reviewed
-/in_situ/weather_daily/1031316 CAPE BEALE LIGHT       8  air_temperature, air_temperature_min, air_temperature_max, ...
+                          node     station_name  n_time            start              end                                      variables
+          /in_situ/tides/08545         Bamfield     672 2024-07-01 00:00 2024-07-08 00:00 water_surface_height_above_reference_datum, r…
+ /predictions/tides_hilo/08545         Bamfield      27 2024-07-01 03:33 2024-07-07 22:03 water_surface_height_above_reference_datum_at…
+/in_situ/weather_daily/1031316 CAPE BEALE LIGHT       8 2024-07-01 00:00 2024-07-08 00:00 air_temperature, air_temperature_min, air_tem…
 ```
+
+`describe()` is the readable view; `summary()` returns the same rows with every column.
 
 Two things arrived from that: what the gauge *measured*, and what the harmonic model
 *predicts*. Plotted together, the predicted extrema land on the observed peaks:
@@ -71,9 +84,9 @@ all right, not merely parseable. The network test suite asserts it.
 Then save it, losslessly, as netCDF groups:
 
 ```python
-tree.to_netcdf("bamfield.nc")
+omnisea.to_netcdf(tree, "bamfield.nc")   # or tree.to_netcdf(...) — same file
 import xarray as xr
-xr.open_datatree("bamfield.nc")     # the group structure round-trips
+xr.open_datatree("bamfield.nc")          # the group structure round-trips
 ```
 
 **Discovery is a separate step on purpose.** A marine query can quietly become enormous — ECCC's
@@ -582,7 +595,7 @@ test validates every emitted `standard_name` against the published table.
 ## Tests
 
 ```bash
-pytest -m "not network"   # 557 offline tests over committed real API responses
+pytest -m "not network"   # 670 offline tests over committed real API responses
 pytest -m network         # 55 live integration tests (3 need ONC_TOKEN)
 ```
 

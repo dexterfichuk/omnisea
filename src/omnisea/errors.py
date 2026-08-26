@@ -93,8 +93,11 @@ class MissingDependencyError(OmniseaError, ImportError):
         self.extra = extra
         detail = f" {purpose}" if purpose else ""
         super().__init__(
-            f"{package} is required{detail}, but is not installed. "
-            f'Install it with: pip install "omnisea[{extra}]"'
+            f"{package} is required{detail}, but is not installed. Install it with:\n"
+            f'  pip install "omnisea[{extra}]"\n'
+            "or, until omnisea is on PyPI:\n"
+            f'  pip install "omnisea[{extra}] @ '
+            'git+https://github.com/dexterfichuk/omnisea"'
         )
 
 

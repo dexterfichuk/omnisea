@@ -68,6 +68,7 @@ from .registry import register_provider, register_source
 from .tree import (
     build_tree,
     coverage,
+    describe,
     fields,
     stations,
     summary,
@@ -106,6 +107,7 @@ __all__ = [
     "model_matrix",
     # tree helpers
     "summary",
+    "describe",
     "fields",
     "provenance",
     "citation",
@@ -141,6 +143,12 @@ __all__ = [
 
 for _provider in BUILTIN_PROVIDERS:
     registry.register_provider(_provider)
+
+
+def __dir__() -> list[str]:
+    """Only the public API. Without this, `dir(omnisea)` and tab-completion also offered
+    `Any`, `Iterable`, `Sequence`, `pd`, `xr`, `logging` and `annotations`."""
+    return sorted(__all__)
 
 
 def __getattr__(name: str) -> Any:

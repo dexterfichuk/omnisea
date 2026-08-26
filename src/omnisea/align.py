@@ -736,6 +736,16 @@ def correlations(
     )
 
 
+def _same_quantity(a: str, b: str) -> bool:
+    """Are these two columns the same variable, differing only in which station reported it?
+
+    align() names columns ``variable`` or ``variable@station``, so the part before the ``@`` is
+    the quantity. Two columns naming the same quantity in different units are one measurement
+    reported twice; two different quantities that correlate are redundancy worth pruning.
+    """
+    return str(a).split("@", 1)[0] == str(b).split("@", 1)[0]
+
+
 def drop_correlated(
     frame: pd.DataFrame,
     *,
@@ -777,13 +787,14 @@ def drop_correlated(
         if a in dropped or b in dropped or a in own or b in own:
             continue
         unit_a, unit_b = units.get(a), units.get(b)
-        if unit_a and unit_b and unit_a != unit_b:
-            # Correlation is scale-invariant, so wind in km/h and wind in m/s correlate at
-            # r=1.0 and one would be pruned for the other — leaving a frame whose surviving
-            # columns silently disagree about units. Two different units are two different
-            # measurements as far as this is concerned.
+        if unit_a and unit_b and unit_a != unit_b and _same_quantity(a, b):
+            # The *same* measurement in two units — wind in km/h from one station and m/s from
+            # another. Correlation is scale-invariant, so they sit at r=1.0 and one would be
+            # pruned for the other, leaving survivors that silently disagree about units.
+            # Genuinely different quantities that happen to correlate (heating_degree_days is
+            # derived from air_temperature) are still pruned: that is real redundancy.
             log.debug(
-                "keeping both %s (%s) and %s (%s): correlated but not in the same units",
+                "keeping both %s (%s) and %s (%s): one measurement, two units",
                 a, unit_a, b, unit_b,
             )
             continue

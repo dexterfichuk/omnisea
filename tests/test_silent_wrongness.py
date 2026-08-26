@@ -573,17 +573,28 @@ class TestUnitsTravelWithTheModelFrame:
         out = align(tree, freq="1h")
         assert out.attrs["omnisea_units"]["wind_speed"] == "km h-1"
 
-    def test_drop_correlated_will_not_prune_across_a_unit_mismatch(self):
-        """Correlation is scale-invariant, so km/h and m/s wind correlate at r=1.0 — pruning
-        one for the other leaves a frame whose survivors silently disagree about units."""
+    def test_the_same_measurement_in_two_units_is_never_pruned_to_one(self):
+        """align() names these wind_speed@A and wind_speed@B. Correlation is scale-invariant,
+        so km/h and m/s sit at r=1.0 — pruning one leaves survivors that silently disagree."""
         n = 40
         frame = pd.DataFrame({
-            "wind_kmh": np.arange(n) * 3.6,
-            "wind_ms": np.arange(n) * 1.0,
+            "wind_speed@A": np.arange(n) * 3.6,
+            "wind_speed@B": np.arange(n) * 1.0,
         })
-        frame.attrs["omnisea_units"] = {"wind_kmh": "km h-1", "wind_ms": "m s-1"}
+        frame.attrs["omnisea_units"] = {"wind_speed@A": "km h-1", "wind_speed@B": "m s-1"}
         pruned = omnisea.drop_correlated(frame, threshold=0.95)
-        assert set(pruned.columns) == {"wind_kmh", "wind_ms"}
+        assert set(pruned.columns) == {"wind_speed@A", "wind_speed@B"}
+
+    def test_two_different_quantities_that_correlate_are_still_pruned(self):
+        """heating_degree_days is derived from air_temperature and carries different units —
+        that is real redundancy, not one measurement reported twice."""
+        n = 40
+        base = np.linspace(5.0, 25.0, n)
+        frame = pd.DataFrame({"air_temperature": base, "heating_degree_days": 18.0 - base})
+        frame.attrs["omnisea_units"] = {
+            "air_temperature": "degC", "heating_degree_days": "degC day",
+        }
+        assert len(omnisea.drop_correlated(frame, threshold=0.95).columns) == 1
 
     def test_matching_units_still_prune_normally(self):
         n = 40

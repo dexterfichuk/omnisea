@@ -35,6 +35,7 @@ __all__ = [
     "to_dataframe",
     "to_netcdf",
     "coverage",
+    "describe",
 ]
 
 log = logging.getLogger("omnisea.tree")
@@ -322,6 +323,25 @@ def summary(tree: xr.DataTree) -> pd.DataFrame:
     if not frame.empty:
         frame = frame.sort_values(["provider", "node"]).reset_index(drop=True)
     return frame
+
+
+def describe(tree: xr.DataTree, width: int = 46) -> pd.DataFrame:
+    """The at-a-glance view of a result: what you got, from where, over what period.
+
+    :func:`summary` returns all eleven columns, which pandas elides to ``node ... end`` in a
+    terminal — the columns a reader wants are exactly the ones that disappear. This is the
+    same information, narrowed to fit and with long variable lists trimmed.
+    """
+    frame = summary(tree)
+    if frame.empty:
+        return frame
+    out = frame[["node", "station_name", "n_time", "start", "end", "variables"]].copy()
+    out["variables"] = out["variables"].map(
+        lambda v: v if not isinstance(v, str) or len(v) <= width else v[: width - 1] + "\u2026"
+    )
+    for column in ("start", "end"):
+        out[column] = pd.to_datetime(out[column]).dt.strftime("%Y-%m-%d %H:%M")
+    return out
 
 
 def stations(tree: xr.DataTree) -> pd.DataFrame:
