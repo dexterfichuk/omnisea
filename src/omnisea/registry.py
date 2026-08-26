@@ -33,6 +33,10 @@ __all__ = [
 
 log = logging.getLogger("omnisea.registry")
 
+
+def _ensure_loaded() -> None:
+    _load_entry_points()
+
 _SOURCES: dict[str, DataSource] = {}
 _PROVIDERS: dict[str, Provider] = {}
 _ENTRY_POINTS_LOADED = False
@@ -40,7 +44,16 @@ ENTRY_POINT_GROUP = "omnisea.providers"
 
 
 def register_source(source: DataSource, *, replace: bool = False) -> DataSource:
-    """Add one data source to the registry, keyed by ``source.name``."""
+    """Add one data source to the registry, keyed by ``source.name``.
+
+    Entry points are loaded first. Registering a source back-registers its provider, and doing
+    that *before* the plugin advertising the same provider had loaded pre-empted it: the
+    provider name was taken, its own sources never registered, and ``select("that_provider")``
+    then raised "unknown provider 'x'; registered providers: ..., x" — naming it in the same
+    breath as calling it unknown. Order-dependent, so it reproduced in a script and vanished in
+    a notebook, which is worse than a consistent failure.
+    """
+    _ensure_loaded()
     if not source.name:
         raise ValueError(f"{source!r} must set a non-empty .name before registration")
     if source.name in _SOURCES and not replace:
@@ -64,6 +77,7 @@ def register_source(source: DataSource, *, replace: bool = False) -> DataSource:
 
 def register_provider(provider: Provider, *, replace: bool = False) -> Provider:
     """Register an organization and every dataset it publishes."""
+    _ensure_loaded()
     if not provider.name:
         raise ValueError(f"{provider!r} must set a non-empty .name before registration")
     if provider.name in _PROVIDERS and not replace:
@@ -105,10 +119,6 @@ def _load_entry_points() -> None:
                 )
         except Exception:  # noqa: BLE001 - one bad plugin should not hide the rest
             log.warning("failed to load provider entry point %r", ep.name, exc_info=True)
-
-
-def _ensure_loaded() -> None:
-    _load_entry_points()
 
 
 def get_source(name: str) -> DataSource:

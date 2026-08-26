@@ -40,6 +40,28 @@ FEATURE_TYPES = frozenset(
 #: "mean" as part of a phrase (``air_pressure_at_mean_sea_level``,
 #: ``sea_surface_wave_period_at_variance_spectral_density_maximum``), and flagging those would
 #: train contributors to ignore the warning.
+#: Words that mark an interval statistic wherever they appear in a provider's field name.
+#: Matched on the raw field, not the CF name, for the same reason as the prefixes below.
+AGGREGATE_WORDS = ("_total", "total_", "_max", "max_", "_min", "min_", "_mean", "mean_",
+                   "_sum", "sum_", "_avg", "avg_", "daily_", "_daily", "hourly_", "monthly_")
+
+#: "period of the maximum wave" is a property *of* an extreme, not an extreme itself — taking
+#: its maximum when resampling would report a period no wave actually had. The qualifier says
+#: the aggregate word belongs to a different noun.
+OF_AN_EXTREME = ("_of_max", "_of_min", "_of_the_max", "_of_the_min", "of_max_", "of_min_")
+
+#: Quantities that are accumulations by definition — a CF name alone settles it, whatever the
+#: provider called the column.
+ACCUMULATIONS = frozenset({
+    "precipitation_amount",
+    "thickness_of_rainfall_amount",
+    "thickness_of_snowfall_amount",
+    "lwe_thickness_of_snowfall_amount",
+    "integral_wrt_time_of_air_temperature_deficit",
+    "integral_wrt_time_of_air_temperature_excess",
+    "duration_of_sunshine",
+})
+
 AGGREGATE_PREFIXES = (
     "avg_", "max_", "min_", "mean_", "total_", "sum_",
     "AVG_", "MAX_", "MIN_", "MEAN_", "TOTAL_", "SUM_", "SPEED_MAX_", "DIRECTION_MAX_",
@@ -97,8 +119,25 @@ def check_source(source: Any, *, cf_names: Iterable[str] | None = None) -> list[
     # ---------------------------------------------------------------- identity
     if not getattr(source, "name", ""):
         err("has no .name, so it cannot be registered or selected")
-    if not getattr(source, "node_path", ""):
+    node_path = getattr(source, "node_path", "")
+    if not node_path:
         err("has no .node_path, so its nodes have nowhere to live in the tree")
+    else:
+        # Every segment becomes a netCDF group name. Spaces, leading slashes and ".." all
+        # passed silently and produced groups like "/in_situ/ssn ctd/2026 data".
+        for segment in str(node_path).split("/"):
+            if not segment:
+                err(
+                    f"node_path {node_path!r} has an empty path segment (a leading, trailing "
+                    "or doubled '/'); write it as 'in_situ/my_network'"
+                )
+                break
+            if not _NETCDF_NAME.match(segment):
+                err(
+                    f"node_path segment {segment!r} is not a valid netCDF group name — each "
+                    "segment must start with a letter or underscore and contain only letters, "
+                    "digits and underscores"
+                )
     if not getattr(source, "title", ""):
         warn("has no .title; the Catalog and node attributes will read poorly")
 
@@ -172,10 +211,19 @@ def check_source(source: Any, *, cf_names: Iterable[str] | None = None) -> list[
         if not standard_name and not getattr(spec, "long_name", ""):
             warn(f"{where} has neither a standard_name nor a long_name, so it is undescribed")
 
-        if getattr(spec, "cf_units", None) and not getattr(spec, "units", None):
-            if spec.units is None:
-                pass  # units come from the record, which is fine
-        looks_aggregated = raw.startswith(AGGREGATE_PREFIXES)
+        # Three independent signals, because a prefix match on the raw field name is tuned to
+        # ECCC's spelling and misses the rest: "rain_total_mm" and "daily_rain_mm" — the field
+        # the shipped template teaches this rule with — both slipped through, while
+        # "total_rain_mm" was caught. A daily source whose variable has no cell_methods gets
+        # interpolated by align(), inventing an intra-day distribution nobody measured.
+        looks_aggregated = (
+            raw.startswith(AGGREGATE_PREFIXES)
+            or (
+                any(word in raw.lower() for word in AGGREGATE_WORDS)
+                and not any(q in raw.lower() for q in OF_AN_EXTREME)
+            )
+            or (period is not None and standard_name in ACCUMULATIONS)
+        )
         is_timestamp = spec.var.endswith(TIME_VALUED_SUFFIXES)
         # A compass bearing already has its own rule in align() and is never interpolated, so
         # it does not need cell_methods to be handled correctly.

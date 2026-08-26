@@ -135,3 +135,77 @@ def test_the_bundled_cf_table_matches_the_published_one():
     assert not missing, (
         f"{len(missing)} names published but not bundled, e.g. {sorted(missing)[:5]}"
     )
+
+
+class TestChecksFoundMissingByAContributor:
+    """A contributor built a real provider from the docs and got past the checker with each
+    of these. Every one produces a silently wrong result rather than a loud failure."""
+
+    def source(self, **overrides):
+        from omnisea import cf
+        from omnisea.providers.base import Provider, RetrievalSource
+
+        class P(Provider):
+            name, title, license, base_url = "t", "T", "CC0", "https://example.org"
+
+            def build_sources(self):
+                return []
+
+        attrs = {
+            "name": "t_daily", "title": "T", "node_path": "in_situ/t", "period": "D",
+            "fields": {
+                "daily_rain_mm": cf.FieldSpec(
+                    var="precipitation_amount", standard_name="precipitation_amount", units="mm"
+                )
+            },
+            "discover": lambda self, q: [],
+            "fetch": lambda self, q, m: [],
+            **overrides,
+        }
+        return type("S", (RetrievalSource,), attrs)(P())
+
+    def test_an_interval_statistic_named_the_other_way_round_is_caught(self):
+        """`total_rain_mm` was caught by the prefix rule; `daily_rain_mm` — the field the
+        shipped template teaches this with — was not. align() then interpolates a daily total
+        into an intra-day distribution nobody measured."""
+        problems = check_source(self.source())
+        assert any("cell_methods" in p.message for p in problems)
+
+    def test_declaring_the_cell_methods_clears_it(self):
+        from omnisea import cf
+
+        fixed = {
+            "daily_rain_mm": cf.FieldSpec(
+                var="precipitation_amount", standard_name="precipitation_amount",
+                units="mm", cell_methods="time: sum",
+            )
+        }
+        assert not [p for p in check_source(self.source(fields=fixed))
+                    if "cell_methods" in p.message]
+
+    def test_a_property_of_an_extreme_is_not_mistaken_for_one(self):
+        """"period of the maximum wave" is not itself a maximum — taking its max when
+        resampling would report a period no wave actually had."""
+        from omnisea import cf
+
+        fields = {
+            "pd_of_max_wave_hgt": cf.FieldSpec(
+                var="sea_surface_wave_period_of_highest_wave",
+                standard_name="sea_surface_wave_period_of_highest_wave", units="s",
+            )
+        }
+        assert not [p for p in check_source(self.source(fields=fields, period=None))
+                    if "cell_methods" in p.message]
+
+    @pytest.mark.parametrize("bad", [
+        "/in_situ/leading", "in_situ/trailing/", "in_situ/has spaces",
+        "in_situ//doubled", "../escape",
+    ])
+    def test_a_node_path_that_is_not_a_valid_netcdf_group_is_caught(self, bad):
+        """Each segment becomes a netCDF group name; these all produced real files."""
+        problems = check_source(self.source(node_path=bad))
+        assert any("node_path" in p.message for p in problems), bad
+
+    def test_an_ordinary_node_path_is_accepted(self):
+        assert not [p for p in check_source(self.source(node_path="in_situ/my_network"))
+                    if "node_path" in p.message]

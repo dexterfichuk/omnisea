@@ -14,7 +14,7 @@ from typing import Any
 import pandas as pd
 import xarray as xr
 
-from .errors import PayloadTooLargeError
+from .errors import OmniseaError, PayloadTooLargeError, ProviderError
 from .http import DEFAULT_MAX_WORKERS, map_threads
 from .providers.base import DataSource, StationMatch, StationSeries
 from .query import Query
@@ -320,13 +320,56 @@ class Catalog:
             source: DataSource = get_source(name)
             log.debug("fetching %d station(s) from %s", len(matches), name)
             try:
-                return source.fetch(query, matches)
-            except Exception as exc:  # noqa: BLE001 - re-raised below unless collecting
+                produced = source.fetch(query, matches)
+                return _validated(name, produced)
+            except OmniseaError as exc:
+                # Already one of ours: propagate or collect, but never re-wrap.
                 if on_error == "raise":
                     raise
                 failures[name] = f"{type(exc).__name__}: {exc}"
                 log.warning("fetch failed for %s: %s", name, exc)
                 return []
+            except Exception as exc:  # noqa: BLE001 - re-raised below unless collecting
+                if on_error == "raise":
+                    # "except omnisea.OmniseaError" is documented as a complete catch, and that
+                    # promise is only as strong as the least careful installed plugin. Wrap
+                    # anything a source lets escape so the guarantee actually holds.
+                    raise ProviderError(
+                        f"{type(exc).__name__} while fetching: {exc}", provider=name
+                    ) from exc
+                failures[name] = f"{type(exc).__name__}: {exc}"
+                log.warning("fetch failed for %s: %s", name, exc)
+                return []
+
+        def _validated(name: str, produced: Any) -> list[StationSeries | xr.Dataset]:
+            """Check what a source returned, naming the source rather than leaking an attribute.
+
+            A wrong return type used to surface as ``AttributeError: 'str' object has no
+            attribute 'is_empty'`` from deep in tree assembly — no source name, no expected
+            type, and a private attribute as the only clue.
+            """
+            if produced is None:
+                return []
+            if isinstance(produced, (StationSeries, xr.Dataset)):
+                raise ProviderError(
+                    f"fetch() returned a bare {type(produced).__name__}; it must return a "
+                    "*list* of StationSeries or xarray.Dataset. Wrap it: [series]",
+                    provider=name,
+                )
+            if not isinstance(produced, list):
+                raise ProviderError(
+                    f"fetch() returned {type(produced).__name__}; expected "
+                    "list[StationSeries | xarray.Dataset]",
+                    provider=name,
+                )
+            for item in produced:
+                if not isinstance(item, (StationSeries, xr.Dataset)):
+                    raise ProviderError(
+                        f"fetch() returned a list containing {type(item).__name__}; every "
+                        "element must be a StationSeries or an xarray.Dataset",
+                        provider=name,
+                    )
+            return produced
 
         results: list[StationSeries | xr.Dataset] = []
         for chunk in map_threads(

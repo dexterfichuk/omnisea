@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import warnings
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -118,6 +119,22 @@ def series_to_dataset(series: StationSeries) -> xr.Dataset:
     """
     frame = series.frame
     match = series.match
+
+    if frame is not None and not frame.empty and isinstance(frame.index, pd.DatetimeIndex):
+        if frame.index.tz is None:
+            # Every source that goes through frame_from_records arrives tz-aware. One building
+            # its index by hand does not, and a network publishing local wall-clock times then
+            # ships every timestamp shifted by its own UTC offset with the values unchanged —
+            # which align() will happily join against a correct source. Say so: this is the
+            # single likeliest mistake for any provider outside UTC, and it is invisible.
+            message = (
+                f"{series.match.source}: node {series.node_path} has timezone-naive timestamps, "
+                "which omnisea reads as UTC. If the upstream publishes local time, every "
+                "timestamp is shifted by its offset. Parse with utc=True (or use "
+                "frame_from_records, which does)."
+            )
+            warnings.warn(message, UserWarning, stacklevel=2)
+            log.warning("%s", message)
 
     if frame is None or frame.empty:
         ds = xr.Dataset()

@@ -104,8 +104,13 @@ touching the point-series assembly code.
 | `cf.convert(value, spec)` | Apply the encoding fix (and optionally the unit conversion) |
 | `cf.cf_attrs(spec)` | CF attributes for one variable |
 | `cf.resolve_fields(...)` | Decide which raw fields to emit, mapped and unmapped |
-| `chunk_time(start, end, max_days=N)` | Split a window to respect an upstream interval cap |
-| `map_threads(fn, items)` | Bounded parallelism (HTTP concurrency is capped globally anyway) |
+| `self.trim_window(query)` | The window to trim to — grown to whole periods when you set `period` |
+| `chunk_time(start, end, max_days=N)` | *(from `omnisea.http`)* Split a window to respect an upstream interval cap |
+| `map_threads(fn, items)` | *(from `omnisea.http`)* Bounded parallelism (HTTP concurrency is capped globally anyway) |
+
+`StationMatch` also carries `first` and `last` — the station's period of record. Set them in
+`new_match(...)` and the Catalog shows them, which is how a user sees that a station exists but
+does not cover their window.
 
 ---
 
@@ -185,6 +190,19 @@ resamples and how it joins to a user's own timestamps. A daily total without `ce
 gets interpolated as if it were an instantaneous reading, which invents an intra-day
 distribution that was never measured.
 
+**Return timestamps in UTC, and make them timezone-aware.** A naive index is read as UTC, so a
+network publishing local wall-clock times ships every timestamp shifted by its own offset with
+the values unchanged — nothing about the numbers looks wrong. `frame_from_records` handles this
+for you (`pd.to_datetime(..., utc=True)` respects an offset in the string and converts); if you
+build an index yourself, parse with `utc=True`. omnisea warns when a node arrives naive, but the
+warning is a backstop, not a substitute.
+
+**Null your upstream's missing-value sentinel before shaping.** `-9999`, `-999`, `9999` and
+empty strings are near-universal in sensor networks, and left alone they become real
+measurements — `-9999` mg/L of oxygen, or `-9725.85 K` under `to_cf_units=True`. `FieldSpec` has
+no hook for this; do it in a `clean_row`-style step, as `providers/eccc/climate.py` does for
+AHCCD's `-9999.9`.
+
 **Verify your `standard_name` against the real CF table.** `sea_surface_height_above_reference_datum`
 looks official and is not in it; the real name is `water_surface_height_above_reference_datum`.
 A CI test checks every built-in name against the published table — yours should pass it too.
@@ -209,12 +227,20 @@ omnisea has no CF name for.
 
 ## A complete example
 
-`examples/csv_stations.py` is a working third-party provider that reads station CSVs from a
-local directory. It is under 100 lines and is exercised by the test suite.
+[`examples/provider_template.py`](../examples/provider_template.py) is the one to copy — every
+hook is commented and it follows this document exactly.
+[`examples/csv_stations.py`](../examples/csv_stations.py) is a shorter working provider reading
+station CSVs from a local directory; note that it passes `requested=query.variables` to
+`cf.resolve_fields`, which is right for its upstream (it reads whole files) but **not** what you
+want for an API that already returned every field — see the rule above.
 
 ```python
 import omnisea
-from omnisea.providers.base import Provider, RetrievalSource, StationSeries, frame_from_records
+from omnisea import cf
+from omnisea.providers.base import (
+    Provider, RetrievalSource, StationSeries, drop_orphan_qc, frame_from_records,
+    trim_to_window,
+)
 
 class ShoreLoggerProvider(Provider):
     name = "shorelogger"

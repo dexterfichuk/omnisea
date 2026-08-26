@@ -646,3 +646,97 @@ class TestModelMatrixIsActuallyModelReady:
         assert "wind_from_direction" in omnisea.model_matrix(
             frame, keep="wind_from_direction"
         ).columns
+
+
+class TestTheProviderContractFailsLoudly:
+    """A contributor's four most likely mistakes, each of which used to be silent or cryptic."""
+
+    def a_source(self, fetch_impl):
+        from omnisea.providers.base import Provider, RetrievalSource
+
+        class P(Provider):
+            name, title, license, base_url = "c", "C", "CC0", "https://example.org"
+
+            def build_sources(self):
+                return []
+
+        return type("S", (RetrievalSource,), {
+            "name": "c_src", "title": "C", "node_path": "in_situ/c",
+            "discover": lambda self, q: [],
+            "fetch": fetch_impl,
+        })(P())
+
+    def catalog_for(self, source):
+        from omnisea import registry
+
+        registry.register_source(source, replace=True)
+        q = Query.from_sites([BAMFIELD], WEEK)
+        match = StationMatch(source="c_src", provider="c", station_id="X", name="X",
+                             lat=48.8, lon=-125.1)
+        return Catalog(q, [match])
+
+    def test_returning_a_bare_series_instead_of_a_list_says_so(self):
+        series = StationSeries(
+            match=StationMatch(source="c_src", station_id="X", name="X", lat=48.8, lon=-125.1),
+            frame=pd.DataFrame(), node_path="in_situ/c/X",
+        )
+        source = self.a_source(lambda self, q, m: series)
+        with pytest.raises(omnisea.ProviderError, match="bare StationSeries"):
+            self.catalog_for(source).fetch()
+
+    def test_returning_a_dataframe_names_the_expected_type(self):
+        """It used to surface as "'str' object has no attribute 'is_empty'" from tree
+        assembly — no source name, no expected type, a private attribute as the only clue."""
+        source = self.a_source(lambda self, q, m: pd.DataFrame({"time": [], "v": []}))
+        with pytest.raises(omnisea.ProviderError, match="list\\[StationSeries"):
+            self.catalog_for(source).fetch()
+
+    def test_a_stray_exception_is_wrapped_so_omniseaerror_stays_a_complete_catch(self):
+        def boom(self, q, m):
+            raise ValueError("upstream returned HTML instead of CSV")
+
+        with pytest.raises(omnisea.OmniseaError) as excinfo:
+            self.catalog_for(self.a_source(boom)).fetch()
+        assert "HTML instead of CSV" in str(excinfo.value)
+
+    def test_collecting_still_records_rather_than_raising(self):
+        def boom(self, q, m):
+            raise ValueError("upstream down")
+
+        tree = self.catalog_for(self.a_source(boom)).fetch(on_error="collect")
+        assert "upstream down" in tree.attrs["omnisea_fetch_errors"]
+
+    def test_a_timezone_naive_frame_from_a_provider_is_announced(self):
+        """A network publishing local wall-clock times shipped every timestamp shifted by its
+        own offset, values unchanged, with nothing anywhere saying so."""
+        from omnisea.tree import series_to_dataset
+
+        naive = pd.DataFrame(
+            {"v": [1.0, 2.0]},
+            index=pd.DatetimeIndex(["2024-07-01 00:00", "2024-07-01 01:00"], name="time"),
+        )
+        series = StationSeries(
+            match=StationMatch(source="c_src", station_id="X", name="X", lat=48.8, lon=-125.1),
+            frame=naive, node_path="in_situ/c/X",
+        )
+        with pytest.warns(UserWarning, match="timezone-naive"):
+            series_to_dataset(series)
+
+
+class TestRegisteringASourceDoesNotCorruptTheRegistry:
+    def test_a_variant_source_does_not_unregister_its_providers_others(self):
+        """register_source back-registered the provider before entry points had loaded, so the
+        provider name was taken and its own sources never registered — then select() raised
+        "unknown provider 'x'; registered providers: ..., x"."""
+        from omnisea import registry
+        from omnisea.providers.dfo import DfoProvider, DfoTidesSource
+
+        class Variant(DfoTidesSource):
+            name = "dfo_tides_variant"
+
+        registry.register_source(Variant(DfoProvider()), replace=True)
+        try:
+            assert "dfo_tides" in omnisea.sources(), "the original source was unregistered"
+            assert [s.name for s in registry.select(["dfo"])] == ["dfo_tides"]
+        finally:
+            registry._SOURCES.pop("dfo_tides_variant", None)
