@@ -43,6 +43,7 @@ __all__ = [
     "aggregation_for",
     "correlations",
     "drop_correlated",
+    "model_matrix",
     "is_circular",
 ]
 
@@ -611,17 +612,36 @@ def correlations(
     overlap = pd.DataFrame(present.T @ present, index=numeric.columns, columns=numeric.columns)
 
     rows: list[dict[str, Any]] = []
+    considered = 0
+    too_short = 0
     for i, a in enumerate(columns):
         for b in columns[i + 1:]:
+            considered += 1
             n = int(overlap.loc[a, b])
             r = corr.loc[a, b]
-            if n < min_overlap or pd.isna(r) or abs(float(r)) < threshold:
+            if n < min_overlap:
+                too_short += 1
+                continue
+            if pd.isna(r) or abs(float(r)) < threshold:
                 continue
             rows.append({"feature_a": str(a), "feature_b": str(b), "r": float(r), "n": n})
 
     pairs = pd.DataFrame(rows, columns=["feature_a", "feature_b", "r", "n"])
-    if pairs.empty:
-        return pairs
+    pairs.attrs["omnisea_pairs_considered"] = considered
+    pairs.attrs["omnisea_pairs_below_min_overlap"] = too_short
+    if too_short and pairs.empty:
+        # An empty table reads as "nothing is collinear" — a clean bill of health. When every
+        # pair was skipped for want of overlap it means the opposite: nothing was checked. A
+        # week of grab samples against daily climate is a completely ordinary field sheet, and
+        # publishing a regression on unexamined near-duplicates is the failure this exists to
+        # prevent.
+        log.warning(
+            "correlations(): none of the %d pair(s) had %d overlapping samples, so nothing was "
+            "checked — this is 'not measured', not 'not correlated'. The frame has %d rows; "
+            "lower min_overlap (e.g. min_overlap=%d) to see them, knowing a correlation over "
+            "few points is weak evidence.",
+            considered, min_overlap, len(frame), max(3, min(considered, len(frame))),
+        )
     return (
         pairs.sort_values("r", key=lambda s: s.abs(), ascending=False)
         .reset_index(drop=True)
@@ -685,6 +705,46 @@ def drop_correlated(
 
     out = frame.drop(columns=list(dropped))
     out.attrs = {**frame.attrs, "omnisea_dropped": dropped}
+    return out
+
+
+def model_matrix(frame: pd.DataFrame, *, keep: Any = ()) -> pd.DataFrame:
+    """The numeric, constant-free columns of an aligned frame — what a model can actually take.
+
+    :func:`align` is deliberately lossless, so its result carries whatever the providers
+    published: weather descriptions as prose, flag letters, columns that never vary in the
+    window. Handing that to scikit-learn fails on the first string, which makes the documented
+    "straight into scikit-learn" one-liner untrue for a real query.
+
+    This drops what a linear model cannot use and says what went, in
+    ``attrs["omnisea_excluded"]``. Columns you carried through ``align(on=...)`` are kept when
+    numeric — your response variable belongs in the matrix — and anything named in ``keep`` is
+    kept regardless.
+    """
+    pinned = {keep} if isinstance(keep, str) else {str(k) for k in keep}
+    excluded: dict[str, str] = {}
+    columns: list[str] = []
+    for column in frame.columns:
+        name = str(column)
+        if name in pinned:
+            columns.append(column)
+            continue
+        if not pd.api.types.is_numeric_dtype(frame[column]):
+            excluded[name] = "not numeric (text, a flag or a description)"
+            continue
+        values = frame[column].dropna()
+        if values.empty:
+            excluded[name] = "entirely missing over this window"
+            continue
+        if values.nunique() <= 1:
+            excluded[name] = f"constant ({values.iloc[0]!r}) — no information for a model"
+            continue
+        columns.append(column)
+
+    out = frame[columns].copy()
+    out.attrs = {**frame.attrs, "omnisea_excluded": excluded}
+    if excluded:
+        log.debug("model_matrix() excluded %d column(s): %s", len(excluded), sorted(excluded))
     return out
 
 

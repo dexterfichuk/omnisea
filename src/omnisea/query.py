@@ -8,6 +8,7 @@ straight pass-through.
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -68,14 +69,28 @@ def register_option(name: str, description: str) -> None:
     KNOWN_OPTIONS[name] = description
 
 
+#: Named keyword parameters of the top-level query functions. Not options, but the most likely
+#: thing a misspelled keyword was reaching for — `latitude=` is a far commoner slip than any
+#: option typo, and difflib cannot suggest a name it was never shown.
+QUERY_KEYWORDS = (
+    "bbox", "lat", "lon", "radius_km", "sites", "time", "variables", "depth", "providers",
+    "max_rows", "nearest", "group_by_site", "on_error",
+)
+
+
 def _validate_options(options: Mapping[str, Any]) -> dict[str, Any]:
     unknown = [k for k in options if k not in KNOWN_OPTIONS]
     if unknown:
         import difflib
 
+        vocabulary = list(KNOWN_OPTIONS) + list(QUERY_KEYWORDS)
         details = []
         for key in unknown:
-            close = difflib.get_close_matches(key, KNOWN_OPTIONS, n=1)
+            close = difflib.get_close_matches(key, vocabulary, n=1, cutoff=0.55)
+            if not close:
+                # "latitude" and "lat" score below any sensible cutoff, but a prefix match is
+                # unambiguous evidence of what was meant.
+                close = [c for c in vocabulary if key.startswith(c) or c.startswith(key)][:1]
             details.append(f"{key!r}" + (f" (did you mean {close[0]!r}?)" if close else ""))
         raise QueryError(
             "unknown option(s): "
@@ -551,7 +566,10 @@ class Query:
         if self.bbox is not None:
             attrs["query_bbox"] = list(self.bbox)
         if self.sites:
-            attrs["query_site_names"] = [s.label for s in self.sites]
+            # JSON rather than a list: _clean_attrs joins lists with ", " for netCDF, and a
+            # label is very often "48.8353,-125.1358" or "Tofino, BC" — re-splitting that on
+            # commas invented sites that were never requested and reported them as empty.
+            attrs["query_site_names"] = json.dumps([s.label for s in self.sites])
             attrs["query_site_lats"] = [s.lat for s in self.sites]
             attrs["query_site_lons"] = [s.lon for s in self.sites]
             attrs["query_site_radius_km"] = [s.radius_km for s in self.sites]

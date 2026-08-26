@@ -32,6 +32,7 @@ __all__ = [
     "summary",
     "stations",
     "to_dataframe",
+    "to_netcdf",
     "coverage",
 ]
 
@@ -480,7 +481,13 @@ def _requested_sites(tree: xr.DataTree, query: Query | None) -> list[str]:
         return [s.label for s in query.sites]
     names = tree.attrs.get("query_site_names")
     if isinstance(names, str):
-        return [n.strip() for n in names.split(",") if n.strip()]
+        try:
+            decoded = json.loads(names)
+        except ValueError:
+            # A tree written before labels were JSON-encoded. Comma-splitting is what broke
+            # them, so treat the whole string as one label rather than inventing several.
+            return [names.strip()] if names.strip() else []
+        return [str(n) for n in decoded] if isinstance(decoded, list) else []
     if isinstance(names, Sequence):
         return [str(n) for n in names]
     return []
@@ -516,3 +523,20 @@ def scalar_coord(ds: xr.Dataset, name: str) -> Any:
     except (ValueError, AttributeError):
         return value
     return item
+
+
+def to_netcdf(tree: xr.DataTree, path: Any, **kwargs: Any) -> None:
+    """Write a tree to netCDF, naming the extra to install if no engine is present.
+
+    ``tree.to_netcdf(path)`` works exactly as well and stays the documented way to do this.
+    This wrapper exists for the one thing xarray cannot know: that the missing backend is
+    available as ``pip install "omnisea[netcdf]"``. Without it a user following the README on a
+    bare install gets a raw xarray error naming two libraries they never asked for.
+    """
+    import importlib.util
+
+    if not any(importlib.util.find_spec(name) for name in ("netCDF4", "h5netcdf")):
+        from .errors import MissingDependencyError
+
+        raise MissingDependencyError("netCDF4", "netcdf", "for writing netCDF files")
+    tree.to_netcdf(path, **kwargs)

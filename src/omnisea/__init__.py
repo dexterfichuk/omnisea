@@ -28,7 +28,14 @@ import xarray as xr
 __version__ = "0.1.0"
 
 from . import cf, registry
-from .align import add_local, aggregation_for, align, correlations, drop_correlated
+from .align import (
+    add_local,
+    aggregation_for,
+    align,
+    correlations,
+    drop_correlated,
+    model_matrix,
+)
 from .catalog import Catalog
 from .errors import (
     MissingDependencyError,
@@ -58,7 +65,15 @@ from .providers.base import (
 )
 from .query import Query, Site, as_sites, register_option
 from .registry import register_provider, register_source
-from .tree import build_tree, coverage, fields, stations, summary, to_dataframe
+from .tree import (
+    build_tree,
+    coverage,
+    fields,
+    stations,
+    summary,
+    to_dataframe,
+    to_netcdf,
+)
 
 log = logging.getLogger("omnisea")
 
@@ -88,6 +103,7 @@ __all__ = [
     "aggregation_for",
     "correlations",
     "drop_correlated",
+    "model_matrix",
     # tree helpers
     "summary",
     "fields",
@@ -96,6 +112,7 @@ __all__ = [
     "sources_used",
     "stations",
     "to_dataframe",
+    "to_netcdf",
     "coverage",
     # extension
     "Provider",
@@ -203,6 +220,13 @@ def _build_query(
 ) -> Query:
     if time is None:
         raise QueryError("time is required, e.g. time=('2024-07-01', '2024-07-08')")
+
+    # Options are validated first: `discover(latitude=..., longitude=...)` otherwise dies on
+    # "give one of bbox=, sites= or lat/lon=" without ever mentioning the keys actually typed,
+    # while the option validator would have said "did you mean 'lat'?".
+    from .query import _validate_options
+
+    _validate_options(options)
 
     given = [k for k, v in (("bbox", bbox), ("sites", sites), ("lat", lat)) if v is not None]
     if len(given) > 1:

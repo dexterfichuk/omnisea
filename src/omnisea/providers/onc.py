@@ -243,6 +243,10 @@ class OncProvider(Provider):
 
     # ------------------------------------------------------------------ auth
 
+    def has_token(self, query: Query) -> bool:
+        """Is a credential available at all? Used to opt out quietly rather than fail loudly."""
+        return bool(query.option("onc_token") or os.environ.get("ONC_TOKEN"))
+
     def token(self, query: Query) -> str:
         """The API token, from the query or the environment, or a message saying how to get one.
 
@@ -353,9 +357,20 @@ class OncScalarDataSource(RetrievalSource):
     def discover(self, query: Query) -> list[StationMatch]:
         if not self.wants_anything(query):
             return []
-        # A token is needed even to list locations, so fail here with instructions rather than
-        # returning nothing and letting it read as "ONC has no data near you".
-        self.provider.token(query)
+
+        # Without a credential this source simply cannot participate. Raising would print a
+        # failure on *every* omnisea call made by the majority of users who have no ONC token —
+        # a permanent banner for something they never asked for. Naming ONC explicitly is
+        # reserved for callers who asked for it, where silence really would read as "ONC has
+        # nothing near you".
+        asked_for_onc = bool(query.providers) and any(
+            name in ("onc", self.name) for name in query.providers
+        )
+        if not self.provider.has_token(query):
+            if asked_for_onc:
+                self.provider.token(query)  # raises, with the how-to-get-one message
+            log.debug("%s: no ONC token configured; skipping", self.name)
+            return []
 
         locations = self._candidate_locations(query)
         matches: list[StationMatch] = []

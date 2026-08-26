@@ -296,9 +296,22 @@ class Catalog:
             by_source.setdefault(m.source, []).append(m)
 
         if not by_source:
-            return self._record_incompleteness(
+            tree = self._record_incompleteness(
                 build_tree(query, [], group_by_site=group_by_site), {}
             )
+            if not self.errors and not self.notes:
+                # Nothing failed and nothing was out of range — the query simply matched no
+                # station. discover()'s repr says so helpfully; a one-shot fetch() showed an
+                # empty tree with no explanation at all, and the user cannot tell that from a
+                # server being down or from having called it wrong.
+                tree.attrs["omnisea_empty_reason"] = (
+                    "No station matched this query. Nothing failed — the area, time window and "
+                    "variable filter simply had no overlap. Try a larger radius_km, a wider "
+                    "time window, omnisea.sources() to see what is registered, or "
+                    "omnisea.discover(...) to inspect the catalogue before fetching."
+                )
+                log.info("fetch() matched no stations: %s", tree.attrs["omnisea_empty_reason"])
+            return tree
 
         failures: dict[str, str] = {}
 
@@ -443,6 +456,25 @@ def _nearest_per_site(matches: list[StationMatch], n: int) -> list[StationMatch]
         buckets.setdefault((m.site, m.source), []).append(m)
     kept: list[StationMatch] = []
     for group in buckets.values():
-        group.sort(key=lambda m: (m.distance_km if m.distance_km is not None else 0.0))
+        # Distance first, then the longer record. ECCC splits one physical site across station
+        # ids — TOFINO A is 1038204 and 1038210 at identical coordinates — and a pure distance
+        # sort picked between them arbitrarily, silently costing a user 46% of their
+        # temperature series with no signal that a co-located alternative existed.
+        group.sort(
+            key=lambda m: (
+                m.distance_km if m.distance_km is not None else 0.0,
+                -int(m.n_rows_est or 0),
+                str(m.station_id),
+            )
+        )
         kept.extend(group[:n])
+        for dropped in group[n:]:
+            twin = group[n - 1]
+            if dropped.distance_km == twin.distance_km and dropped.name == twin.name:
+                log.info(
+                    "nearest=%d kept %s and dropped %s — same name and position (%s). One "
+                    "physical site split across station ids; the other may hold a longer "
+                    "record. Use .filter(station_id=...) to choose.",
+                    n, twin.station_id, dropped.station_id, twin.name,
+                )
     return kept

@@ -42,6 +42,18 @@ def utc(*stamps):
     return pd.DatetimeIndex(list(stamps), tz="UTC", name="time")
 
 
+def wide_frame(n=40, seed=7):
+    """A model matrix with a planted near-duplicate cluster and one independent column."""
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range("2024-07-01", periods=n, freq="2h", name="time")
+    base = np.sin(np.arange(n) / 5.0) * 4 + 15
+    return pd.DataFrame({
+        "temp_mean": base + rng.normal(0, 0.05, n),
+        "temp_max": base + 3 + rng.normal(0, 0.05, n),
+        "tide": np.sin(np.arange(n) / 1.9) + 2 + rng.normal(0, 0.3, n),
+    }, index=idx)
+
+
 # --------------------------------------------------------------------------- wrong numbers
 
 
@@ -281,3 +293,151 @@ class TestAlignRefusesDuplicateTimestamps:
         tree = build_tree(q, [node("D", "in_situ/x", frame, {"v": {"units": "m"}})])
         with pytest.raises(QueryError, match="repeated timestamp"):
             align(tree, freq="1h")
+
+
+# --------------------------------------------------------------------------- reporting
+
+
+class TestCoverageDoesNotInventSites:
+    """Found by a first-time user: one site in, two empty rows out.
+
+    Labels are joined with ", " for netCDF and were then re-split on commas — so every
+    auto-generated "lat,lon" label, and any name like "Tofino, BC", became several phantom
+    sites all reported as having no data, in the one function whose whole job is showing gaps.
+    """
+
+    def test_an_auto_generated_lat_lon_label_stays_one_site(self):
+        q = Query.from_position(49.153, -125.906, WEEK)
+        rows = omnisea.coverage(build_tree(q, []))
+        assert len(rows) == 1, f"one site requested, {len(rows)} reported"
+        assert rows["site"].iloc[0] == "49.1530,-125.9060"
+
+    def test_a_name_containing_a_comma_stays_one_site(self):
+        q = Query.from_sites([Site(49.153, -125.906, "Tofino, BC")], WEEK)
+        assert list(omnisea.coverage(build_tree(q, []))["site"]) == ["Tofino, BC"]
+
+    def test_a_site_that_did_get_data_is_not_reported_empty(self):
+        q = Query.from_sites([Site(48.8353, -125.1358, "Bamfield")], WEEK)
+        idx = pd.date_range("2024-07-01", periods=4, freq="D", tz="UTC", name="time")
+        tree = build_tree(q, [node("A", "in_situ/t", pd.DataFrame({"v": [1.0] * 4}, index=idx),
+                                   {"v": {"units": "m"}})])
+        rows = omnisea.coverage(tree)
+        assert bool(rows["has_data"].iloc[0]), "a site with 4 timesteps reported as empty"
+
+    def test_labels_survive_a_netcdf_round_trip(self, tmp_path):
+        import xarray as xr
+
+        pytest.importorskip("netCDF4")
+        q = Query.from_position(49.153, -125.906, WEEK)
+        path = tmp_path / "sites.nc"
+        build_tree(q, []).to_netcdf(path)
+        assert len(omnisea.coverage(xr.open_datatree(path))) == 1
+
+
+class TestNothingCheckedIsNotACleanBillOfHealth:
+    def test_correlations_says_when_min_overlap_excluded_everything(self, caplog):
+        """8 grab samples in a week is an ordinary field sheet. An empty table read as
+        'nothing is collinear' when the truth was 'nothing was examined'."""
+        frame = wide_frame(n=8)
+        with caplog.at_level("WARNING", logger="omnisea.align"):
+            pairs = omnisea.correlations(frame)
+        assert pairs.empty
+        assert pairs.attrs["omnisea_pairs_below_min_overlap"] > 0
+        assert any("nothing was checked" in r.message for r in caplog.records)
+
+    def test_a_genuinely_uncorrelated_frame_warns_about_nothing(self, caplog):
+        frame = wide_frame(n=40)[["tide"]].assign(other=np.arange(40.0) % 7)
+        with caplog.at_level("WARNING", logger="omnisea.align"):
+            omnisea.correlations(frame, threshold=0.99)
+        assert not [r for r in caplog.records if "nothing was checked" in r.message]
+
+
+class TestAnEmptyFetchExplainsItself:
+    def test_a_query_matching_no_station_says_so(self):
+        """discover()'s repr has always explained this; fetch() returned a bare empty tree."""
+        q = Query.from_sites([Site(0.0, 0.0, "Null Island", radius_km=5)], WEEK)
+        tree = Catalog(q, []).fetch()
+        assert "No station matched" in tree.attrs["omnisea_empty_reason"]
+        assert "No station matched" in omnisea.citation(tree)
+
+    def test_a_failure_is_reported_instead_of_the_no_match_hint(self):
+        q = Query.from_sites([Site(0.0, 0.0, "Null Island", radius_km=5)], WEEK)
+        tree = Catalog(q, [], {"dfo_tides": "UpstreamError: HTTP 503"}).fetch()
+        assert "omnisea_empty_reason" not in tree.attrs, "a real failure is not 'no match'"
+        assert "503" in tree.attrs["omnisea_fetch_errors"]
+
+
+class TestModelMatrix:
+    def test_text_and_constant_columns_are_excluded_with_reasons(self):
+        """align() is lossless, so it carries weather prose; sklearn dies on the first string."""
+        frame = wide_frame(n=20)
+        frame["WEATHER_ENG_DESC"] = "NA"
+        frame["always_five"] = 5.0
+        frame["all_missing"] = np.nan
+        matrix = omnisea.model_matrix(frame)
+        assert "WEATHER_ENG_DESC" not in matrix.columns
+        assert "always_five" not in matrix.columns
+        assert "all_missing" not in matrix.columns
+        assert "tide" in matrix.columns
+        excluded = matrix.attrs["omnisea_excluded"]
+        assert "not numeric" in excluded["WEATHER_ENG_DESC"]
+        assert "constant" in excluded["always_five"]
+
+    def test_the_result_is_actually_usable_by_a_linear_model(self):
+        frame = wide_frame(n=30)
+        frame["WEATHER_ENG_DESC"] = "NA"
+        matrix = omnisea.model_matrix(frame).dropna()
+        # The advertised one-liner: straight into a least-squares fit, no cleaning.
+        np.linalg.lstsq(matrix.to_numpy(dtype=float), np.arange(len(matrix), dtype=float),
+                        rcond=None)
+
+    def test_a_pinned_column_survives_whatever_it_looks_like(self):
+        frame = wide_frame(n=20).assign(label="site-a")
+        assert "label" in omnisea.model_matrix(frame, keep="label").columns
+
+
+class TestColocatedStations:
+    def test_nearest_prefers_the_longer_record_at_an_identical_position(self):
+        """ECCC splits one physical site across station ids; picking arbitrarily cost a user
+        46% of their temperature series with no signal."""
+        from omnisea.catalog import _nearest_per_site
+
+        short = StationMatch(source="eccc_climate", station_id="1038204", name="TOFINO A",
+                             lat=49.08, lon=-125.77, site="T", distance_km=8.0, n_rows_est=92)
+        long_ = StationMatch(source="eccc_climate", station_id="1038210", name="TOFINO A",
+                             lat=49.08, lon=-125.77, site="T", distance_km=8.0, n_rows_est=169)
+        assert [m.station_id for m in _nearest_per_site([short, long_], 1)] == ["1038210"]
+        assert [m.station_id for m in _nearest_per_site([long_, short], 1)] == ["1038210"]
+
+    def test_a_genuinely_closer_station_still_wins(self):
+        from omnisea.catalog import _nearest_per_site
+
+        near = StationMatch(source="s", station_id="near", name="A", lat=1, lon=1,
+                            site="T", distance_km=1.0, n_rows_est=10)
+        far = StationMatch(source="s", station_id="far", name="B", lat=2, lon=2,
+                           site="T", distance_km=50.0, n_rows_est=10_000)
+        assert [m.station_id for m in _nearest_per_site([far, near], 1)] == ["near"]
+
+
+class TestMissingExtras:
+    def test_writing_netcdf_without_the_engine_names_the_extra(self, monkeypatch, tmp_path):
+        """The README promises "using a feature without its extra tells you exactly what to
+        install"; the bare xarray error named two libraries the user never asked for."""
+        import importlib.util
+
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+        tree = build_tree(Query.from_sites([BAMFIELD], WEEK), [])
+        with pytest.raises(omnisea.MissingDependencyError) as excinfo:
+            omnisea.to_netcdf(tree, tmp_path / "x.nc")
+        assert 'pip install "omnisea[netcdf]"' in str(excinfo.value)
+
+
+class TestKeywordMistakes:
+    def test_a_misspelled_position_keyword_names_the_keys_typed(self):
+        """`latitude=`/`longitude=` used to die on "give one of bbox=, sites= or lat/lon="
+        without ever mentioning the three keys the user actually typed."""
+        with pytest.raises(QueryError) as excinfo:
+            omnisea.discover(latitude=49.1, longitude=-125.9, time=WEEK)
+        message = str(excinfo.value)
+        assert "latitude" in message and "longitude" in message
+        assert "did you mean" in message

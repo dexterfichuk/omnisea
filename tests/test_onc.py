@@ -118,12 +118,25 @@ class TestToken:
         monkeypatch.setenv("ONC_TOKEN", "from-the-environment")
         assert provider.token(query()) == TOKEN
 
-    def test_discovery_fails_loudly_rather_than_returning_nothing(self, source, monkeypatch):
-        """An empty result would read as "ONC has nothing near you", which is a different and
-        wrong conclusion from "you have not authenticated"."""
+    def test_asking_for_onc_by_name_without_a_token_fails_loudly(self, source, monkeypatch):
+        """Silence would read as "ONC has nothing near you" — a different and wrong conclusion
+        from "you have not authenticated"."""
         monkeypatch.delenv("ONC_TOKEN", raising=False)
         with pytest.raises(ProviderError, match="requires an API token"):
-            source.discover(Query.from_position(**FOLGER, time=DAY, radius_km=10))
+            source.discover(Query.from_position(**FOLGER, time=DAY, radius_km=10,
+                                                providers=["onc_scalardata"]))
+
+    def test_a_plain_query_skips_onc_quietly(self, source, monkeypatch):
+        """Most users have no ONC token. Raising here would print a failure on every single
+        omnisea call they make, for a source they never asked for."""
+        monkeypatch.delenv("ONC_TOKEN", raising=False)
+        assert source.discover(Query.from_position(**FOLGER, time=DAY, radius_km=10)) == []
+
+    def test_the_whole_provider_named_also_counts_as_asking(self, source, monkeypatch):
+        monkeypatch.delenv("ONC_TOKEN", raising=False)
+        with pytest.raises(ProviderError, match="requires an API token"):
+            source.discover(Query.from_position(**FOLGER, time=DAY, radius_km=10,
+                                                providers=["onc"]))
 
 
 class TestTheTokenNeverEscapes:

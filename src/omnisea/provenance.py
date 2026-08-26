@@ -183,6 +183,10 @@ def _incompleteness_lines(tree: xr.DataTree, bullet: str) -> list[str]:
             f"{bullet}NOTE: these stations were matched but returned no rows: {listed}"
         )
 
+    reason = tree.attrs.get("omnisea_empty_reason")
+    if reason:
+        lines.append(f"{bullet}{reason}")
+
     notes = tree.attrs.get("omnisea_source_notes")
     if notes:
         lines.append(
