@@ -457,20 +457,45 @@ ERDDAP is the same software running at IOOS, CIOOS, NOAA CoastWatch, Hakai, EMOD
 hundred other institutions, so **one adapter reaches all of them** — point it at a different
 server and that institution's whole catalogue is queryable with no new code:
 
+The barrier there is not technical, it is that you cannot query a server you have never heard
+of. So eleven installations have short names, checked live in CI:
+
 ```python
-omnisea.fetch(lat=48.8353, lon=-125.1358, radius_km=30, time=("2024-07-01", "2024-07-08"),
-              providers="erddap_tabledap",
-              erddap_server="https://catalogue.hakai.org/erddap")
+omnisea.erddap_servers()          # what each one is, and what it holds
 ```
 
-| Server | `erddap_server=` |
-|---|---|
-| IOOS Sensors (default) | `https://erddap.sensors.ioos.us/erddap` |
-| DFO Pacific / CIOOS | `https://data.cioospacific.ca/erddap` |
-| Hakai Institute | `https://catalogue.hakai.org/erddap` |
-| NOAA CoastWatch | `https://coastwatch.pfeg.noaa.gov/erddap` |
-| SalishSeaCast | `https://salishsea.eos.ubc.ca/erddap` |
-| NW Environmental Moorings | `https://nwem.apl.uw.edu/erddap` |
+| `erddap_server=` | Institution | ~datasets | Worth querying for |
+|---|---|---:|---|
+| `ioos_sensors` *(default)* | US IOOS | 27,260 | NDBC buoys, tide gauges, met stations — the largest US coastal aggregation |
+| `cioos_pacific` | DFO / CIOOS Pacific | 122 | Line P, C-PROOF gliders, BC lighthouse records, cruise CTD and bottle data |
+| `hakai` | Hakai Institute | 63 | central BC coast moorings, profiles, nearshore observatories |
+| `salishseacast` | UBC | 53 | the SalishSeaCast NEMO model — hourly 3-D physics and biology |
+| `nwem` | UW Applied Physics Lab | 122 | ORCA and NEMO moorings through Puget Sound and the WA coast |
+| `coastwatch` | NOAA CoastWatch | 454 | global satellite SST, ocean colour, winds, sea ice |
+| `coastwatch_west` | NOAA CoastWatch West | 3,053 | US west coast grids, plus long SST records |
+| `glider_dac` | US IOOS Glider DAC | 2,542 | glider deployments worldwide, including DFO's |
+| `osmc` | NOAA OSMC | 30 | the global in-situ feed — **Argo**, drifters, ships, moored buoys |
+| `cioos_atlantic` | CIOOS Atlantic | 186 | Atlantic Canada moorings, gliders, coastal monitoring |
+| `cioos_slgo` | CIOOS St. Lawrence | 96 | Gulf and Estuary of St. Lawrence |
+
+```python
+omnisea.fetch(lat=48.8353, lon=-125.1358, radius_km=30, time=("2024-07-01", "2024-07-08"),
+              providers="erddap_tabledap", erddap_server="hakai")
+
+# or several at once — or "all" for every one above
+omnisea.discover(sites=SITES, time=WEEK, providers="erddap",
+                 erddap_server=["cioos_pacific", "hakai", "salishseacast"])
+```
+
+A sweep tolerates a bad day at one institution: the others still answer, and what failed is
+recorded in the catalogue's notes rather than passed off as *nothing here*. If **none** of them
+answer, that raises — "no station at this place" and "nobody was reachable to ask" are
+different answers. Node paths carry the server (`/in_situ/erddap/cioos_pacific/…`), because a
+dataset id identifies a dataset *on one server*: DFO's gliders are published on CIOOS Pacific
+and on the Glider DAC under identical ids.
+
+The table is a convenience, not a boundary — `erddap_server=` still takes any URL, and an
+installation that is not listed is not unsupported.
 
 **No field table is hardcoded.** Each dataset publishes its own `standard_name`, `units`,
 `cell_methods` and QARTOD `ancillary_variables`, and omnisea reads that rather than replacing
@@ -484,7 +509,8 @@ disagree in practice. A dataset whose publisher declared no extent is invisible 
 it directly to bypass the metadata filters:
 
 ```python
-omnisea.fetch(..., erddap_datasets=["PRIMED_wavebuoy"], erddap_server=...)
+omnisea.fetch(..., erddap_server="cioos_pacific",
+              erddap_datasets=["IOS_BOT_Profiles"])   # Line P bottle profiles
 ```
 
 If a named dataset can't be served as a time series — CIOOS Pacific's `IOS_P26_Annualized` is

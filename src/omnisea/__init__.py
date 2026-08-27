@@ -102,6 +102,7 @@ __all__ = [
     "providers",
     "sources",
     "variables",
+    "erddap_servers",
     # alignment / modelling
     "align",
     "add_local",
@@ -186,6 +187,25 @@ def sources() -> list[str]:
     These are the individual adapters; ``providers=`` accepts these names too.
     """
     return registry.source_names()
+
+
+def erddap_servers() -> pd.DataFrame:
+    """ERDDAP installations omnisea knows by name, and what each one is worth querying for.
+
+    ERDDAP is the same software at a few hundred institutions and omnisea reads any of them, so
+    the barrier is not technical — it is that you cannot query a server you have never heard of.
+    Pass a name from the ``server`` column to ``erddap_server=``, a list of them, or ``"all"``
+    to sweep every one::
+
+        omnisea.discover(sites=[...], time=(...), providers="erddap",
+                         erddap_server=["cioos_pacific", "hakai", "salishseacast"])
+
+    The table is a convenience, not a boundary: ``erddap_server=`` still takes any URL, and an
+    installation that is not listed is not unsupported.
+    """
+    from .providers.erddap.servers import server_table
+
+    return pd.DataFrame(server_table())
 
 
 def variables() -> pd.DataFrame:
@@ -381,11 +401,19 @@ def discover_query(query: Query, *, max_workers: int = DEFAULT_MAX_WORKERS) -> C
 
     def _discover(source: DataSource) -> list[StationMatch]:
         try:
-            return source.discover(query)
+            found = source.discover(query)
         except Exception as exc:  # noqa: BLE001 - one dead API must not sink the rest
             errors[source.name] = f"{type(exc).__name__}: {exc}"
             log.warning("discovery failed for %s: %s", source.name, exc)
             return []
+        # Read in this thread, immediately: a source that answered only partly says so here,
+        # and a partial answer returned in silence reads as a complete one.
+        note = source.take_discovery_note()
+        if note:
+            notes[source.name] = (
+                f"{notes[source.name]}; {note}" if source.name in notes else note
+            )
+        return found
 
     matches: list[StationMatch] = []
     for found in map_threads(_discover, runnable, max_workers=max_workers, label="discovery"):

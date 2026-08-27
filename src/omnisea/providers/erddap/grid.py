@@ -74,7 +74,7 @@ class ErddapGridSource(ErddapSource):
             **self._node_attrs(
                 info,
                 server,
-                omnisea_node_path=f"{self.node_path}/{safe_name(dataset_id)}",
+                omnisea_node_path=f"{self.branch_for(match)}/{safe_name(dataset_id)}",
                 omnisea_cells_estimate=cells,
                 site=match.site,
             ),

@@ -34,6 +34,7 @@ from omnisea.providers.erddap import (
     parse_info,
 )
 from omnisea.providers.erddap.common import _overlaps_query
+from omnisea.providers.erddap.servers import SERVERS as KNOWN_SERVERS
 
 # Importing the adapter registers its own query knobs (erddap_server and friends), the same
 # way any third-party provider's would be.
@@ -427,7 +428,7 @@ class TestMultiStationSplitting:
 
     def test_the_node_path_names_the_dataset_and_the_station(self, series):
         for s in series:
-            assert s.node_path.startswith("in_situ/erddap/cwwcNDBCMet/")
+            assert s.node_path.startswith("in_situ/erddap/coastwatch_west/cwwcNDBCMet/")
             assert s.match.station_id.startswith("cwwcNDBCMet:")
 
     def test_each_stations_distance_matches_its_own_position(
@@ -452,7 +453,7 @@ class TestMultiStationSplitting:
             station_info,
             station_rows,
         )
-        assert [s.node_path for s in series] == ["in_situ/erddap/ca_hydro_08HB048"]
+        assert [s.node_path for s in series] == ["in_situ/erddap/ioos_sensors/ca_hydro_08HB048"]
 
 
 # --------------------------------------------------------------------------- discovery
@@ -941,9 +942,47 @@ class TestLiveCioosPacific:
 
     def test_the_series_is_placed_and_attributed(self, fetched):
         match, series = fetched
-        assert series.node_path.startswith("in_situ/erddap/")
+        assert series.node_path.startswith("in_situ/erddap/cioos_pacific/")
         assert series.attrs.get("source_url", "").startswith(self.CIOOS_PACIFIC)
         assert series.attrs.get("license")
+
+
+@live
+class TestLiveKnownServers:
+    """The registry claims eleven installations answer. This checks that they do.
+
+    Deliberately shallow — one metadata read each, no data — because the claim being tested is
+    "this URL is a live ERDDAP omnisea can talk to", and hammering eleven public services to
+    prove it would be rude. It names no dataset: those are the institutions' to withdraw.
+    """
+
+    @pytest.mark.parametrize("name", sorted(KNOWN_SERVERS))
+    def test_each_known_server_answers(self, name):
+        server = KNOWN_SERVERS[name]
+        source = ErddapTableSource(ErddapProvider())
+        try:
+            payload = source._get(f"{server.url}/tabledap/allDatasets.json?datasetID", None)
+        except UpstreamError as exc:
+            skip_if_unreachable(exc)
+        assert payload is not None, f"{name} returned no catalogue at all"
+        rows = payload["table"]["rows"]
+        assert len(rows) > 1, f"{name} published {len(rows)} datasets"
+
+    def test_a_sweep_reaches_several_at_once(self):
+        """The point of the registry: three institutions, one query, no URLs."""
+        source = ErddapTableSource(ErddapProvider())
+        query = Query.from_position(
+            **BAMFIELD, time=("2024-07-01", "2024-07-08"), radius_km=120,
+            erddap_server=["cioos_pacific", "nwem", "glider_dac"],
+        )
+        try:
+            matches = source.discover(query)
+        except UpstreamError as exc:
+            skip_if_unreachable(exc)
+        servers = {m.extra.get("server_name") for m in matches}
+        assert len(servers) >= 2, f"only {servers} answered: {source.take_discovery_note()}"
+        for match in matches:
+            assert match.extra["server"].startswith("https://")
 
 
 @live
@@ -964,7 +1003,7 @@ class TestLiveGriddap:
 
     def test_the_result_is_a_dataset_placed_under_the_gridded_branch(self, subset):
         assert isinstance(subset, xr.Dataset)
-        assert subset.attrs["omnisea_node_path"] == "gridded/erddap/jplMURSST41"
+        assert subset.attrs["omnisea_node_path"] == "gridded/erddap/coastwatch_west/jplMURSST41"
 
     def test_nothing_has_been_read(self, subset):
         """The whole point of the gridded path: a decade of SST costs nothing until indexed."""
@@ -1022,9 +1061,9 @@ class TestLiveTheUnionSeam:
 
         tree = build_tree(points, results)
         paths = {n.path for n in tree.subtree if n.dataset.data_vars}
-        assert "/gridded/erddap/jplMURSST41" in paths
+        assert "/gridded/erddap/coastwatch_west/jplMURSST41" in paths
         assert any(p.startswith("/in_situ/erddap/") for p in paths)
-        assert not tree["/gridded/erddap/jplMURSST41"].dataset[
+        assert not tree["/gridded/erddap/coastwatch_west/jplMURSST41"].dataset[
             "analysed_sst"
         ].variable._in_memory, "assembling the tree read the grid"
 
@@ -1105,3 +1144,172 @@ class TestUnusableDatasets:
         tree = build_tree(self.query(), [series])
         assert "erddap_tabledap/ca_hydro_08HB048" in tree.attrs["omnisea_empty_stations"]
         assert "returned no rows" in citation(tree)
+
+
+# --------------------------------------------------------------------------- known servers
+
+
+class TestTheServerRegistry:
+    """ERDDAP's reach is the whole point of the adapter, and the barrier is not technical: you
+    cannot query a server you have never heard of. Short names are what make the eleven known
+    installations usable without hunting for URLs."""
+
+    def resolve(self, spec, default=DEFAULT_SERVER):
+        from omnisea.providers.erddap.servers import resolve_servers
+
+        return resolve_servers(spec, default)
+
+    def test_a_short_name_resolves_to_its_url(self):
+        (server,) = self.resolve("hakai")
+        assert server.url == "https://catalogue.hakai.org/erddap"
+        assert server.institution == "Hakai Institute"
+
+    def test_a_url_still_works_and_is_recognised_when_it_is_one_of_ours(self):
+        (server,) = self.resolve("https://catalogue.hakai.org/erddap")
+        assert server.name == "hakai"
+
+    def test_an_unlisted_url_is_accepted_rather_than_refused(self):
+        """The registry is a convenience; treating it as a whitelist would make omnisea worse
+        at the one thing this adapter is for."""
+        (server,) = self.resolve("https://erddap.example.org/erddap/")
+        assert server.url == "https://erddap.example.org/erddap"
+        assert server.name == "erddap_example_org"
+
+    def test_a_list_mixes_names_and_urls_and_drops_duplicates(self):
+        servers = self.resolve(
+            ["hakai", "https://catalogue.hakai.org/erddap", "nwem"]
+        )
+        assert [s.name for s in servers] == ["hakai", "nwem"]
+
+    def test_all_means_every_known_installation(self):
+        assert len(self.resolve("all")) == len(KNOWN_SERVERS) > 5
+
+    def test_nothing_given_falls_back_to_the_sources_own_default(self):
+        (server,) = self.resolve(None)
+        assert server.url == DEFAULT_SERVER
+
+    def test_a_typo_names_the_alternatives(self):
+        with pytest.raises(QueryError) as excinfo:
+            self.resolve("hakia")
+        message = str(excinfo.value)
+        assert "hakai" in message and "erddap_servers()" in message
+
+    def test_an_empty_list_is_refused_rather_than_silently_meaning_nothing(self):
+        with pytest.raises(QueryError, match="names no server"):
+            self.resolve([])
+
+    def test_every_entry_is_a_usable_root_url_and_a_bare_identifier(self):
+        for name, server in KNOWN_SERVERS.items():
+            assert name == server.name
+            assert name.replace("_", "").isalnum(), name
+            assert server.url.startswith("https://") and not server.url.endswith("/")
+            assert server.institution and server.holdings, name
+
+    def test_the_public_listing_says_what_each_one_holds(self):
+        import omnisea
+
+        table = omnisea.erddap_servers()
+        assert set(table.columns) == {
+            "server", "institution", "holdings", "datasets", "url"
+        }
+        assert "cioos_pacific" in set(table["server"])
+
+
+class TestOneServerCannotSinkASweep:
+    """Eleven independent institutions. Requiring all of them to be healthy would make the
+    sweep less reliable the more of it you used."""
+
+    def source(self):
+        return ErddapTableSource(ErddapProvider())
+
+    def query(self, servers):
+        return Query.from_area(
+            (-125.6, 48.5, -124.7, 49.2), HYDRO_HOUR, erddap_server=servers
+        )
+
+    def test_a_failing_server_is_reported_and_the_others_still_answer(self, monkeypatch):
+        source = self.source()
+        good = a_match("ca_hydro_08HB048")
+
+        def one(query, server):
+            if server.name == "hakai":
+                raise UpstreamError("boom", provider="erddap_tabledap")
+            return [good]
+
+        monkeypatch.setattr(source, "_discover_one", one)
+        matches = source.discover(self.query(["hakai", "nwem"]))
+        assert [m.station_id for m in matches] == ["ca_hydro_08HB048"]
+        note = source.take_discovery_note()
+        assert note and "reached 1 of 2" in note and "hakai" in note
+
+    def test_the_note_is_taken_once_and_then_cleared(self, monkeypatch):
+        source = self.source()
+        monkeypatch.setattr(
+            source, "_discover_one",
+            lambda q, s: [] if s.name == "nwem" else (_ for _ in ()).throw(
+                UpstreamError("boom", provider="erddap_tabledap")
+            ),
+        )
+        source.discover(self.query(["hakai", "nwem"]))
+        assert source.take_discovery_note()
+        assert source.take_discovery_note() is None
+
+    def test_every_server_failing_raises_rather_than_reading_as_empty(self, monkeypatch):
+        """Zero matches would say "there is nothing at this place", which is a different
+        answer from "nobody was reachable to ask"."""
+        source = self.source()
+        monkeypatch.setattr(
+            source, "_discover_one",
+            lambda q, s: (_ for _ in ()).throw(UpstreamError("boom", provider="x")),
+        )
+        with pytest.raises(UpstreamError, match="none of the 2 ERDDAP servers answered"):
+            source.discover(self.query(["hakai", "nwem"]))
+
+    def test_a_dataset_ceiling_on_one_server_does_not_end_the_sweep(self, monkeypatch):
+        """Otherwise adding a server to the list could *reduce* what comes back."""
+        source = self.source()
+        good = a_match("ca_hydro_08HB048")
+
+        def one(query, server):
+            if server.name == "ioos_sensors":
+                raise PayloadTooLargeError("too many", estimate=87, limit=25)
+            return [good]
+
+        monkeypatch.setattr(source, "_discover_one", one)
+        matches = source.discover(self.query(["ioos_sensors", "nwem"]))
+        assert len(matches) == 1
+        note = source.take_discovery_note()
+        assert "erddap_max_datasets" in note and "87" in note
+
+    def test_a_single_server_still_raises_its_ceiling(self, monkeypatch):
+        """With one server named there is nothing to fall back to, and the ceiling is the
+        caller's to raise or narrow."""
+        source = self.source()
+        monkeypatch.setattr(
+            source, "_discover_one",
+            lambda q, s: (_ for _ in ()).throw(
+                PayloadTooLargeError("too many", estimate=87, limit=25)
+            ),
+        )
+        with pytest.raises(PayloadTooLargeError):
+            source.discover(self.query("nwem"))
+
+    def test_a_server_that_lacks_a_named_dataset_is_not_a_failure(self, monkeypatch):
+        """Naming datasets across a sweep means every server but one legitimately answers
+        "not here" — that must not read as an outage."""
+        source = self.source()
+        good = a_match("ca_hydro_08HB048")
+
+        def one(query, server):
+            if server.name == "hakai":
+                raise UpstreamError(
+                    "not found", provider="erddap_tabledap", status=404,
+                    detail='Error {code=404; message="Not Found: Currently unknown '
+                           'datasetID=ca_hydro_08HB048";}',
+                )
+            return [good]
+
+        monkeypatch.setattr(source, "_discover_one", one)
+        matches = source.discover(self.query(["hakai", "nwem"]))
+        assert len(matches) == 1
+        assert source.take_discovery_note() is None

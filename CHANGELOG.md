@@ -30,6 +30,11 @@ observatories, and CIOOS metadata records.
   defensible model matrix, and say what they removed and why.
 - **`provenance()` / `citation()`** derive attribution from the result — naming stations, DOIs
   where a provider supplies them, and what went wrong — rather than from memory.
+- **Eleven ERDDAP installations by name.** `erddap_server="hakai"`, a list of names, or `"all"`
+  — one adapter already read every ERDDAP, and this removes the part that needed you to know a
+  URL. `omnisea.erddap_servers()` says what each one holds. A sweep survives one institution
+  having a bad day and records what it could not reach; if none answer, it raises rather than
+  reading as an empty ocean.
 - **`xarray.DataTree`** output that round-trips losslessly to netCDF.
 
 ### Adding a source

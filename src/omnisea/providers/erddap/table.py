@@ -125,7 +125,7 @@ class ErddapTableSource(ErddapSource):
                 StationSeries(
                     match=match,
                     frame=pd.DataFrame(),
-                    node_path=f"{self.node_path}/{safe_name(info.dataset_id)}",
+                    node_path=f"{self.branch_for(match)}/{safe_name(info.dataset_id)}",
                     attrs=self._node_attrs(info, server),
                 )
             ]
@@ -202,7 +202,7 @@ class ErddapTableSource(ErddapSource):
                 continue
 
             member = self._member_match(query, match, info, station_id, group)
-            path = f"{self.node_path}/{safe_name(info.dataset_id)}"
+            path = f"{self.branch_for(match)}/{safe_name(info.dataset_id)}"
             if station_id is not None and len(groups) > 1:
                 path = f"{path}/{safe_name(station_id)}"
             out.append(

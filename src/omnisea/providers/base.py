@@ -314,6 +314,16 @@ class DataSource(ABC):
             return None
         return (now or pd.Timestamp.now(tz="UTC")) - self.retention
 
+    def take_discovery_note(self) -> str | None:
+        """Anything :meth:`discover` needs to tell the caller that is not an error or a match.
+
+        Read once, by the thread that just ran ``discover``, and cleared — so it reports on that
+        call rather than accumulating. The case it exists for is a *partial* answer: a source
+        that consults several upstreams and reached only some of them has neither failed nor
+        succeeded, and returning the survivors in silence would read as "that is all there is".
+        """
+        return None
+
     def retention_gap(self, query: Query, now: pd.Timestamp | None = None) -> str | None:
         """A plain explanation if the query reaches past what this source keeps.
 

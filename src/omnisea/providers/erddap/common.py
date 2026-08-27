@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 from typing import Any
 
 import pandas as pd
@@ -19,18 +20,24 @@ from ...http import DEFAULT_MAX_WORKERS, get_json, map_threads
 from ...query import BBox, Query, register_option
 from ..base import RetrievalSource, StationMatch
 from .info import DatasetInfo, cached_info, parse_info, store_info
+from .servers import ErddapServer, resolve_servers, server_name_for_url
 
 log = logging.getLogger("omnisea.erddap")
 
 __all__ = [
     "DEFAULT_SERVER",
+    "ErddapServer",
     "DEFAULT_MAX_DATASETS",
     "ErddapSource",
     "table_rows",
     "safe_name",
 ]
 
-register_option("erddap_server", "erddap: ERDDAP server root URL (default IOOS Sensors)")
+register_option(
+    "erddap_server",
+    "erddap: server name(s) or root URL(s) to query; 'all' sweeps every known "
+    "installation (default IOOS Sensors). See omnisea.erddap_servers().",
+)
 register_option("erddap_datasets", "erddap: dataset id(s) to use instead of searching the server")
 register_option("erddap_search", "erddap: free-text searchFor passed to the ERDDAP search index")
 register_option(
@@ -66,14 +73,28 @@ class ErddapSource(RetrievalSource):
 
     # ------------------------------------------------------------------ configuration
 
+    def servers(self, query: Query) -> list[ErddapServer]:
+        """Which installations this query asks for — one, several, or every known one.
+
+        ERDDAP's reach is its whole point, and a user cannot query a server they have never
+        heard of. ``erddap_server=`` therefore takes a short name as readily as a URL, a list
+        of either, or ``"all"``.
+        """
+        return resolve_servers(query.option("erddap_server"), self.provider.base_url)
+
     def server(self, query: Query) -> str:
-        server = str(query.option("erddap_server") or self.provider.base_url).rstrip("/")
-        if not server.startswith(("http://", "https://")):
+        """The single server this query names, for the paths that can only mean one.
+
+        Kept because a source that has already resolved a match reads the server off the match
+        itself; this is only for the callers that ask before discovery has run.
+        """
+        chosen = self.servers(query)
+        if len(chosen) > 1:
             raise QueryError(
-                f"erddap_server must be a full http(s) URL ending at the ERDDAP root, "
-                f"e.g. {DEFAULT_SERVER!r}; got {server!r}"
+                f"this query names {len(chosen)} ERDDAP servers "
+                f"({', '.join(s.name for s in chosen)}) and this call needs exactly one"
             )
-        return server
+        return chosen[0].url
 
     def wants_anything(self, query: Query) -> bool:
         """Always in play until the datasets themselves have been read.
@@ -89,7 +110,98 @@ class ErddapSource(RetrievalSource):
     # ------------------------------------------------------------------ discovery
 
     def discover(self, query: Query) -> list[StationMatch]:
-        server = self.server(query)
+        chosen = self.servers(query)
+        if len(chosen) == 1:
+            return self._discover_one(query, chosen[0])
+
+        # Several installations. One of them being down, slow or mid-reindex must not cost the
+        # caller the others -- these are a dozen independent institutions, and requiring all of
+        # them to be healthy would make the sweep less reliable the more of it you use. What
+        # failed is recorded on the source's notes, so an incomplete sweep still says so.
+        results = map_threads(
+            lambda s: self._discover_safely(query, s),
+            chosen,
+            max_workers=int(query.option("max_workers", DEFAULT_MAX_WORKERS)),
+            label=f"{self.name} servers",
+        )
+        matches: list[StationMatch] = []
+        failed: list[str] = []
+        for server, found, error in results:
+            if error is not None:
+                failed.append(f"{server.name}: {error}")
+            matches.extend(found)
+        if len(failed) == len(chosen):
+            # Every one of them. Zero matches would read as "there is nothing at this place",
+            # which is a different answer from "nobody was reachable to ask".
+            raise UpstreamError(
+                f"none of the {len(chosen)} ERDDAP servers answered: " + "; ".join(failed),
+                provider=self.name,
+            )
+        absent_only = all("does not host the dataset(s) named" in f for f in failed)
+        if failed and matches and absent_only:
+            failed = []
+        if failed:
+            note = (
+                f"reached {len(chosen) - len(failed)} of {len(chosen)} ERDDAP servers; "
+                f"no answer from {'; '.join(failed)}"
+            )
+            self._notes.value = note
+            log.warning("%s: %s", self.name, note)
+        return matches
+
+    #: Set by a partial sweep and read by the thread that ran it. Thread-local because one
+    #: source object is shared by every query in the process, and discovery runs each source in
+    #: its own thread — a plain attribute would let one query's note surface in another's.
+    _notes = threading.local()
+
+    def branch_for(self, match: StationMatch) -> str:
+        """This match's node branch: the source's own, then the installation it came from.
+
+        A dataset id identifies a dataset *on one server* and nothing more — DFO's gliders are
+        published on CIOOS Pacific and on the IOOS Glider DAC under identical ids. Naming the
+        server in the path is what keeps two of them from landing on top of each other, and
+        makes a path say where its data is from without opening the node.
+        """
+        server = str(match.extra.get("server_name") or "")
+        if not server:
+            # A match built without discovery having named the server -- a hand-made one, or a
+            # tree reopened from a file. The URL still identifies it, so the path a dataset
+            # lands at does not depend on how the match was made.
+            server = server_name_for_url(str(match.extra.get("server") or ""))
+        return f"{self.node_path}/{safe_name(server)}"
+
+    def take_discovery_note(self) -> str | None:
+        note = getattr(self._notes, "value", None)
+        self._notes.value = None
+        return note
+
+    def _discover_safely(
+        self, query: Query, server: ErddapServer
+    ) -> tuple[ErddapServer, list[StationMatch], str | None]:
+        try:
+            return server, self._discover_one(query, server), None
+        except UpstreamError as exc:
+            if exc.status == 404 and "unknown datasetID" in (exc.detail or ""):
+                # erddap_datasets= named something this installation does not host. Across a
+                # sweep that is the expected answer from every server but the one that has it,
+                # so it is not a failure. If no server has it, the all-failed check below still
+                # raises and names them.
+                return server, [], "does not host the dataset(s) named"
+            return server, [], f"{type(exc).__name__}: {str(exc).splitlines()[0][:120]}"
+        except PayloadTooLargeError as exc:
+            # The dataset ceiling is per-server and exists to stop omnisea describing hundreds
+            # of datasets at one institution. Letting it end the whole sweep would mean that
+            # adding a server to the list could *reduce* what you get back -- so this one is
+            # reported and skipped like any other, but named so it can be raised deliberately.
+            return server, [], (
+                f"over the dataset ceiling ({exc.estimate} datasets match); narrow the "
+                "query, name datasets with erddap_datasets=[...], or raise erddap_max_datasets"
+            )
+        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+            return server, [], f"{type(exc).__name__}: {str(exc).splitlines()[0][:120]}"
+
+    def _discover_one(self, query: Query, server_info: ErddapServer) -> list[StationMatch]:
+        server = server_info.url
         named = _as_list(query.option("erddap_datasets"))
         candidates = named or self._candidate_ids(query, server)
         if not candidates:
@@ -130,6 +242,10 @@ class ErddapSource(RetrievalSource):
                 continue
             match = self._match_for(query, server, info, wanted, explicit=bool(named))
             if match is not None:
+                # Dataset ids are unique per installation, not across them: DFO's gliders
+                # appear on CIOOS Pacific and on the IOOS Glider DAC under the same id. The
+                # server is what makes a node path mean one thing.
+                match.extra["server_name"] = server_info.name
                 # _match_for already attached the site and, for datasets with real extent,
                 # corrected the distance to the nearest edge. Re-attaching would undo that.
                 matches.append(match)
