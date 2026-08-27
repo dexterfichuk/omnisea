@@ -791,6 +791,7 @@ test validates every emitted `standard_name` against the published table.
 
 | File | What it shows |
 |---|---|
+| [examples/quickstart_model.ipynb](examples/quickstart_model.ipynb) | **Start here** — the e2e demo: two countries → one model → pruned features → citation, in 19 cells |
 | [examples/bamfield.ipynb](examples/bamfield.ipynb) | The full walkthrough, executed, with plots |
 | [examples/bamfield.py](examples/bamfield.py) | The same walkthrough as a terminal script |
 | [examples/csv_stations.py](examples/csv_stations.py) | A complete third-party provider in ~100 lines |
