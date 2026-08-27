@@ -74,6 +74,9 @@ class ErddapTableSource(ErddapSource):
         nothing with. Turning a year column into a time axis would mean inventing an instant
         for each row, the same reason ``climate-normals`` is unsupported rather than guessed at.
         """
+        wrong_protocol = super().unusable_reason(info)
+        if wrong_protocol:
+            return wrong_protocol
         if "time" in info.variables:
             return None
         candidates = [

@@ -104,10 +104,27 @@ def set_max_concurrency(n: int) -> None:
     _request_slots = threading.BoundedSemaphore(n)
 
 
+#: Substrings that get a request blocked outright by a WAF in front of a real data server.
+#: NOAA's edge returns 403 to any User-Agent containing "python-requests" — including one that
+#: names omnisea first and only mentions the library at the end — which silently costs the
+#: whole of coastwatch.noaa.gov, the largest satellite catalogue omnisea can reach. Naming the
+#: HTTP library is a courtesy, not information anyone needs, so it is spelled the way every
+#: other client spells it.
+_BLOCKED_UA_TOKENS = ("python-requests",)
+
+
 def _user_agent() -> str:
+    """Identify omnisea, its version and where to complain about it.
+
+    Server operators use this to tell a library apart from a scraper; keeping it accurate is
+    part of being a good guest on somebody else's infrastructure.
+    """
     from . import __version__
 
-    return f"omnisea/{__version__} (+https://github.com/dexterfichuk/omnisea) python-requests"
+    return (
+        f"omnisea/{__version__} (+https://github.com/dexterfichuk/omnisea) "
+        f"requests/{requests.__version__}"
+    )
 
 
 def _configure(session: requests.Session) -> requests.Session:

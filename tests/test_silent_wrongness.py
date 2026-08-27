@@ -1259,3 +1259,79 @@ class TestARowEstimateNeverReadsZeroForDataThatExists:
     def test_it_rounds_up_rather_than_truncating(self):
         query = Query.from_sites([BAMFIELD], ("2024-07-01", "2024-08-20"))  # 50 days
         assert self.source(1.0 / 30.4375).row_estimate(query) == 2
+
+
+class TestTheUserAgentDoesNotGetUsBlocked:
+    """One word in the User-Agent cost the whole of coastwatch.noaa.gov.
+
+    NOAA's edge returns 403 to any request whose User-Agent contains "python-requests".
+    omnisea's ended with that literal string, so every dataset on the largest satellite ERDDAP
+    it can reach answered with an HTML error page — and the failure looked like the server
+    being down rather than like something omnisea was doing.
+    """
+
+    def test_no_token_known_to_be_blocked_appears(self):
+        agent = http._user_agent()
+        for token in http._BLOCKED_UA_TOKENS:
+            assert token not in agent, f"{token!r} is in {agent!r}"
+
+    def test_it_still_says_who_we_are_and_where_to_complain(self):
+        agent = http._user_agent()
+        assert agent.startswith(f"omnisea/{omnisea.__version__}")
+        assert "github.com/dexterfichuk/omnisea" in agent
+
+    def test_the_session_actually_sends_it(self):
+        assert http.get_session().headers["User-Agent"] == http._user_agent()
+
+
+class TestNamingADatasetOnTheWrongErddapSource:
+    """ERDDAP splits its catalogue into griddap and tabledap, and a dataset id looks identical
+    either way — so pasting one off a catalogue page into the wrong source is the easy mistake.
+    Left to fail at read time, griddap handed a table raised a 20-line HDF5 stack trace out of
+    the netCDF library, and tabledap handed a grid raised a bare 404. Neither named the
+    problem, and neither named the source that would have worked.
+    """
+
+    def info(self, dataset_id, *, gridded):
+        from omnisea.providers.erddap.info import DatasetInfo
+
+        return DatasetInfo(
+            dataset_id=dataset_id,
+            variables={"time": {}, "sea_surface_temperature": {}},
+            dimensions={"time": "nValues=10"} if gridded else {},
+        )
+
+    def sources(self):
+        from omnisea.providers.erddap import (
+            ErddapGridSource,
+            ErddapProvider,
+            ErddapTableSource,
+        )
+
+        provider = ErddapProvider()
+        return ErddapTableSource(provider), ErddapGridSource(provider)
+
+    def test_a_grid_is_refused_by_the_table_source_by_name(self):
+        table, _ = self.sources()
+        reason = table.unusable_reason(self.info("noaacrwsstDaily", gridded=True))
+        assert reason and "erddap_griddap" in reason
+
+    def test_a_table_is_refused_by_the_grid_source_by_name(self):
+        _, grid = self.sources()
+        reason = grid.unusable_reason(self.info("HakaiSentinelTemperature", gridded=False))
+        assert reason and "erddap_tabledap" in reason
+
+    def test_each_source_accepts_its_own_kind(self):
+        table, grid = self.sources()
+        assert table.unusable_reason(self.info("x", gridded=False)) is None
+        assert grid.unusable_reason(self.info("x", gridded=True)) is None
+
+    def test_the_tables_own_no_time_axis_check_still_runs(self):
+        """The subclass overrides unusable_reason; the protocol check must not displace it."""
+        from omnisea.providers.erddap.info import DatasetInfo
+
+        table, _ = self.sources()
+        reason = table.unusable_reason(
+            DatasetInfo(dataset_id="IOS_P26_Annualized", variables={"Year": {}}, dimensions={})
+        )
+        assert reason and "no 'time' variable" in reason

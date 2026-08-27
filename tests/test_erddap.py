@@ -1079,8 +1079,16 @@ class TestUnusableDatasets:
     def test_a_griddap_dataset_without_a_time_axis_is_still_fine(
         self, grid_source, station_info
     ):
-        """The rule is tabledap's: a bathymetry grid has no time axis and needs none."""
-        assert grid_source.unusable_reason(self.annualized(station_info)) is None
+        """The rule is tabledap's: a bathymetry grid has no time axis and needs none.
+
+        It does have *dimensions*, though — that is what makes it a grid, and what tells the
+        two sources apart when someone pastes an id into the wrong one.
+        """
+        bathymetry = replace(
+            self.annualized(station_info),
+            dimensions={"latitude": "nValues=100", "longitude": "nValues=200"},
+        )
+        assert grid_source.unusable_reason(bathymetry) is None
 
     def test_a_dataset_with_no_usable_rows_is_named_not_silently_absent(
         self, table_source, station_info, monkeypatch

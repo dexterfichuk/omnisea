@@ -141,9 +141,30 @@ class ErddapSource(RetrievalSource):
 
         Checked before a match is built, so a dataset omnisea cannot serve is refused with an
         explanation rather than becoming a request the server rejects for reasons the user
-        cannot act on.
+        cannot act on. Subclasses that override this should call ``super()`` first.
         """
-        return None
+        return self._wrong_protocol_reason(info)
+
+    def _wrong_protocol_reason(self, info: DatasetInfo) -> str | None:
+        """Refuse a dataset that the *other* ERDDAP protocol serves, and name that one.
+
+        ERDDAP splits its catalogue in two and a dataset id looks identical either way, so
+        pasting one off a catalogue page into the wrong source is the easy mistake to make.
+        Left to fail when the data is read it surfaces as a raw HDF5 stack trace out of the
+        netCDF library (griddap asked to open a table) or a bare 404 (tabledap asked for a
+        grid) — neither of which names the problem or the source that would have worked.
+
+        Grids declare dimensions in their ``/info`` response and tables never do, so this is
+        the server's own answer rather than a guess from the id or the ``cdm_data_type``.
+        """
+        gridded = bool(info.dimensions)
+        if gridded == (self.data_structure == "grid"):
+            return None
+        serves = "erddap_griddap" if gridded else "erddap_tabledap"
+        return (
+            f"this is {'gridded' if gridded else 'tabular'} data, which {serves} reads — "
+            f"{self.name} reads the other kind. Use providers=['{serves}']"
+        )
 
     def _match_for(
         self,
