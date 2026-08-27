@@ -68,6 +68,9 @@ pip install -e ".[dev]"
 pytest -m "not network"     # should be green before you change anything
 ```
 
+Releases publish to PyPI from a version tag (`git tag v0.1.0 && git push --tags`) via trusted
+publishing — see `.github/workflows/release.yml` for the one-time PyPI-side setup.
+
 `dev` deliberately stops short of `examples` — the test suite needs neither a plotting stack
 nor a notebook kernel, and CI installs `dev` three times over. Add `".[dev,examples]"` if you
 want to re-run the notebook.
