@@ -105,7 +105,13 @@ class ErddapProvider(Provider):
     title = "ERDDAP"
     base_url = DEFAULT_SERVER
     license = "Per-dataset; see each dataset's 'license' global attribute"
-    terms_url = "https://coastwatch.pfeg.noaa.gov/erddap/information.html"
+    #: No provider-level terms URL. ERDDAP is software, not a publisher: one installation hosts
+    #: a dozen institutions under a dozen terms, and the placeholder here used to be NOAA
+    #: PFEG's ERDDAP *information page* -- which citation() then printed under DFO, Hakai, NDBC
+    #: and GHRSST rows alike, sending anyone following the link somewhere unrelated. Where the
+    #: dataset states its own, _node_attrs uses that; where it does not, no link is better than
+    #: a wrong one.
+    terms_url = ""
 
     def clear_cache(self) -> None:
         clear_cache()

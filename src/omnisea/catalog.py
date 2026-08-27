@@ -8,6 +8,7 @@ A Catalog is a cheap, printable list of what is available, with a ``.fetch()`` o
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from typing import Any
 
@@ -19,7 +20,7 @@ from .http import DEFAULT_MAX_WORKERS, map_threads
 from .providers.base import DataSource, StationMatch, StationSeries
 from .query import Query
 from .registry import get_source
-from .tree import build_tree
+from .tree import build_tree, data_nodes
 
 __all__ = ["Catalog"]
 
@@ -434,9 +435,12 @@ class Catalog:
         ):
             results.extend(chunk)
 
-        return self._record_incompleteness(
+        tree = self._record_incompleteness(
             build_tree(query, results, group_by_site=group_by_site), failures, retrieval
         )
+        if to_cf_units:
+            _warn_unconverted(tree)
+        return tree
 
     def _record_incompleteness(
         self, tree: xr.DataTree, failures: Mapping[str, str], retrieval: Mapping[str, Any] = {},
@@ -584,3 +588,46 @@ def _nearest_per_site(matches: list[StationMatch], n: int) -> list[StationMatch]
                     n, twin.station_id, dropped.station_id, twin.name,
                 )
     return kept
+
+
+def _warn_unconverted(tree: xr.DataTree) -> None:
+    """Say which sources ``to_cf_units=True`` could not convert, because it is not all of them.
+
+    The switch converts wherever a field table states the canonical units to convert *to*.
+    ERDDAP states the units its numbers are in and nothing about reaching CF ones, so omnisea
+    will not guess a scale factor for someone else's data — which is right, and silent. A
+    cross-border frame then came back with Canadian air temperature in kelvin beside American
+    air temperature in degrees Celsius, under one column name each, from the switch whose whole
+    promise is one uniform unit system. It has to say so.
+    """
+    stranded: dict[str, set[str]] = {}
+    converted: set[str] = set()
+    for _path, ds in data_nodes(tree):
+        source = str(ds.attrs.get("source_name") or "?")
+        for name, variable in ds.data_vars.items():
+            attrs = variable.attrs
+            if str(name).endswith("_qc"):
+                continue
+            if attrs.get("omnisea_converted_from"):
+                converted.add(source)
+            elif str(attrs.get("units") or ""):
+                stranded.setdefault(source, set()).add(str(name))
+    # A source that converted *something* has a field table stating CF units where they differ;
+    # what it left alone is already canonical (percent, degree, a dimensionless count). The
+    # asymmetry worth warning about is a source that could convert nothing at all.
+    stranded = {s: names for s, names in stranded.items() if s not in converted}
+    if not stranded:
+        return
+    detail = "; ".join(
+        f"{source} ({len(names)} variable(s), e.g. {sorted(names)[0]})"
+        for source, names in sorted(stranded.items())
+    )
+    warnings.warn(
+        f"to_cf_units=True converted nothing from: {detail}. Those sources publish the units "
+        "their numbers are in but not how to reach canonical CF units, and omnisea will not "
+        "guess a scale factor for someone else's data — so this result mixes unit systems. "
+        'Every column\'s units are in the node attrs and in align()\'s '
+        'attrs["omnisea_units"]; check them before comparing columns across sources.',
+        UserWarning,
+        stacklevel=3,
+    )

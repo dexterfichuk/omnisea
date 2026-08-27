@@ -15,7 +15,13 @@ from typing import Any
 import pandas as pd
 
 from ... import cf
-from ...errors import PayloadTooLargeError, ProviderError, QueryError, UpstreamError
+from ...errors import (
+    OmniseaError,
+    PayloadTooLargeError,
+    ProviderError,
+    QueryError,
+    UpstreamError,
+)
 from ...http import DEFAULT_MAX_WORKERS, get_json, map_threads
 from ...query import BBox, Query, register_option
 from ..base import RetrievalSource, StationMatch
@@ -205,6 +211,9 @@ class ErddapSource(RetrievalSource):
         named = _as_list(query.option("erddap_datasets"))
         candidates = named or self._candidate_ids(query, server)
         if not candidates:
+            # Nothing the area filter could reach. That may be true, or it may be that the
+            # publisher declared no extent — ask before letting an absence read as an answer.
+            self._note_extentless(server)
             return []
 
         cap = int(query.option("erddap_max_datasets", DEFAULT_MAX_DATASETS))
@@ -218,17 +227,60 @@ class ErddapSource(RetrievalSource):
                 limit=cap,
             )
 
-        infos = map_threads(
-            lambda ds: self._info(server, ds),
-            candidates,
-            max_workers=int(query.option("max_workers", DEFAULT_MAX_WORKERS)),
-            label=f"{self.name} dataset info",
-        )
+        workers = int(query.option("max_workers", DEFAULT_MAX_WORKERS))
+        if named:
+            # erddap_datasets= is one list for the whole query, so it can legitimately name a
+            # tabledap station, a griddap grid and a dataset that lives on a different server.
+            # Failing the batch because one id is not on *this* installation costs the caller
+            # every other source in the query -- a satellite grid and two US stations vanished
+            # from an otherwise successful five-source fetch that way. Resolve them one at a
+            # time and keep what this server actually has.
+            resolved = map_threads(
+                lambda ds: self._info_or_absent(server, ds),
+                candidates,
+                max_workers=workers,
+                label=f"{self.name} dataset info",
+            )
+            infos = [info for info in resolved if info is not None]
+            if not infos:
+                raise UpstreamError(
+                    f"none of the dataset(s) named are on {server}: "
+                    + ", ".join(map(str, candidates)),
+                    provider=self.name,
+                    status=404,
+                    detail="Currently unknown datasetID",
+                )
+            absent = len(candidates) - len(infos)
+            if absent:
+                log.debug(
+                    "%s: %d of %d named dataset(s) are not on %s",
+                    self.name, absent, len(candidates), server,
+                )
+        else:
+            infos = map_threads(
+                lambda ds: self._info(server, ds),
+                candidates,
+                max_workers=workers,
+                label=f"{self.name} dataset info",
+            )
 
         wanted = cf.resolve_names(query.variables)
         matches: list[StationMatch] = []
         for info in infos:
             unusable = self.unusable_reason(info)
+            if (
+                unusable
+                and named
+                and self._wrong_protocol_reason(info)
+                and self._sibling_selected(query)
+            ):
+                # A named list can legitimately mix a table and a grid -- one erddap_datasets=
+                # serves the whole query. The sibling source is in this query and will take it,
+                # so refusing here would cost the caller the datasets this source *can* read.
+                # Only the wrong-protocol case: a dataset with no time axis at all is unusable
+                # by both halves, and skipping that one would just be silence.
+                log.debug("%s: leaving %s to the other protocol", self.name, info.dataset_id)
+                continue
             if unusable:
                 if named:
                     # They asked for this one by name, so silence would look like "no data
@@ -249,6 +301,8 @@ class ErddapSource(RetrievalSource):
                 # _match_for already attached the site and, for datasets with real extent,
                 # corrected the distance to the nearest edge. Re-attaching would undo that.
                 matches.append(match)
+        if not named and not matches:
+            self._note_extentless(server)
         log.debug("%s discovered %d dataset(s) on %s", self.name, len(matches), server)
         return matches
 
@@ -306,7 +360,16 @@ class ErddapSource(RetrievalSource):
         # name, because its publisher skipped an attribute, would be the wrong kind of strict.
         # Where the extent is genuinely unknown the position is NaN rather than invented; fetch
         # fills it in from the rows.
-        lat, lon = bounds.centre if bounds is not None else (float("nan"), float("nan"))
+        # A *point* extent is a fixed station and its centre is its position. Anything wider is
+        # a track, a grid or a fleet, and the middle of its bounding box is not where the data
+        # is: ArgoFloats' box spans the globe, so its "position" came out in Nebraska, 12,982 km
+        # from the query, in a column sitting beside real station coordinates. One CIOOS
+        # Atlantic dataset declares longitude -521.310. The position is unknown until the rows
+        # arrive, so say unknown; fetch fills it in from what actually comes back.
+        if bounds is not None and _is_point(bounds):
+            lat, lon = bounds.centre
+        else:
+            lat, lon = float("nan"), float("nan")
         match = self.new_match(
             station_id=info.dataset_id,
             name=info.title,
@@ -345,8 +408,16 @@ class ErddapSource(RetrievalSource):
         the package docstring), and taking their union is the only way a dataset one of them
         forgot still shows up.
         """
+        from_search = self._from_search(query, server)
+        if query.option("erddap_search"):
+            # A free-text search is a request to NARROW. Unioning it with the unfiltered
+            # catalogue meant erddap_search= could never remove anything: the same 62 datasets
+            # came back with it, without it, and with a term matching nothing — and it is the
+            # first thing anyone reaches for on hitting the erddap_max_datasets ceiling.
+            # Only the search index knows about searchFor, so only it can answer this.
+            return [d for d in from_search if d != "allDatasets"]
         found: list[str] = []
-        for dataset_id in self._from_all_datasets(query, server) + self._from_search(query, server):
+        for dataset_id in self._from_all_datasets(query, server) + from_search:
             # allDatasets is ERDDAP's own catalogue table, and it lists itself.
             if dataset_id not in found and dataset_id != "allDatasets":
                 found.append(dataset_id)
@@ -420,6 +491,57 @@ class ErddapSource(RetrievalSource):
                 return None
             raise
 
+    def _note_extentless(self, server: str) -> None:
+        """Say how many datasets no spatial filter could ever have reached.
+
+        A publisher who omits ``geospatial_lat/lon_*`` makes their dataset invisible to every
+        area query — ERDDAP drops it server-side, so omnisea never sees it to report it. Half
+        of Hakai's catalogue is like this, and 25 of SalishSeaCast's 42 grids are (NEMO is
+        curvilinear, indexed gridY/gridX, so its lat/lon extents really are NaN). The result was
+        that at the Hakai Institute's own field station, on the server named after Hakai,
+        discovery answered "no stations found" — an absence indistinguishable from an answer,
+        which is the failure this library exists to prevent. Asked only when nothing matched,
+        so the ordinary case costs no extra request.
+        """
+        try:
+            # Built by hand, like _from_all_datasets: ERDDAP's variable list is a bare name
+            # before the first constraint, which a params dict cannot express.
+            payload = self._get(
+                f"{server}/tabledap/allDatasets.json?datasetID"
+                f'&dataStructure="{self.data_structure}"&minLongitude=NaN',
+                None,
+            )
+        except OmniseaError:
+            return
+        hidden = len(table_rows(payload)) if payload else 0
+        if hidden:
+            self._notes.value = (
+                f"nothing matched, but {hidden} {self.protocol} dataset(s) on {server} declare "
+                "no geospatial extent, so no area query can reach them — they are excluded "
+                "from this catalogue rather than absent from the server. Name them with "
+                "erddap_datasets=[...] to fetch them anyway."
+            )
+
+    def _sibling_selected(self, query: Query) -> bool:
+        """Is the other ERDDAP protocol also selected by this query?"""
+        sibling = "erddap_griddap" if self.protocol == "tabledap" else "erddap_tabledap"
+        asked = query.providers
+        if not asked:
+            return True  # an unqualified query runs every source, so both are in play
+        names = [asked] if isinstance(asked, str) else list(asked)
+        return sibling in names or self.provider.name in names
+
+    def _info_or_absent(self, server: str, dataset_id: str) -> DatasetInfo | None:
+        """``_info``, but ``None`` when this installation simply does not host the dataset."""
+        try:
+            return self._info(server, dataset_id)
+        except UpstreamError as exc:
+            if exc.status == 404 and "unknown datasetID" in (exc.detail or ""):
+                return None
+            raise
+        except ProviderError:
+            return None
+
     def _info(self, server: str, dataset_id: str) -> DatasetInfo:
         """Read (and memoize) one dataset's metadata."""
         cached = cached_info(server, dataset_id)
@@ -444,11 +566,20 @@ class ErddapSource(RetrievalSource):
         from a dozen institutions under a dozen terms. Stamping the provider's placeholder over
         the dataset's real licence would misattribute it.
         """
+        globals_ = info.global_attrs
+        # A datum is not decoration. NOAA's water level is published above MLLW and DFO's above
+        # chart datum; a tree holding both, with neither datum recorded, puts two sea-level
+        # columns 0.64 m apart side by side with nothing to explain the difference. Whatever the
+        # dataset says about its vertical reference travels with it.
+        datum = str(globals_.get("vertical_datum") or globals_.get("geospatial_vertical_crs")
+                    or "") or None
         return self.base_attrs(
             title=info.title,
-            summary=str(info.global_attrs.get("summary") or "") or None,
+            summary=str(globals_.get("summary") or "") or None,
             institution=info.institution or None,
             license=info.license or None,
+            references=str(globals_.get("infoUrl") or globals_.get("license_url") or "") or None,
+            datum=datum,
             erddap_server=server,
             erddap_dataset_id=info.dataset_id,
             erddap_protocol=self.protocol,

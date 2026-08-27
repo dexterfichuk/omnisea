@@ -36,6 +36,10 @@ observatories, and CIOOS metadata records.
   having a bad day and records what it could not reach; if none answer, it raises rather than
   reading as an empty ocean.
 - **`xarray.DataTree`** output that round-trips losslessly to netCDF.
+- **A tabledap response is split into one node per series**, using the dataset's own
+  `cdm_timeseries_variables` and its vertical coordinate. A mooring reporting twelve depths on
+  one clock becomes twelve nodes, not one column wandering through the water column; where
+  nothing distinguishes two rows of an instant, omnisea says so rather than keeping one.
 
 ### Adding a source
 

@@ -8,7 +8,8 @@ platforms is split into one series per station rather than collapsed onto one ti
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
+import warnings
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 import pandas as pd
@@ -178,7 +179,7 @@ class ErddapTableSource(ErddapSource):
         split on the dataset's own ``cdm_timeseries_variables`` identifier first.
         """
         station_var = info.station_variable
-        groups = _split_by_station(rows, station_var)
+        groups, split_on = self._grouped(info, rows)
         include_unmapped = self.include_unmapped(query)
         table = field_table(
             info, present=_ordered_keys(rows), include_unmapped=include_unmapped
@@ -261,6 +262,50 @@ class ErddapTableSource(ErddapSource):
                     cf.MAPPED_ATTR: 0,
                 }
         return frame, var_attrs
+
+    def _grouped(
+        self, info: DatasetInfo, rows: list[Mapping[str, Any]]
+    ) -> tuple[dict[Any, list[Mapping[str, Any]]], tuple[str, ...]]:
+        """Split the response into one group per series, and say what it split on.
+
+        A tabledap response is not always one series. A cruise or a sensor network ships every
+        platform in one table; a mooring ships every depth. Collapsing those onto a single time
+        index discards all but one row per instant — silently, and with no rule about which one
+        survives, so a column ends up walking between instruments or depths while still looking
+        like an ordinary time series.
+
+        The dataset already says how to tell its rows apart, so that is what is used: every
+        variable in ``cdm_timeseries_variables``, then its declared vertical coordinate if rows
+        still collide. Anything left over after that is a table omnisea cannot represent as a
+        time series, and it says so rather than quietly keeping the last row.
+        """
+        keys = list(info.identity_variables)
+        groups = _split_by_station(rows, keys)
+        if not any(_duplicate_times(g) for g in groups.values()):
+            return groups, tuple(keys)
+
+        for candidate in _discriminators(info, rows, keys):
+            trial = [*keys, candidate]
+            grouped = _split_by_station(rows, trial)
+            if not any(_duplicate_times(g) for g in grouped.values()):
+                log.debug(
+                    "%s: split %s on %s to separate rows sharing a timestamp",
+                    self.name, info.dataset_id, trial,
+                )
+                return grouped, tuple(trial)
+
+        worst = max((_duplicate_times(g) for g in groups.values()), default=0)
+        warnings.warn(
+            f"{info.dataset_id} returns {worst} row(s) that share a timestamp with another "
+            f"row of the same series, and omnisea cannot tell them apart: the dataset "
+            f"identifies its series by {keys or '(nothing)'} and that is not unique per "
+            "instant. One row per timestamp is kept and the rest are dropped, so any column "
+            "here may be interleaving two instruments. Narrow the request until each timestamp "
+            "is unique (a depth= range, or erddap_datasets= a single-series dataset).",
+            UserWarning,
+            stacklevel=4,
+        )
+        return groups, tuple(keys)
 
     def _member_match(
         self,
@@ -346,6 +391,15 @@ def field_table(
         extra: dict[str, Any] = {"source_field": name}
         if not standard_name:
             extra[cf.MAPPED_ATTR] = 0
+        # A vertical datum belongs to the measurement, not to the dataset. NOAA publishes
+        # `water_surface_above_mllw` with standard_name sea_surface_height_above_sea_level and
+        # vertical_datum MLLW: omnisea renames it to the standard name -- which asserts "above
+        # sea level" -- and dropping the datum left nothing to contradict that. Beside DFO's
+        # chart-datum series the two differ by 0.64 m with no explanation in the object.
+        for carried in ("vertical_datum", "datum", "positive"):
+            value = str(attrs.get(carried) or "")
+            if value:
+                extra[carried] = value
         if name in _POSITION_RENAME:
             extra["comment"] = (
                 "Per-sample position as published by the dataset; the scalar latitude/longitude "
@@ -448,19 +502,100 @@ def _ordered_keys(rows: Iterable[Mapping[str, Any]]) -> list[str]:
 
 
 def _split_by_station(
-    rows: list[Mapping[str, Any]], station_var: str | None
+    rows: list[Mapping[str, Any]], keys: Sequence[str] | str | None
 ) -> dict[Any, list[Mapping[str, Any]]]:
-    """Group rows by station, or return the whole table under ``None`` when there is one."""
-    if not station_var:
+    """Group rows by everything that identifies a series, or return one group under ``None``.
+
+    ``keys`` is the dataset's own list of identifying variables. Keys that take a single value
+    across the whole response are dropped, so a one-station table stays one node and a
+    twelve-depth mooring becomes twelve.
+    """
+    if not keys:
         return {None: rows}
-    values = {row.get(station_var) for row in rows}
-    values.discard(None)
-    if len(values) <= 1:
+    if isinstance(keys, str):
+        keys = [keys]
+    useful = [k for k in keys if len({row.get(k) for row in rows} - {None}) > 1]
+    if not useful:
         return {None: rows}
     groups: dict[Any, list[Mapping[str, Any]]] = {}
     for row in rows:
-        groups.setdefault(row.get(station_var), []).append(row)
+        groups.setdefault(_series_label(row, useful), []).append(row)
     return groups
+
+
+def _series_label(row: Mapping[str, Any], keys: Sequence[str]) -> str:
+    """A name for one series, from the values that make it distinct.
+
+    Named, not just numbered: a node called ``10`` says nothing, while ``depth_10`` says which
+    of a mooring's instruments you are looking at. A lone station identifier keeps its own
+    value so existing paths are unchanged.
+    """
+    if len(keys) == 1 and keys[0] not in _VERTICAL_HINTS:
+        return str(row.get(keys[0]))
+    parts = []
+    for key in keys:
+        value = row.get(key)
+        parts.append(f"{key}_{value}" if key in _VERTICAL_HINTS else str(value))
+    return "_".join(p for p in parts if p and p != "None")
+
+
+def _discriminators(
+    info: DatasetInfo, rows: list[Mapping[str, Any]], already: Sequence[str]
+) -> list[str]:
+    """Columns that might tell apart rows sharing a timestamp, best guess first.
+
+    The dataset's own declarations come first — its vertical coordinate, then whatever it lists
+    in ``subsetVariables`` — because those are the publisher saying what distinguishes a row.
+    Only if none of that is present in the response does this fall back to looking at the rows
+    themselves for a low-cardinality column that is plainly an identifier rather than a
+    measurement: ``IOS_CUR_Moorings`` declares a ``depth`` axis it does not actually return,
+    and identifies its two instruments by ``instrument_depth`` and a serial number instead.
+    """
+    present = {key for row in rows for key in row}
+    seen = set(already)
+    out: list[str] = []
+
+    def offer(name: str | None) -> None:
+        if name and name in present and name not in seen and name != "time":
+            seen.add(name)
+            out.append(name)
+
+    offer(info.vertical_variable)
+    for name in sorted(present):
+        if name.lower() in _VERTICAL_HINTS:
+            offer(name)
+    declared = str(info.global_attrs.get("subsetVariables") or "")
+    for name in (n.strip() for n in declared.split(",")):
+        offer(name)
+    # Last resort: a low-cardinality column of *names*. Instruments are identified by serial
+    # numbers, filenames and models; measurements are numbers. Allowing a numeric column here
+    # would let a two-valued temperature masquerade as a discriminator and split one series in
+    # half, which is worse than the collapse this is trying to avoid.
+    counts = {name: len({row.get(name) for row in rows}) for name in present}
+    for name in sorted(present, key=lambda n: counts[n]):
+        if not 1 < counts[name] <= max(2, len(rows) // 10):
+            continue
+        values = [row.get(name) for row in rows if row.get(name) is not None]
+        if values and all(isinstance(v, str) for v in values):
+            offer(name)
+    return out
+
+
+#: Names that make a node segment ambiguous unless the variable is named with the value.
+#: ``.../PruthBay/10`` could be anything; ``.../PruthBay/depth_10`` is a mooring instrument.
+_VERTICAL_HINTS = frozenset({"depth", "z", "altitude", "height", "instrument_depth", "level"})
+
+
+def _duplicate_times(rows: list[Mapping[str, Any]]) -> int:
+    """How many rows share a timestamp with an earlier one, after grouping."""
+    seen: set[Any] = set()
+    repeats = 0
+    for row in rows:
+        stamp = row.get("time")
+        if stamp in seen:
+            repeats += 1
+        seen.add(stamp)
+    return repeats
 
 
 def _mean_position(rows: Iterable[Mapping[str, Any]]) -> tuple[float | None, float | None]:

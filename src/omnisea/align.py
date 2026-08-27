@@ -143,13 +143,32 @@ def _node_frames(
         ]
         if not keep:
             continue
+        # Ask the *shape* before building anything. A gridded node is (time, y, x) and
+        # to_dataframe() flattens the product of all three: a week of SalishSeaCast sea surface
+        # height is 17 million rows and 926 MB, and its 3-D physics node is 19.5 billion — paid
+        # in full, and then thrown away, to reach a check that could have been made from the
+        # dimensions. Worse, the old message reported the flattened MultiIndex's name (None) as
+        # "its time dimension", sending the reader off to look for a coordinate that was there.
+        extra_dims = [str(d) for d in ds[keep].dims if str(d) != "time"]
+        if extra_dims:
+            log.warning(
+                "skipping node %s in align(): it is a %s grid, not a time series — align() "
+                "joins series onto one time axis and a grid has %s besides time. Pick the "
+                "cells you want first (ds.sel(latitude=..., longitude=..., method='nearest') "
+                "or .isel()), then add_local() the result, which is what makes the cost of "
+                "reading a grid explicit rather than accidental.",
+                node.path,
+                "x".join(str(ds.sizes[d]) for d in ds[keep].dims),
+                ", ".join(extra_dims),
+            )
+            continue
         frame = ds[keep].to_dataframe()
         # Scalar coords (latitude, station_id, ...) ride along as columns; drop them.
         frame = frame[[c for c in frame.columns if c in keep]]
         if not isinstance(frame.index, pd.DatetimeIndex):
             log.warning(
-                "skipping node %s in align(): its time dimension is %r, not a DatetimeIndex "
-                "named 'time'",
+                "skipping node %s in align(): its index is %r, not a DatetimeIndex named "
+                "'time'",
                 node.path,
                 frame.index.name,
             )
@@ -194,6 +213,17 @@ def _branch(node_path: str) -> str:
     """The node's parent path, used to tell two nodes of the same station apart."""
     parts = [p for p in node_path.strip("/").split("/") if p]
     return "_".join(parts[:-1]) or "node"
+
+
+def _collection(node_path: str) -> str:
+    """The last segment of the node's branch — what the node actually holds.
+
+    ``/in_situ/weather_daily/1066482`` is a daily summary and ``/in_situ/weather/1066482`` is
+    an hourly series; the segment that says so is the one nearest the station, not the one
+    furthest from it.
+    """
+    parts = [p for p in node_path.strip("/").split("/") if p]
+    return parts[-2] if len(parts) >= 2 else "node"
 
 
 def _station_label(ds: xr.Dataset, path: str) -> str:
@@ -379,11 +409,14 @@ def align(
             # emitting two identically-named columns.
             key = (str(variable), label)
             if key in used:
-                # The branch, not the whole path: "08545/predictions_tides_hilo" read as a
-                # malformed identifier inside a var@station scheme. "08545:predictions" says
-                # the same thing and parses.
-                branch = _branch(node_path).split("_")[0] or "node"
-                key = (str(variable), f"{label}:{branch}")
+                # The collection, not the whole path: "08545/in_situ_weather_daily" read as a
+                # malformed identifier inside a var@station scheme. Take the LAST segment of the
+                # branch, which is the one that says what the node holds -- weather_daily,
+                # tides_hilo, cioos_pacific. Taking the first gave ":in" for everything under
+                # in_situ/, so ECCC hourly, daily and one-minute readings at one station came
+                # out as "@1016640", "@1016640:in" and "@1016640:in#2": three different
+                # quantities, no way to tell which was which.
+                key = (str(variable), f"{label}:{_collection(node_path)}")
             if key in used:
                 # Two nodes of one station in one branch — build_tree's _unique() fires twice
                 # for the same station id. A third collision would emit two identically named
@@ -806,6 +839,7 @@ def drop_correlated(
 
     pairs = correlations(frame, threshold=threshold, min_overlap=min_overlap, method=method)
     dropped: dict[str, str] = {}
+    mismatched: list[tuple[str, str, str, str]] = []
     for row in pairs.itertuples():
         a, b = row.feature_a, row.feature_b
         if a in dropped or b in dropped or a in own or b in own:
@@ -836,8 +870,32 @@ def drop_correlated(
             else:
                 first_is_a = frame.columns.get_loc(a) <= frame.columns.get_loc(b)
                 victim, kept = (b, a) if first_is_a else (a, b)
-        dropped[victim] = f"|r|={abs(row.r):.3f} with {kept} over {row.n} samples"
+        # Units in the reason, because the reason is the audit trail. A cross-border frame had
+        # every American sea-level column pruned for a Canadian one on a different datum, and a
+        # station pressure in kPa displace two mean-sea-level pressures in hPa -- all recorded
+        # as a bare correlation, which reads as "duplicate" when it was "substitute".
+        unit_v, unit_k = units.get(victim), units.get(kept)
+        shown = f" [{unit_v or '?'} vs {unit_k or '?'}]" if unit_v != unit_k else ""
+        dropped[victim] = (
+            f"|r|={abs(row.r):.4f} with {kept} over {row.n} samples{shown}"
+        )
+        if unit_v and unit_k and unit_v != unit_k:
+            mismatched.append((victim, unit_v, kept, unit_k))
 
+    if mismatched:
+        # Correlation is scale-invariant, so a column can be pruned for one measuring the same
+        # thing in different units, on a different datum, or reduced to a different reference.
+        # That is a modelling judgement, not a duplicate, and it must not pass in silence.
+        lines = "; ".join(
+            f"{v} ({uv}) dropped for {k} ({uk})" for v, uv, k, uk in mismatched
+        )
+        warnings.warn(
+            f"drop_correlated() removed {len(mismatched)} column(s) in favour of a column with "
+            f"different units: {lines}. Correlation cannot tell a duplicate from a substitute — "
+            "check these are the same quantity, and pin the one you want with keep=.",
+            UserWarning,
+            stacklevel=2,
+        )
     out = frame.drop(columns=list(dropped))
     out.attrs = {**frame.attrs, "omnisea_dropped": dropped}
     return out
@@ -980,7 +1038,12 @@ def add_local(
             # field work to an anonymous third party.
             "institution": institution or name,
             "license": license or "not stated — your own data",
-            "omnisea_is_local": 1,
+            # Whose data this is. add_local() is also the documented route for a gridded node
+            # you have subset yourself, and that data is not yours: crediting UBC's model as
+            # "your own data" and dropping the Apache licence they asked for is the opposite of
+            # what citation() exists to do. Naming an institution says it came from somewhere.
+            "omnisea_is_local": 0 if institution else 1,
+            "omnisea_added_with": "add_local()",
             **dict(attrs or {}),
         }
     )

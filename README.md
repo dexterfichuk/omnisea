@@ -774,12 +774,17 @@ test validates every emitted `standard_name` against the published table.
 | [examples/bamfield.ipynb](examples/bamfield.ipynb) | The full walkthrough, executed, with plots |
 | [examples/bamfield.py](examples/bamfield.py) | The same walkthrough as a terminal script |
 | [examples/csv_stations.py](examples/csv_stations.py) | A complete third-party provider in ~100 lines |
+| [examples/prince_rupert.ipynb](examples/prince_rupert.ipynb) | Rainfall, freshet and tide on the north coast — and a defensible null result |
+| [examples/calvert_island.ipynb](examples/calvert_island.ipynb) | A research institute's observatory joined to federal monitoring |
+| [examples/strait_of_georgia.ipynb](examples/strait_of_georgia.ipynb) | A numerical model checked against the instruments |
+| [examples/juan_de_fuca.ipynb](examples/juan_de_fuca.ipynb) | One strait, two countries, six sampling grains, one time axis |
+| [examples/run_all.py](examples/run_all.py) | Re-executes every notebook against the live APIs |
 
 ## Tests
 
 ```bash
-pytest -m "not network"   # 706 offline tests over committed real API responses
-pytest -m network         # 55 live integration tests (3 need ONC_TOKEN)
+pytest -m "not network"   # 750 offline tests over committed real API responses
+pytest -m network         # 68 live integration tests (3 need ONC_TOKEN)
 ```
 
 The network suite covers the edge cases fixtures cannot: the IWLS interval caps and chunk

@@ -124,11 +124,44 @@ class DatasetInfo:
         """The variable holding the station id, per ``cdm_timeseries_variables``.
 
         ERDDAP lists the timeseries-identifying variables in declaration order, position last, so
-        the first entry that is not a coordinate is the identifier.
+        the first entry that is not a coordinate is the identifier. This is the one used for
+        *naming*; :attr:`identity_variables` is what makes a row unique.
+        """
+        names = self.identity_variables
+        return names[0] if names else None
+
+    @property
+    def identity_variables(self) -> tuple[str, ...]:
+        """Every variable the dataset declares as identifying a series, not just the first.
+
+        Taking only the first silently merged series that the publisher had already told us
+        apart. Hakai's Pruth Bay mooring declares ``station,latitude,longitude,depth``: twelve
+        depths at one station, all reporting on the same clock. Splitting on ``station`` alone
+        left twelve rows competing for each timestamp, one survived, and which depth that was
+        varied row to row — a "sea water temperature" series wandering between 0 m and 60 m
+        with nothing to say so.
         """
         declared = self.global_attrs.get("cdm_timeseries_variables") or ""
-        for name in (n.strip() for n in str(declared).split(",")):
-            if name and name in self.variables and not is_position_or_time(name):
+        return tuple(
+            name
+            for name in (n.strip() for n in str(declared).split(","))
+            if name and name in self.variables and not is_position_or_time(name)
+        )
+
+    @property
+    def vertical_variable(self) -> str | None:
+        """The dataset's depth/height coordinate, by its own CF declaration.
+
+        A mooring that carries instruments at several depths reports them all on one clock, and
+        the depth is what tells the readings apart. Not every dataset lists it among the
+        identifying variables — DFO's ``IOS_CUR_Moorings`` declares only ``profile`` while
+        publishing two instruments 80 m apart — so it is looked up directly.
+        """
+        for name, attrs in self.variables.items():
+            if str(attrs.get("axis") or "").upper() == "Z":
+                return name
+        for name, attrs in self.variables.items():
+            if str(attrs.get("standard_name") or "") in ("depth", "altitude", "height"):
                 return name
         return None
 

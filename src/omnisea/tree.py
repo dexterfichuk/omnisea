@@ -354,7 +354,10 @@ def stations(tree: xr.DataTree) -> pd.DataFrame:
                      "n_nodes", "n_time"]
         )
     return (
-        frame.groupby(["provider", "station_id"], as_index=False)
+        # dropna=False: a gridded node has no station id, and pandas drops null group keys by
+        # default — so a tree whose entire content was a model reported zero stations, and
+        # auditing a saved file that way says the model was never fetched.
+        frame.groupby(["provider", "station_id"], as_index=False, dropna=False)
         .agg(
             station_name=("station_name", "first"),
             site=("site", "first"),
