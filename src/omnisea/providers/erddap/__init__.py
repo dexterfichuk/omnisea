@@ -72,9 +72,12 @@ from .info import (
     clear_cache,
     parse_info,
 )
+from .servers import SERVERS, ErddapServer
 from .table import ROWS_PER_REQUEST, ErddapTableSource, field_table
 
 __all__ = [
+    "NAMED_PROVIDERS",
+    "ErddapServer",
     "ErddapProvider",
     "ErddapSource",
     "ErddapTableSource",
@@ -113,8 +116,45 @@ class ErddapProvider(Provider):
     #: a wrong one.
     terms_url = ""
 
+    #: The installation this provider *is*, when it is one. The generic adapter leaves this
+    #: unset and takes its server from ``erddap_server=``; a named one pins it, so asking for
+    #: ``providers="hakai"`` cannot be silently redirected somewhere else by an option.
+    server: ErddapServer | None = None
+
     def clear_cache(self) -> None:
         clear_cache()
 
     def build_sources(self) -> Sequence[RetrievalSource]:
         return [ErddapTableSource(self), ErddapGridSource(self)]
+
+
+def _named_provider(server: ErddapServer) -> type[ErddapProvider]:
+    """Build the Provider class for one known installation.
+
+    ERDDAP is software; Hakai, IOOS and NOAA CoastWatch are organizations. Modelling the
+    software as the provider put "erddap" in the organization column for CO-OPS, NDBC and
+    NESDIS alike, and left the eleven installations omnisea knows reachable only through an
+    option nobody discovers. One provider per installation makes them ordinary: they appear in
+    ``omnisea.sources()``, ``providers="hakai"`` selects one the way ``providers="eccc"`` does,
+    and an unqualified query sweeps the ones whose region contains it.
+    """
+
+    class _Named(ErddapProvider):
+        name = server.name
+        title = server.institution or server.name
+        base_url = server.url
+        # The dataset's own licence still wins on every node; this is the fallback for a
+        # dataset that states none, and it names the host rather than the software.
+        license = f"Per-dataset; published via {server.institution or server.name}"
+
+    _Named.server = server
+    _Named.__name__ = "".join(p.title() for p in server.name.split("_")) + "ErddapProvider"
+    _Named.__qualname__ = _Named.__name__
+    _Named.__doc__ = f"{server.institution or server.name} — {server.holdings}."
+    return _Named
+
+
+#: One provider per known installation, built from the registry so the two cannot drift.
+NAMED_PROVIDERS: dict[str, type[ErddapProvider]] = {
+    name: _named_provider(server) for name, server in SERVERS.items()
+}

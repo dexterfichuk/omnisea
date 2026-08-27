@@ -865,7 +865,13 @@ class TestLiveCioosPacific:
         _, _, matches = catalog
         for match in matches:
             assert match.distance_km is not None and match.distance_km <= 80.0, match.station_id
-            assert -90 <= match.lat <= 90 and -180 <= match.lon <= 180
+            # A position is reported only where the extent is a single point — a fixed station.
+            # A track, a grid or a fleet has no one position, and the centre of its bounding box
+            # is not one, so unknown is stated as NaN rather than invented.
+            if match.lat == match.lat:  # not NaN
+                assert -90 <= match.lat <= 90 and -180 <= match.lon <= 180
+            else:
+                assert match.lon != match.lon, "half a position is not a position"
 
     def test_discovery_only_offers_records_overlapping_the_window(self, catalog):
         _, _, matches = catalog
@@ -1313,3 +1319,82 @@ class TestOneServerCannotSinkASweep:
         matches = source.discover(self.query(["hakai", "nwem"]))
         assert len(matches) == 1
         assert source.take_discovery_note() is None
+
+
+class TestEachKnownServerIsItsOwnProvider:
+    """ERDDAP is software; Hakai, IOOS and NOAA CoastWatch are organizations.
+
+    Modelling the software as the provider put "erddap" in the organization column for CO-OPS,
+    NDBC and NESDIS alike, and left the eleven installations omnisea knows reachable only
+    through an option nobody discovers. One provider per installation makes them ordinary.
+    """
+
+    def test_every_known_server_has_a_provider_with_its_own_sources(self):
+        from omnisea.providers.erddap import NAMED_PROVIDERS
+
+        assert set(NAMED_PROVIDERS) == set(KNOWN_SERVERS)
+        provider = NAMED_PROVIDERS["hakai"]()
+        assert provider.title == "Hakai Institute"
+        assert provider.base_url == KNOWN_SERVERS["hakai"].url
+        assert [s.name for s in provider.sources] == ["hakai_tabledap", "hakai_griddap"]
+
+    def test_they_are_registered_and_selectable_by_name(self):
+        import omnisea
+
+        assert "hakai" in omnisea.providers()
+        assert "hakai_tabledap" in omnisea.sources()
+        assert "erddap_tabledap" in omnisea.sources(), "the generic adapter must survive"
+
+    def test_a_named_provider_cannot_be_redirected_by_the_option(self):
+        """providers="hakai" means Hakai. An erddap_server= meant for the generic adapter must
+        not silently point it somewhere else."""
+        from omnisea.providers.erddap import NAMED_PROVIDERS
+
+        source = NAMED_PROVIDERS["hakai"]().sources[0]
+        query = Query.from_area(
+            (-129.0, 50.8, -127.0, 52.2), HYDRO_HOUR, erddap_server="coastwatch"
+        )
+        assert [s.name for s in source.servers(query)] == ["hakai"]
+
+    def test_a_regional_server_is_skipped_outside_its_region(self):
+        from omnisea.providers.erddap import NAMED_PROVIDERS
+
+        source = NAMED_PROVIDERS["salishseacast"]().sources[0]
+        salish = Query.from_area((-123.6, 48.9, -123.0, 49.4), HYDRO_HOUR)
+        halifax = Query.from_area((-64.0, 44.3, -63.0, 45.0), HYDRO_HOUR)
+        assert source.covers(salish)
+        assert not source.covers(halifax)
+
+    def test_naming_it_reaches_it_anywhere(self):
+        """The region gate decides what an *unqualified* query sweeps. Asking is asking."""
+        from omnisea.providers.erddap import NAMED_PROVIDERS
+
+        source = NAMED_PROVIDERS["salishseacast"]().sources[0]
+        halifax = Query.from_area(
+            (-64.0, 44.3, -63.0, 45.0), HYDRO_HOUR, providers=["salishseacast"]
+        )
+        assert source.covers(halifax)
+
+    def test_a_global_satellite_archive_stays_out_of_an_unqualified_sweep(self):
+        """CoastWatch matches any bounding box, so every bare query would hit its dataset
+        ceiling and carry a note about it."""
+        from omnisea.providers.erddap import NAMED_PROVIDERS
+
+        source = NAMED_PROVIDERS["coastwatch"]().sources[1]
+        anywhere = Query.from_area((-125.6, 48.5, -124.7, 49.2), HYDRO_HOUR)
+        assert not source.covers(anywhere)
+        named = Query.from_area(
+            (-125.6, 48.5, -124.7, 49.2), HYDRO_HOUR, providers=["coastwatch"]
+        )
+        assert source.covers(named)
+
+    def test_the_generic_adapter_runs_only_when_given_a_server(self):
+        """Otherwise an unqualified query would query one of the named installations twice."""
+        source = ErddapTableSource(ErddapProvider())
+        bare = Query.from_area((-125.6, 48.5, -124.7, 49.2), HYDRO_HOUR)
+        pointed = Query.from_area(
+            (-125.6, 48.5, -124.7, 49.2), HYDRO_HOUR,
+            erddap_server="https://erddap.example.org/erddap",
+        )
+        assert not source.covers(bare)
+        assert source.covers(pointed)

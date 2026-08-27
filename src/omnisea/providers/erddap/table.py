@@ -58,7 +58,6 @@ _POSITION_RENAME = {
 class ErddapTableSource(ErddapSource):
     """``tabledap`` — station, mooring, profile and trajectory records, as point time series."""
 
-    name = "erddap_tabledap"
     title = "ERDDAP tabledap"
     node_path = "in_situ/erddap"
     feature_type = "timeSeries"

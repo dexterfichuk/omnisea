@@ -143,7 +143,12 @@ def _configure(session: requests.Session) -> requests.Session:
         read=1,
         status=4,
         backoff_factor=0.7,  # 0.7s, 1.4s, 2.8s, 5.6s
-        status_forcelist=(429, 500, 502, 503, 504),
+        # 413 is in here because ERDDAP uses it for "too many requests in flight right now" as
+        # well as for "this response would be too large". The first is transient and clears on
+        # a backoff; the second fails again and is then reported as omnisea's own
+        # PayloadTooLargeError, which says what to narrow. Retrying costs one wait to tell the
+        # two apart, against a whole fetch lost to a neighbour's concurrency.
+        status_forcelist=(413, 429, 500, 502, 503, 504),
         allowed_methods=frozenset({"GET", "HEAD"}),
         respect_retry_after_header=True,
         raise_on_status=False,

@@ -32,7 +32,6 @@ class ErddapGridSource(ErddapSource):
     can put a decade of a global SST analysis in their tree and only pay for the pixels they read.
     """
 
-    name = "erddap_griddap"
     title = "ERDDAP griddap"
     node_path = "gridded/erddap"
     feature_type = "grid"

@@ -79,14 +79,52 @@ class ErddapSource(RetrievalSource):
 
     # ------------------------------------------------------------------ configuration
 
+    @property
+    def name(self) -> str:  # type: ignore[override]
+        """``erddap_tabledap``, or ``hakai_tabledap`` for a provider that is one installation."""
+        pinned = getattr(self.provider, "server", None)
+        return f"{pinned.name}_{self.protocol}" if pinned else f"erddap_{self.protocol}"
+
     def servers(self, query: Query) -> list[ErddapServer]:
         """Which installations this query asks for — one, several, or every known one.
 
-        ERDDAP's reach is its whole point, and a user cannot query a server they have never
-        heard of. ``erddap_server=`` therefore takes a short name as readily as a URL, a list
-        of either, or ``"all"``.
+        A provider that *is* an installation answers for that one and no other: asking for
+        ``providers="hakai"`` must not be redirected somewhere else by an ``erddap_server=``
+        option meant for the generic adapter. Otherwise ERDDAP's reach is the whole point, and
+        a user cannot query a server they have never heard of — so ``erddap_server=`` takes a
+        short name as readily as a URL, a list of either, or ``"all"``.
         """
+        pinned = getattr(self.provider, "server", None)
+        if pinned is not None:
+            return [pinned]
         return resolve_servers(query.option("erddap_server"), self.provider.base_url)
+
+    def covers(self, query: Query, now: Any = None) -> bool:
+        """Should this installation be asked at all?
+
+        A regional server has nothing to say about the other side of the country, and the
+        global satellite archives match any bounding box — so an unqualified query would hit
+        their dataset ceiling every time and carry a note about it. Both are skipped for a
+        query that did not name them; naming the provider reaches them regardless.
+        """
+        if not super().covers(query, now):
+            return False
+        pinned = getattr(self.provider, "server", None)
+        asked = query.providers
+        named = bool(asked) and (
+            self.name in asked or (pinned and pinned.name in asked)
+            or self.provider.name in asked
+        )
+        if named:
+            return True
+        if pinned is None:
+            # The generic adapter. It is the way to reach an installation omnisea does not know,
+            # so it runs only when the caller supplied a server; otherwise the named providers
+            # cover the ground and running it too would query one of them twice.
+            return bool(query.option("erddap_server"))
+        if not pinned.sweep:
+            return False
+        return _covers_query(pinned.coverage, query)
 
     def server(self, query: Query) -> str:
         """The single server this query names, for the paths that can only mean one.
@@ -489,6 +527,15 @@ class ErddapSource(RetrievalSource):
             if exc.status == 404 and "produced no matching results" in (exc.detail or ""):
                 log.debug("erddap: no matching results for %s", url)
                 return None
+            if exc.status == 413:
+                # Survived the retry ladder, so it is genuinely too large rather than a busy
+                # moment. Reported as omnisea's own ceiling error, which names something to do.
+                raise PayloadTooLargeError(
+                    f"{self.name} asked {url.split('?')[0]} for more than it will return in "
+                    "one response (HTTP 413). Narrow the time window, name fewer datasets with "
+                    "erddap_datasets=[...], or lower max_workers so fewer requests are in "
+                    "flight at once.",
+                ) from exc
             raise
 
     def _note_extentless(self, server: str) -> None:
@@ -656,3 +703,18 @@ def _as_list(value: Any) -> list[str]:
 
 def safe_name(text: Any) -> str:
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in str(text)) or "unknown"
+
+
+def _covers_query(coverage: tuple[float, float, float, float] | None, query: Query) -> bool:
+    """Does a declared regional coverage box intersect what was asked for?
+
+    ``None`` means global. Drawn generously and used only to decide what an *unqualified* query
+    sweeps, so an edge case costs a server that would probably have returned nothing, not data.
+    """
+    if coverage is None:
+        return True
+    west, south, east, north = coverage
+    box = query.bbox
+    if box is None:
+        return True
+    return not (box[2] < west or box[0] > east or box[3] < south or box[1] > north)

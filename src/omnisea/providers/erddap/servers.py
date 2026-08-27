@@ -39,6 +39,16 @@ class ErddapServer:
     #: Roughly how many datasets it published when it was last checked. An order of magnitude,
     #: not a promise — it says whether a server is a handful of moorings or a national archive.
     datasets: int = 0
+    #: Where this installation actually has data, as ``(west, south, east, north)``, or ``None``
+    #: for a global one. A regional server is skipped for a query outside its region rather than
+    #: asked a question it cannot answer — SalishSeaCast has nothing to say about Nova Scotia.
+    #: Drawn generously: it decides what an *unqualified* query sweeps, and naming the provider
+    #: reaches it regardless of where you are asking about.
+    coverage: tuple[float, float, float, float] | None = None
+    #: Whether an unqualified ``discover()`` sweeps this installation. False for the global
+    #: satellite archives: they match essentially any bounding box, so every bare query would
+    #: hit the dataset ceiling on them and carry a ceiling note. Reached by name instead.
+    sweep: bool = True
 
 
 #: Keyed by short name. Ordered roughly by how likely a Northeast Pacific query is to want them,
@@ -61,6 +71,7 @@ SERVERS: dict[str, ErddapServer] = {
             "DFO Pacific's long-term programs: Line P, C-PROOF gliders, BC lighthouse "
             "records, cruise CTD and bottle data",
             122,
+            coverage=(-146.0, 46.0, -120.0, 56.0),
         ),
         ErddapServer(
             "hakai",
@@ -68,6 +79,7 @@ SERVERS: dict[str, ErddapServer] = {
             "Hakai Institute",
             "central BC coast moorings, profiles and nearshore observatories",
             63,
+            coverage=(-132.0, 48.0, -122.0, 55.0),
         ),
         ErddapServer(
             "salishseacast",
@@ -75,6 +87,7 @@ SERVERS: dict[str, ErddapServer] = {
             "University of British Columbia",
             "the SalishSeaCast NEMO model — hourly 3-D physics and biology for the Salish Sea",
             53,
+            coverage=(-126.5, 46.8, -121.5, 51.0),
         ),
         ErddapServer(
             "nwem",
@@ -82,6 +95,7 @@ SERVERS: dict[str, ErddapServer] = {
             "University of Washington Applied Physics Laboratory",
             "ORCA and NEMO moorings through Puget Sound and the Washington coast",
             122,
+            coverage=(-126.0, 46.0, -121.5, 49.5),
         ),
         ErddapServer(
             "coastwatch",
@@ -89,6 +103,7 @@ SERVERS: dict[str, ErddapServer] = {
             "NOAA CoastWatch",
             "global satellite fields — SST, ocean colour, winds, sea ice",
             454,
+            sweep=False,  # matches any bbox; would hit the dataset ceiling every time
         ),
         ErddapServer(
             "coastwatch_west",
@@ -96,6 +111,7 @@ SERVERS: dict[str, ErddapServer] = {
             "NOAA CoastWatch West Coast Node",
             "satellite and model grids with a US west coast emphasis, plus long SST records",
             3_053,
+            sweep=False,
         ),
         ErddapServer(
             "glider_dac",
@@ -117,6 +133,7 @@ SERVERS: dict[str, ErddapServer] = {
             "CIOOS Atlantic",
             "Atlantic Canada moorings, gliders and coastal monitoring",
             186,
+            coverage=(-70.0, 40.0, -47.0, 56.0),
         ),
         ErddapServer(
             "cioos_slgo",
@@ -124,6 +141,7 @@ SERVERS: dict[str, ErddapServer] = {
             "CIOOS St. Lawrence / Observatoire global du Saint-Laurent",
             "Gulf and Estuary of St. Lawrence observations",
             96,
+            coverage=(-72.0, 44.0, -55.0, 53.0),
         ),
     )
 }
