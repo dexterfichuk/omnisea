@@ -238,6 +238,9 @@ class OncProvider(Provider):
         "data.oceannetworks.ca/api/deviceCategories*": timedelta(days=7),
     }
 
+    def clear_cache(self) -> None:
+        clear_cache()
+
     def build_sources(self) -> Sequence[RetrievalSource]:
         return [OncScalarDataSource(self)]
 

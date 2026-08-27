@@ -256,6 +256,17 @@ def cf_attrs(
         attrs["standard_name"] = spec.standard_name
     if emitted_units:
         attrs["units"] = emitted_units
+    if to_cf_units and spec.cf_units and spec.cf_units != resolved_units:
+        # Say so on the variable itself. Before this, a converted value carried only its new
+        # units and dropped both `cf_units` and the note — so a reader of the netCDF could not
+        # tell a value omnisea had converted from one the provider published that way. In a
+        # library that records every resampling choice, that was the one transformation with
+        # no trace.
+        attrs["omnisea_converted_from"] = resolved_units or "(unstated)"
+        attrs["comment_units"] = (
+            f"converted by omnisea from {resolved_units} to {spec.cf_units} "
+            "(to_cf_units=True); the provider published the former"
+        )
     if spec.long_name:
         attrs["long_name"] = spec.long_name
     if spec.cell_methods:

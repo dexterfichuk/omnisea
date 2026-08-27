@@ -65,6 +65,10 @@ def point_from_feature(feature: Mapping[str, Any]) -> tuple[float, float] | None
 class OgcFeaturesProvider(Provider):
     """A provider whose datasets are OGC API - Features collections."""
 
+    def clear_cache(self) -> None:
+        with _extent_lock:
+            _extent_cache.clear()
+
     def collection_url(self, collection: str) -> str:
         return f"{self.base_url.rstrip('/')}/collections/{collection}/items"
 

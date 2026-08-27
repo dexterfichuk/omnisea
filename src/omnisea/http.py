@@ -41,6 +41,7 @@ __all__ = [
     "get_session",
     "enable_cache",
     "disable_cache",
+    "clear_caches",
     "CACHE_POLICY",
     "cache_policy",
     "NEVER_CACHE",
@@ -311,20 +312,41 @@ def enable_cache(
     return _session
 
 
+def clear_caches() -> None:
+    """Drop every provider's in-process memo, forcing the next query to re-read catalogues.
+
+    Separate from :func:`disable_cache` because they are different layers: that one controls
+    the optional on-disk HTTP cache, while this drops the station lists and metadata each
+    provider holds in memory for the life of the process. A long-running worker that wants to
+    see a newly commissioned station needs this one.
+    """
+    from .registry import all_providers
+
+    for provider in all_providers():
+        try:
+            provider.clear_cache()
+        except Exception:  # noqa: BLE001 - one provider must not block the rest
+            log.warning("could not clear the cache for provider %r", provider.name, exc_info=True)
+
+
 def disable_cache(*, clear: bool = False) -> None:
     """Go back to an uncached session; the next request builds one. A no-op if none is enabled.
 
-    ``clear=True`` also empties the stored responses, which is the way to force a re-fetch of
-    something :data:`CACHE_POLICY` still considers fresh.
+    ``clear=True`` also empties the stored responses *and* every provider's in-process memo,
+    which together are what it takes to force a genuine re-fetch: the memos sit above this
+    cache and short-circuit before it, so emptying the database alone changed nothing.
     """
     global _session
     session = _session
     # Duck-typed rather than an isinstance check so that disabling a cache that was never
     # enabled does not import the optional dependency just to answer "no".
     if session is None or not hasattr(session, "cache"):
+        if clear:
+            clear_caches()
         return
     if clear:
         session.cache.clear()
+        clear_caches()
     session.close()
     _session = None
     log.debug("response cache disabled")

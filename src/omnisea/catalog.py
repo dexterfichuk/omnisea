@@ -331,6 +331,15 @@ class Catalog:
         query = self.query
         if to_cf_units:
             query = query.replace(options={**dict(query.options), "to_cf_units": True})
+        # Everything that shaped this result, so a saved tree can be re-run. Without these you
+        # cannot tell a two-station tree produced by nearest=2 from one where only two stations
+        # existed — and the README claims "the root records the query".
+        retrieval = {
+            "omnisea_fetched_stations": len(self.matches),
+            "omnisea_group_by_site": int(group_by_site),
+            "omnisea_max_rows": int(ceiling) if ceiling else 0,
+            "omnisea_on_error": on_error,
+        }
 
         by_source: dict[str, list[StationMatch]] = {}
         for m in self.matches:
@@ -342,7 +351,7 @@ class Catalog:
 
         if not by_source:
             tree = self._record_incompleteness(
-                build_tree(query, [], group_by_site=group_by_site), {}
+                build_tree(query, [], group_by_site=group_by_site), {}, retrieval
             )
             if not self.errors and not self.notes:
                 # Nothing failed and nothing was out of range — the query simply matched no
@@ -423,11 +432,11 @@ class Catalog:
             results.extend(chunk)
 
         return self._record_incompleteness(
-            build_tree(query, results, group_by_site=group_by_site), failures
+            build_tree(query, results, group_by_site=group_by_site), failures, retrieval
         )
 
     def _record_incompleteness(
-        self, tree: xr.DataTree, failures: Mapping[str, str]
+        self, tree: xr.DataTree, failures: Mapping[str, str], retrieval: Mapping[str, Any] = {},
     ) -> xr.DataTree:
         """Stamp what went wrong onto the tree, from *both* steps of the retrieval.
 
@@ -443,6 +452,7 @@ class Catalog:
         disappears — so it lands here, and :func:`omnisea.citation` reports it in the
         attribution block a result gets published with.
         """
+        tree.attrs.update(dict(retrieval))
         problems = {f"{name} (discovery)": message for name, message in self.errors.items()}
         problems.update({f"{name} (fetch)": message for name, message in failures.items()})
         if problems:

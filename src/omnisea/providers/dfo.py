@@ -96,6 +96,9 @@ class DfoProvider(Provider):
         "api-iwls.dfo-mpo.gc.ca/api/v1/stations/*/metadata": timedelta(days=7),
     }
 
+    def clear_cache(self) -> None:
+        clear_cache()
+
     def build_sources(self) -> Sequence[RetrievalSource]:
         return [DfoTidesSource(self)]
 

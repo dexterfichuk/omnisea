@@ -107,5 +107,8 @@ class ErddapProvider(Provider):
     license = "Per-dataset; see each dataset's 'license' global attribute"
     terms_url = "https://coastwatch.pfeg.noaa.gov/erddap/information.html"
 
+    def clear_cache(self) -> None:
+        clear_cache()
+
     def build_sources(self) -> Sequence[RetrievalSource]:
         return [ErddapTableSource(self), ErddapGridSource(self)]

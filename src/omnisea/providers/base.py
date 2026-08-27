@@ -191,6 +191,18 @@ class Provider(ABC):
         url = path if path.startswith("http") else f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"
         return get_json(url, dict(params or {}), provider=source or self.name)
 
+    def clear_cache(self) -> None:
+        """Drop anything this provider memoized in-process. Default: nothing to drop.
+
+        Several providers keep a station catalogue in a module global — DFO's IWLS list is
+        1,573 stations in one 2 MB payload, and re-fetching it per query would be pure waste.
+        That memo sits *above* the optional HTTP cache and short-circuits before it, so
+        ``disable_cache(clear=True)`` could not reach it: in a long-lived worker the catalogue
+        was pinned for the life of the process with no way out. Override this if your provider
+        holds one.
+        """
+        return None
+
     def attribution(self) -> dict[str, Any]:
         """Identity/licence attributes stamped onto every node this provider produces."""
         return {

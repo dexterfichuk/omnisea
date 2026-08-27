@@ -48,6 +48,7 @@ from .errors import (
 )
 from .http import (
     DEFAULT_MAX_WORKERS,
+    clear_caches,
     disable_cache,
     enable_cache,
     map_threads,
@@ -133,6 +134,7 @@ __all__ = [
     "set_timeout",
     "enable_cache",
     "disable_cache",
+    "clear_caches",
     # errors
     "OmniseaError",
     "QueryError",

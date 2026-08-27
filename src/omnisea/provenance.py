@@ -132,9 +132,25 @@ def citation(
 
     for _, row in summary.iterrows():
         span = _describe_span(row["first"], row["last"])
+        if row["provider"] == "local":
+            # Data the caller added with add_local(). Listing it among the sources to credit
+            # would have them citing themselves as a third party.
+            lines.append(
+                f"{bullet}{row['institution']} — your own data, added with add_local() "
+                f"({row['n_stations']} dataset(s){span})."
+            )
+            continue
+        # Name the stations. A methods section needs "Bamfield (08545)", not "1 station(s)" —
+        # without the identifiers nobody can repeat the query, which is the point of citing it.
+        stations = detail.loc[
+            (detail["source"] == row["source"])
+            & (detail["institution"] == row["institution"]),
+            ["station_id", "station_name"],
+        ].drop_duplicates()
+        named = _describe_stations(stations)
         entry = (
             f"{row['institution'] or row['provider']} — {row['source']}"
-            f" ({row['n_stations']} station(s){span}). "
+            f" ({row['n_stations']} station(s){span}){named}. "
             f"Licence: {row['license'] or 'see provider'}."
         )
         if row["terms"]:
@@ -194,6 +210,23 @@ def _incompleteness_lines(tree: xr.DataTree, bullet: str) -> list[str]:
         )
 
     return lines
+
+
+def _describe_stations(stations: pd.DataFrame, limit: int = 6) -> str:
+    """``: Bamfield (08545), Cape Beale Light (1031316)`` — what a reader needs to repeat it."""
+    if stations.empty:
+        return ""
+    parts = []
+    for _, row in stations.head(limit).iterrows():
+        name, code = str(row["station_name"] or "").strip(), str(row["station_id"] or "").strip()
+        if name and code and name != code:
+            parts.append(f"{name} ({code})")
+        elif name or code:
+            parts.append(name or code)
+    if not parts:
+        return ""
+    more = f" and {len(stations) - limit} more" if len(stations) > limit else ""
+    return ": " + ", ".join(parts) + more
 
 
 def _describe_window(detail: pd.DataFrame) -> str:

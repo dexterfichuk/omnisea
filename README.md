@@ -640,12 +640,23 @@ Three knobs worth setting when this runs unattended:
 omnisea.set_timeout(connect=5, read=20)   # per request; default (10, 120)
 omnisea.set_max_concurrency(4)            # simultaneous HTTP requests; default 8
 omnisea.enable_cache()                    # catalogues cached, measurements never
+omnisea.clear_caches()                    # drop in-process station lists; see below
 ```
 
 The timeout is the one that bites. A public server that accepts a connection and then never
 answers costs `read` seconds per attempt, and omnisea retries once — so the default worst case
 for a single dead endpoint is about four minutes, and `set_timeout(5, 20)` brings it under one.
 Longer reads exist for a reason (some of these payloads are megabytes), so pick for your data.
+
+Providers keep their station catalogues in memory for the life of the process — DFO's list is
+1,573 stations in one 2 MB payload, and re-reading it per query would be pure waste. That memo
+sits *above* the HTTP cache, so `clear_caches()` is what a long-running worker needs to notice
+a newly commissioned station. `disable_cache(clear=True)` does both.
+
+Every result records what produced it: the query on the root (`query_bbox`, `query_start`,
+`query_site_names`, …) plus the retrieval settings (`omnisea_fetched_stations`,
+`omnisea_max_rows`, `omnisea_group_by_site`, `omnisea_on_error`) — so a saved netCDF can be
+traced back to the call that made it.
 
 Logging goes to the `omnisea` logger hierarchy — `omnisea.http`, `omnisea.catalog`, one per
 provider — at `INFO` and `DEBUG`, with `WARNING` reserved for things that changed your result.

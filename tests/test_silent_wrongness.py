@@ -889,3 +889,123 @@ class TestARadiusTypoDoesNotBecomeARequestStorm:
     def test_the_message_says_what_to_do_instead(self):
         with pytest.raises(QueryError, match="bbox="):
             Site(48.8, -125.1, "typo", radius_km=1e9)
+
+
+# --------------------------------------------------------------------------- v1 polish
+
+
+class TestCircularMeanStaysInRange:
+    def test_due_north_is_zero_not_360(self):
+        """`% 360` on a hair-negative value returns exactly 360.0 — the same bearing, but
+        outside the [0, 360) range anyone binning into compass sectors assumes."""
+        from omnisea.align import circular_mean
+
+        got = circular_mean([350.0, 10.0])
+        assert 0.0 <= got < 360.0
+        assert got == pytest.approx(0.0, abs=1e-6)
+
+    def test_ordinary_bearings_are_unaffected(self):
+        from omnisea.align import circular_mean
+
+        assert circular_mean([10.0, 20.0]) == pytest.approx(15.0, abs=1e-6)
+        assert circular_mean([180.0, 190.0]) == pytest.approx(185.0, abs=1e-6)
+
+
+class TestAConvertedValueSaysSo:
+    def test_conversion_leaves_a_trace_on_the_variable(self):
+        """A converted value used to carry only its new units, dropping cf_units and the note —
+        so a reader of the netCDF could not tell it from one the provider published that way."""
+        from omnisea import cf
+
+        spec = cf.FieldSpec(var="air_temperature", standard_name="air_temperature",
+                            units="degC", cf_units="K", cf_offset=273.15)
+        attrs = cf.cf_attrs(spec, to_cf_units=True)
+        assert attrs["units"] == "K"
+        assert attrs["omnisea_converted_from"] == "degC"
+        assert "converted by omnisea" in attrs["comment_units"]
+
+    def test_an_unconverted_value_carries_no_such_claim(self):
+        from omnisea import cf
+
+        spec = cf.FieldSpec(var="air_temperature", units="degC", cf_units="K", cf_offset=273.15)
+        attrs = cf.cf_attrs(spec, to_cf_units=False)
+        assert "omnisea_converted_from" not in attrs
+        assert attrs["units"] == "degC"
+
+
+class TestYourOwnDataIsCitedAsYours:
+    def make(self, **kwargs):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        mine = pd.DataFrame({
+            "time": pd.date_range("2024-07-01", periods=3, freq="D", tz="UTC"),
+            "chlorophyll": [1.0, 2.0, 3.0],
+        })
+        return omnisea.add_local(build_tree(q, []), mine, name="Grab samples",
+                                 lat=48.8353, lon=-125.1358, **kwargs)
+
+    def test_it_is_not_listed_as_a_third_party_source(self):
+        """It rendered as "local — local (1 station(s)). Licence: see provider." — a methods
+        section misattributing the author's own field work."""
+        text = omnisea.citation(self.make())
+        assert "Licence: see provider" not in text
+        assert "your own data" in text
+
+    def test_an_institution_can_be_given(self):
+        text = omnisea.citation(self.make(institution="Bamfield Marine Sciences Centre"))
+        assert "Bamfield Marine Sciences Centre" in text
+
+    def test_the_name_is_used_when_no_institution_is_given(self):
+        assert "Grab samples" in omnisea.citation(self.make())
+
+
+class TestCitationNamesItsStations:
+    def test_station_names_and_ids_appear(self):
+        """"1 station(s)" is not something anyone can repeat a query from."""
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=3, freq="D", tz="UTC", name="time")
+        series = StationSeries(
+            match=StationMatch(source="dfo_tides", provider="dfo", station_id="08545",
+                               name="Bamfield", lat=48.8353, lon=-125.1358),
+            frame=pd.DataFrame({"v": [1.0, 2.0, 3.0]}, index=idx),
+            node_path="in_situ/tides/08545",
+            attrs={"provider": "dfo", "source_name": "dfo_tides",
+                   "institution": "DFO", "license": "OGL"},
+        )
+        text = omnisea.citation(build_tree(q, [series]))
+        assert "Bamfield (08545)" in text
+
+
+class TestTheRetrievalIsRecorded:
+    def test_the_settings_that_shaped_the_result_are_on_the_tree(self):
+        """You could not tell a two-station tree from nearest=2 from one where only two
+        stations existed — and the README claims the root records the query."""
+        q = Query.from_sites([BAMFIELD], WEEK)
+        tree = Catalog(q, []).fetch(group_by_site=True, max_rows=1234)
+        assert tree.attrs["omnisea_group_by_site"] == 1
+        assert tree.attrs["omnisea_max_rows"] == 1234
+        assert tree.attrs["omnisea_on_error"] == "raise"
+        assert tree.attrs["omnisea_fetched_stations"] == 0
+
+
+class TestInProcessMemosCanBeCleared:
+    def test_clear_caches_drops_a_providers_memo(self):
+        """The memo sits above the HTTP cache and short-circuits before it, so
+        disable_cache(clear=True) could not reach it: a long-lived worker pinned the station
+        catalogue for the life of the process."""
+        from omnisea.providers import dfo
+
+        dfo._stations_cache = [{"code": "X", "latitude": 1.0, "longitude": 2.0}]
+        omnisea.clear_caches()
+        assert dfo._stations_cache is None
+
+    def test_disable_cache_with_clear_also_drops_the_memos(self):
+        from omnisea.providers import dfo
+
+        dfo._stations_cache = [{"code": "X"}]
+        omnisea.disable_cache(clear=True)
+        assert dfo._stations_cache is None
+
+    def test_a_provider_with_nothing_memoized_is_fine(self):
+        from omnisea.providers.cioos import CioosProvider
+
+        assert CioosProvider().clear_cache() is None

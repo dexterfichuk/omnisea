@@ -91,7 +91,11 @@ def circular_mean(values: Any) -> float:
         return float("nan")
     radians = np.deg2rad(series.to_numpy())
     mean = np.arctan2(np.sin(radians).mean(), np.cos(radians).mean())
-    return float(np.rad2deg(mean) % 360.0)
+    bearing = float(np.rad2deg(mean) % 360.0)
+    # `% 360` on a value a hair under zero returns exactly 360.0 in floating point, which is
+    # the same bearing but outside the [0, 360) range anyone binning into compass sectors
+    # will assume. Due north is 0.
+    return 0.0 if bearing >= 360.0 - 1e-9 else bearing
 
 
 def aggregation_for(
@@ -901,6 +905,8 @@ def add_local(
     lon: float,
     station_id: str | None = None,
     node_path: str = "in_situ/local",
+    institution: str | None = None,
+    license: str | None = None,
     attrs: Mapping[str, Any] | None = None,
     var_attrs: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> xr.DataTree:
@@ -911,7 +917,9 @@ def add_local(
     provenance beside the providers'.
 
     Pass ``var_attrs`` to describe your columns; a ``cell_methods`` entry there is honoured by
-    :func:`align` exactly as a provider's would be.
+    :func:`align` exactly as a provider's would be. ``institution`` and ``license`` are how
+    :func:`omnisea.citation` will credit it — they default to your ``name`` and to "not stated",
+    so your own work is never rendered as an anonymous third-party source.
     """
     if not isinstance(frame.index, pd.DatetimeIndex):
         time_col = _find_time_column(frame)
@@ -946,6 +954,13 @@ def add_local(
             "provider": "local",
             "source_name": "local",
             "title": name,
+            # Your own measurements, described as yours. Without these, citation() rendered
+            # "local — local (1 station(s)). Licence: see provider." and the name you gave the
+            # dataset was dropped entirely — a methods section that misattributes your own
+            # field work to an anonymous third party.
+            "institution": institution or name,
+            "license": license or "not stated — your own data",
+            "omnisea_is_local": 1,
             **dict(attrs or {}),
         }
     )
