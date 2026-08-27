@@ -554,6 +554,12 @@ class ErddapSource(RetrievalSource):
                 ) from exc
             raise
 
+    #: Extent-less dataset counts per (server, structure), asked once per process. The number
+    #: changes when a publisher edits their metadata — weeks apart — while the question was
+    #: being re-asked on every zero-result discovery, adding a round trip to the empty case,
+    #: which is the common case for every regional server outside its region.
+    _extentless_counts: dict[tuple[str, str], int] = {}
+
     def _note_extentless(self, server: str) -> None:
         """Say how many datasets no spatial filter could ever have reached.
 
@@ -566,17 +572,21 @@ class ErddapSource(RetrievalSource):
         which is the failure this library exists to prevent. Asked only when nothing matched,
         so the ordinary case costs no extra request.
         """
-        try:
-            # Built by hand, like _from_all_datasets: ERDDAP's variable list is a bare name
-            # before the first constraint, which a params dict cannot express.
-            payload = self._get(
-                f"{server}/tabledap/allDatasets.json?datasetID"
-                f'&dataStructure="{self.data_structure}"&minLongitude=NaN',
-                None,
-            )
-        except OmniseaError:
-            return
-        hidden = len(table_rows(payload)) if payload else 0
+        key = (server, self.data_structure)
+        hidden = self._extentless_counts.get(key)
+        if hidden is None:
+            try:
+                # Built by hand, like _from_all_datasets: ERDDAP's variable list is a bare
+                # name before the first constraint, which a params dict cannot express.
+                payload = self._get(
+                    f"{server}/tabledap/allDatasets.json?datasetID"
+                    f'&dataStructure="{self.data_structure}"&minLongitude=NaN',
+                    None,
+                )
+            except OmniseaError:
+                return
+            hidden = len(table_rows(payload)) if payload else 0
+            self._extentless_counts[key] = hidden
         if hidden:
             self._notes.value = (
                 f"nothing matched, but {hidden} {self.protocol} dataset(s) on {server} declare "

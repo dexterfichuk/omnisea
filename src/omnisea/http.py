@@ -13,6 +13,7 @@ import re
 import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, TypeVar
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -87,21 +88,51 @@ def get_timeout() -> tuple[int, int]:
 
 _session: requests.Session | None = None
 
-#: Ceiling on *simultaneous HTTP requests*, enforced here rather than at each thread pool.
+#: Ceilings on *simultaneous HTTP requests*, enforced here rather than at each thread pool.
 #: Discovery fans out across providers and each provider fans out across stations, so bounding
 #: the pools individually would still allow workers x providers requests in flight at once and
 #: get us rate-limited. Bounding the scarce resource itself makes the limit hold however deeply
 #: the call sites nest.
-DEFAULT_MAX_CONCURRENT_REQUESTS = 8
+#:
+#: The limit is two-level because the two failure modes are different. Courtesy is owed
+#: **per host** — CIOOS Pacific answered 413 when eight requests landed on it at once, and no
+#: institution owes us more than a few connections. Throughput is lost **globally** — a bare
+#: discovery asks ~26 sources at fifteen independent institutions, and one shared pool of 8
+#: made the wall time the sum of rounds rather than the slowest single server. Four per host,
+#: twenty-four overall: gentler to each server than the old single cap, three times wider
+#: across them.
+DEFAULT_MAX_CONCURRENT_REQUESTS = 24
+DEFAULT_MAX_PER_HOST = 4
 _request_slots = threading.BoundedSemaphore(DEFAULT_MAX_CONCURRENT_REQUESTS)
+_host_slots: dict[str, threading.BoundedSemaphore] = {}
+_host_lock = threading.Lock()
+_max_per_host = DEFAULT_MAX_PER_HOST
 
 
-def set_max_concurrency(n: int) -> None:
-    """Change the global cap on simultaneous HTTP requests."""
-    global _request_slots
+def set_max_concurrency(n: int, *, per_host: int | None = None) -> None:
+    """Change the caps on simultaneous HTTP requests (global, and optionally per host)."""
+    global _request_slots, _max_per_host
     if n < 1:
         raise ValueError(f"max concurrency must be >= 1; got {n}")
     _request_slots = threading.BoundedSemaphore(n)
+    if per_host is not None:
+        if per_host < 1:
+            raise ValueError(f"per-host concurrency must be >= 1; got {per_host}")
+        _max_per_host = per_host
+        with _host_lock:
+            _host_slots.clear()
+
+
+@contextmanager
+def _request_slot(url: str) -> Iterator[None]:
+    """Hold one global slot and one slot for this URL's host."""
+    host = url.split("//", 1)[-1].split("/", 1)[0].lower()
+    with _host_lock:
+        per_host = _host_slots.get(host)
+        if per_host is None:
+            per_host = _host_slots[host] = threading.BoundedSemaphore(_max_per_host)
+    with _request_slots, per_host:
+        yield
 
 
 #: Substrings that get a request blocked outright by a WAF in front of a real data server.
@@ -498,8 +529,7 @@ def get_json(
     """
     session = get_session()
     log.debug("GET %s params=%s", redact_url(url), redact_params(params))
-    slots = _request_slots
-    with slots:
+    with _request_slot(url):
         try:
             resp = session.get(url, params=params, timeout=timeout or _timeout)
         except requests.RequestException as exc:
@@ -543,7 +573,7 @@ def get_text(
     """
     session = get_session()
     log.debug("GET %s params=%s", redact_url(url), redact_params(params))
-    with _request_slots:
+    with _request_slot(url):
         try:
             resp = session.get(url, params=params, timeout=timeout or _timeout)
         except requests.RequestException as exc:

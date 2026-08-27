@@ -416,7 +416,12 @@ def discover_query(query: Query, *, max_workers: int = DEFAULT_MAX_WORKERS) -> C
         return found
 
     matches: list[StationMatch] = []
-    for found in map_threads(_discover, runnable, max_workers=max_workers, label="discovery"):
+    # One thread per source, up to a sane cap: discovery is I/O-bound waiting on ~26
+    # independent institutions, and rationing it to 8 threads made the wall time the sum of
+    # the slowest rounds instead of the single slowest server. The global request semaphore
+    # still bounds true concurrency per process.
+    fan_out = max(max_workers, min(32, len(runnable)))
+    for found in map_threads(_discover, runnable, max_workers=fan_out, label="discovery"):
         matches.extend(found)
 
     return Catalog(query, matches, errors, notes)
