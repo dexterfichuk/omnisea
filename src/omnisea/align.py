@@ -264,7 +264,11 @@ def _normalize_target(on: Any) -> tuple[pd.DatetimeIndex, pd.DataFrame | None]:
     elif isinstance(on, pd.Series):
         index = _to_naive_utc(pd.DatetimeIndex(pd.to_datetime(on.values)), warn=True)
     elif isinstance(on, pd.DatetimeIndex):
-        index = _to_naive_utc(on, warn=True)
+        # No warning here: a bare DatetimeIndex is almost always in-session pandas work — a
+        # node's own index, a date_range — and a tree's index is naive UTC by design, so
+        # warning made omnisea tell people off for using omnisea's own output. Field sheets,
+        # where the local-time trap lives, arrive as DataFrames and Series and still warn.
+        index = _to_naive_utc(on, warn=False)
     elif isinstance(on, Iterable):
         index = _to_naive_utc(pd.DatetimeIndex(pd.to_datetime(list(on))), warn=True)
     else:
@@ -373,6 +377,13 @@ def align(
     # drop_correlated() prune one for the other, since correlation is scale-invariant.
     units_seen: dict[str, str] = {}
 
+    # How many observations each emitted column REALLY rests on, before any resampling.
+    # An interpolating upsample manufactures non-missing cells, so counting notna() afterwards
+    # measures the resampler rather than the instrument -- 220 predicted tidal turning points
+    # interpolated onto an hourly grid out-counted the 15-minute gauge they were derived from,
+    # and drop_correlated() then kept the interpolation and dropped both instruments.
+    real_samples: dict[tuple[str, str], int] = {}
+    methods_seen: dict[tuple[str, str], str] = {}
     used: set[tuple[str, str]] = set()
     for label, node_path, frame, attrs, node_meta in nodes:
         for variable in frame.columns:
@@ -429,6 +440,8 @@ def align(
             aligned.name = key
             pieces.append(aligned.to_frame())
             applied[key] = rule
+            real_samples[key] = int(len(series))
+            methods_seen[key] = str(attrs.get(variable, {}).get("cell_methods") or "")
             unit = str(attrs.get(variable, {}).get("units") or "")
             if unit:
                 units_seen[f"{key[0]}@{key[1]}" if key[1] else key[0]] = unit
@@ -472,6 +485,12 @@ def align(
         [] if carried is None else [str(c) for c in carried.columns]
     )
     wide.attrs["omnisea_units"] = units_seen
+    # The observation counts and cell_methods behind each column, for anything downstream that
+    # must judge columns by what was measured rather than by what resampling produced.
+    wide.attrs["omnisea_samples"] = {emitted[key]: n for key, n in real_samples.items()}
+    wide.attrs["omnisea_cell_methods"] = {
+        emitted[key]: cm for key, cm in methods_seen.items() if cm
+    }
     wide.attrs["omnisea_time_zone"] = "UTC (naive index; all omnisea times are UTC)"
     wide.attrs["omnisea_alignment"] = (
         f"resampled to {freq}" if freq else f"joined to {len(target)} supplied timestamps"
@@ -836,6 +855,38 @@ def drop_correlated(
         )
     own = {str(c) for c in frame.attrs.get("omnisea_carried") or ()}
     units = {str(k): str(v) for k, v in (frame.attrs.get("omnisea_units") or {}).items()}
+    samples = {
+        str(k): int(v) for k, v in (frame.attrs.get("omnisea_samples") or {}).items()
+    }
+    methods = {
+        str(k): str(v) for k, v in (frame.attrs.get("omnisea_cell_methods") or {}).items()
+    }
+
+    def observations(column: str) -> int:
+        """How many real observations this column rests on.
+
+        An interpolating upsample manufactures non-missing cells, so ``notna()`` on the
+        aligned frame measures the resampler rather than the instrument: 220 predicted tidal
+        turning points interpolated onto an hourly grid out-counted the 15-minute gauge, and
+        the "better-covered" rule then kept the interpolation and dropped both instruments.
+        align() records the pre-resample count; a frame from anywhere else falls back.
+        """
+        return samples.get(column, int(frame[column].notna().sum()))
+
+    def primacy(column: str) -> int:
+        """Lower is more primary: a state beats a statistic beats an accumulation.
+
+        Only ever consulted on an exact observation-count tie. At Prince Rupert that tie was
+        between air_temperature (a daily mean) and heating_degree_days (an integral derived
+        from it); the coin toss landed on the bookkeeping index and then used it to evict the
+        minimum temperature too. Everything else being equal, keep the measurement.
+        """
+        method = methods.get(column, "")
+        if "sum" in method:
+            return 2
+        if "maximum" in method or "minimum" in method:
+            return 1
+        return 0
 
     pairs = correlations(frame, threshold=threshold, min_overlap=min_overlap, method=method)
     dropped: dict[str, str] = {}
@@ -863,10 +914,11 @@ def drop_correlated(
         elif b in pinned:
             victim, kept = a, b
         else:
-            coverage_a = int(frame[a].notna().sum())
-            coverage_b = int(frame[b].notna().sum())
+            coverage_a, coverage_b = observations(a), observations(b)
             if coverage_a != coverage_b:
                 victim, kept = (a, b) if coverage_a < coverage_b else (b, a)
+            elif primacy(a) != primacy(b):
+                victim, kept = (a, b) if primacy(a) > primacy(b) else (b, a)
             else:
                 first_is_a = frame.columns.get_loc(a) <= frame.columns.get_loc(b)
                 victim, kept = (b, a) if first_is_a else (a, b)
@@ -876,8 +928,11 @@ def drop_correlated(
         # as a bare correlation, which reads as "duplicate" when it was "substitute".
         unit_v, unit_k = units.get(victim), units.get(kept)
         shown = f" [{unit_v or '?'} vs {unit_k or '?'}]" if unit_v != unit_k else ""
+        basis = ""
+        if victim in samples or kept in samples:
+            basis = f"; kept column rests on {observations(kept)} observation(s)"
         dropped[victim] = (
-            f"|r|={abs(row.r):.4f} with {kept} over {row.n} samples{shown}"
+            f"|r|={abs(row.r):.4f} with {kept} over {row.n} samples{shown}{basis}"
         )
         if unit_v and unit_k and unit_v != unit_k:
             mismatched.append((victim, unit_v, kept, unit_k))

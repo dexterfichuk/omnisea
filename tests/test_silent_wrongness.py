@@ -1536,3 +1536,106 @@ class TestSomeoneElsesDataAddedLocallyIsStillTheirs:
             tree, frame, name="My grab samples", lat=48.8, lon=-125.1, station_id="MINE"
         )
         assert "your own data" in omnisea.citation(out)
+
+
+class TestDropCorrelatedJudgesInstrumentsNotResamplers:
+    """A user tester's finding at Halibut Bank: align(freq="1h") interpolated DFO's 220
+    predicted tidal turning points up to 1372 non-missing hours, beating the 15-minute
+    gauge's 1369 by three — so "keeps the better-covered column" kept the interpolation and
+    dropped both real instruments. After an interpolating resample, notna() measures the
+    resampler, not the instrument.
+    """
+
+    def tree(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        dense = pd.date_range("2024-07-01", "2024-07-07 23:45", freq="15min", tz="UTC")
+        tide = pd.DataFrame(
+            {"water_surface_height_above_reference_datum":
+                 2.0 + np.sin(np.arange(len(dense)) / 12.0)},
+            index=pd.DatetimeIndex(dense, name="time"),
+        )
+        sparse = dense[::18]  # every 4.5 h — sparse turning points from the same signal
+        extrema = pd.DataFrame(
+            {"water_surface_height_above_reference_datum_at_extremum":
+                 2.0 + np.sin(np.arange(0, len(dense), 18) / 12.0)},
+            index=pd.DatetimeIndex(sparse, name="time"),
+        )
+        return build_tree(q, [
+            node("08545", "in_situ/tides", tide,
+                 {"water_surface_height_above_reference_datum": {"units": "m"}}),
+            node("08545", "predictions/tides_hilo", extrema,
+                 {"water_surface_height_above_reference_datum_at_extremum": {"units": "m"}}),
+        ])
+
+    def test_the_instrument_survives_the_interpolation(self):
+        hourly = align(self.tree(), freq="1h")
+        gauge = "water_surface_height_above_reference_datum"
+        interp = "water_surface_height_above_reference_datum_at_extremum"
+        # The precondition that made the bug: after the resample the sparse series is as
+        # covered as the dense one.
+        assert hourly[interp].notna().sum() >= hourly[gauge].notna().sum() - 5
+        pruned = omnisea.drop_correlated(hourly, threshold=0.9)
+        assert gauge in pruned.columns
+        assert interp in pruned.attrs["omnisea_dropped"]
+        assert "observation(s)" in pruned.attrs["omnisea_dropped"][interp]
+
+    def test_the_recorded_sample_counts_are_the_instruments_own(self):
+        hourly = align(self.tree(), freq="1h")
+        counts = hourly.attrs["omnisea_samples"]
+        assert counts["water_surface_height_above_reference_datum"] == 672
+        assert counts["water_surface_height_above_reference_datum_at_extremum"] == 38
+
+
+class TestAnEqualCoverageTieKeepsTheMeasurement:
+    """Prince Rupert: air_temperature (daily mean) and heating_degree_days (an integral
+    derived from it) tied at 47 samples each; the coin toss kept the bookkeeping index and
+    then used it to evict air_temperature_min as well."""
+
+    def tree(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=7, freq="D", tz="UTC", name="time")
+        temp = 15.0 + np.arange(7.0)
+        frame = pd.DataFrame(
+            {"air_temperature": temp, "heating_degree_days": 18.0 - temp}, index=idx
+        )
+        return build_tree(q, [node("1066482", "in_situ/weather_daily", frame, {
+            "air_temperature": {"units": "degC", "cell_methods": "time: mean"},
+            "heating_degree_days": {"units": "degC day", "cell_methods": "time: sum"},
+        })])
+
+    def test_the_sum_is_dropped_for_the_mean_on_a_tie(self):
+        daily = align(self.tree(), freq="1D")
+        assert (daily["air_temperature"].notna().sum()
+                == daily["heating_degree_days"].notna().sum())
+        pruned = omnisea.drop_correlated(daily, threshold=0.95, min_overlap=5)
+        assert "air_temperature" in pruned.columns
+        assert "heating_degree_days" in pruned.attrs["omnisea_dropped"]
+
+
+class TestAStationThatContributedIsNotDisownedByCitation:
+    """Calvert: DFO 08863 served 2,974 observed water levels but has no prediction series, and
+    the empty second series was charged to the station — so citation() both credited it and
+    listed it under "matched but returned no rows". A false alarm on the principal station of
+    the analysis trains people to ignore the one message meant to stop a bad publication."""
+
+    def series(self, station, path, frame):
+        match = StationMatch(source="dfo_tides", provider="dfo", station_id=station,
+                             name=station, lat=51.65, lon=-128.1, site="Pruth")
+        return StationSeries(match=match, frame=frame, node_path=f"{path}/{station}",
+                             attrs={"provider": "dfo"}, var_attrs={})
+
+    def test_only_a_fully_empty_station_is_listed(self):
+        q = Query.from_sites([Site(51.65, -128.1, "Pruth", radius_km=30)], WEEK)
+        rows = pd.DataFrame(
+            {"water_surface_height_above_reference_datum": [1.0, 2.0]},
+            index=utc("2024-07-01", "2024-07-02"),
+        )
+        tree = build_tree(q, [
+            self.series("08863", "in_situ/tides", rows),            # observed: has rows
+            self.series("08863", "predictions/tides_hilo", pd.DataFrame()),  # empty
+            self.series("08866", "in_situ/tides", pd.DataFrame()),  # genuinely empty
+        ])
+        listed = str(tree.attrs.get("omnisea_empty_stations"))
+        assert "08866" in listed
+        assert "08863" not in listed, "the station contributed observed data"
+        assert "08863" not in omnisea.citation(tree).split("NOTE")[-1]

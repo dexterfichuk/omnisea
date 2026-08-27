@@ -101,6 +101,11 @@ def _netcdf_safe_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if isinstance(frame.index, pd.DatetimeIndex) and frame.index.tz is not None:
         frame.index = frame.index.tz_localize(None)
         frame.index.name = "time"
+    if isinstance(frame.index, pd.DatetimeIndex):
+        # One time resolution everywhere. griddap nodes come back datetime64[ns] while point
+        # nodes were datetime64[us], and pandas' merge_asof refuses to join across resolutions
+        # — so two nodes of the same tree could not be merged in plain pandas.
+        frame.index = frame.index.as_unit("ns")
     for col in frame.columns:
         kind = frame[col].dtype
         if pd.api.types.is_bool_dtype(kind):
@@ -202,6 +207,7 @@ def build_tree(
     """
     nodes: dict[str, xr.Dataset] = {}
     empty: list[str] = []
+    contributed: set[str] = set()
 
     for item in results:
         if item is None:
@@ -225,6 +231,7 @@ def build_tree(
             )
             continue
 
+        contributed.add(f"{item.match.source}/{item.match.station_id}")
         ds = series_to_dataset(item)
         path = item.node_path.strip("/")
         if group_by_site and item.match.site:
@@ -245,7 +252,13 @@ def build_tree(
             "omnisea_version": _version(),
             "n_nodes": len(nodes),
             "n_empty_series_dropped": len(empty),
-            "omnisea_empty_stations": sorted(set(empty)) or None,
+            # Only stations that contributed NOTHING from that source. A station can serve one
+            # series and lack another — DFO's Pruth Bay gauge has observed water levels but no
+            # harmonic predictions — and charging the empty second series to the station put
+            # the principal instrument of a whole analysis in the "returned no rows" list.
+            # citation() prints this list precisely so a partial pull cannot pass unnoticed; a
+            # false alarm on the most-used station teaches people to ignore it.
+            "omnisea_empty_stations": sorted(set(empty) - contributed) or None,
         }
     )
 
@@ -601,4 +614,27 @@ def to_netcdf(tree: xr.DataTree, path: Any, **kwargs: Any) -> None:
         from .errors import MissingDependencyError
 
         raise MissingDependencyError("netCDF4", "netcdf", "for writing netCDF files")
+    lazy_cells = 0
+    lazy_nodes: list[str] = []
+    for node_path, ds in data_nodes(tree):
+        for variable in ds.data_vars.values():
+            if not getattr(variable.variable, "_in_memory", True):
+                lazy_cells += int(variable.size)
+                lazy_nodes.append(node_path)
+                break
+    if lazy_cells > 10_000_000:
+        # Writing materializes every lazy grid in the tree — "you pay only for the pixels you
+        # read" ends at to_netcdf(). A tree holding a subset model field wrote 34 MB without
+        # comment; the full physics node would have quietly attempted ~237 GB. Say the price
+        # before charging it.
+        import warnings
+
+        warnings.warn(
+            f"to_netcdf() will download and write every lazy grid in this tree — about "
+            f"{lazy_cells:,} cells across {len(lazy_nodes)} node(s) ({', '.join(lazy_nodes[:3])}"
+            f"{'…' if len(lazy_nodes) > 3 else ''}). Subset first (ds.isel/sel) or drop the "
+            "grid nodes (del tree[path]) if that is more than you meant to store.",
+            UserWarning,
+            stacklevel=2,
+        )
     tree.to_netcdf(path, **kwargs)

@@ -14,8 +14,10 @@ from .cioos import CioosProvider
 from .dfo import DfoProvider
 from .eccc import EcccProvider
 from .erddap import NAMED_PROVIDERS, ErddapProvider
+from .noaa import CoopsProvider
 from .ogc import OgcFeaturesProvider, OgcFeaturesSource
 from .onc import OncProvider
+from .usgs import UsgsProvider
 
 __all__ = [
     "Provider",
@@ -29,6 +31,8 @@ __all__ = [
     "DfoProvider",
     "EcccProvider",
     "ErddapProvider",
+    "CoopsProvider",
+    "UsgsProvider",
     "NAMED_PROVIDERS",
     "CioosProvider",
     "OncProvider",
@@ -45,5 +49,6 @@ __all__ = [
 #: with ``erddap_server=<url>``.
 BUILTIN_PROVIDERS = [
     DfoProvider(), EcccProvider(), CioosProvider(), ErddapProvider(), OncProvider(),
+    CoopsProvider(), UsgsProvider(),
     *(cls() for cls in NAMED_PROVIDERS.values()),
 ]

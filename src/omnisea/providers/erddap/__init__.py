@@ -62,7 +62,9 @@ Three upstream behaviours shape the code, all verified live:
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import timedelta
 
+from ...http import NEVER_CACHE
 from ..base import Provider, RetrievalSource
 from .common import DEFAULT_MAX_DATASETS, DEFAULT_SERVER, ErddapSource, safe_name, table_rows
 from .grid import ErddapGridSource, grid_selection
@@ -115,6 +117,18 @@ class ErddapProvider(Provider):
     #: dataset states its own, _node_attrs uses that; where it does not, no link is better than
     #: a wrong one.
     terms_url = ""
+
+    #: Catalogue metadata — the ``allDatasets`` table, the search index, per-dataset ``/info``
+    #: — changes daily at most, and is exactly what every discovery pays for. Without a policy
+    #: here, ``enable_cache()`` silently did nothing for the heaviest path in the library. Data
+    #: requests are never cached; griddap's DAP reads bypass the HTTP session anyway.
+    cache_policy = {
+        "*/erddap/info/*": timedelta(days=1),
+        "*/erddap/search/*": timedelta(hours=6),
+        "*/erddap/tabledap/allDatasets*": timedelta(hours=6),
+        "*/erddap/tabledap/*": NEVER_CACHE,
+        "*/erddap/griddap/*": NEVER_CACHE,
+    }
 
     #: The installation this provider *is*, when it is one. The generic adapter leaves this
     #: unset and takes its server from ``erddap_server=``; a named one pins it, so asking for

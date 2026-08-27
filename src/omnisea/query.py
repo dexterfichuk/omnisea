@@ -82,6 +82,26 @@ QUERY_KEYWORDS = (
 )
 
 
+def _depth_range(depth: Any) -> tuple[float, float] | None:
+    """``depth=`` as an inclusive (shallow, deep) range, named errors instead of IndexError.
+
+    ``depth=[0.0]`` used to surface as a bare ``IndexError: list index out of range`` from
+    inside the library; nothing in the signature says the argument is a two-value range. A
+    single value now means that one level exactly, which is what everyone passing one meant.
+    """
+    if depth is None:
+        return None
+    values = [float(v) for v in depth]
+    if len(values) == 1:
+        return (values[0], values[0])
+    if len(values) == 2:
+        return (values[0], values[1])
+    raise QueryError(
+        f"depth= takes one level or a (shallow, deep) range; got {len(values)} values: "
+        f"{values}"
+    )
+
+
 def _validate_options(options: Mapping[str, Any]) -> dict[str, Any]:
     unknown = [k for k in options if k not in KNOWN_OPTIONS]
     if unknown:
@@ -90,6 +110,15 @@ def _validate_options(options: Mapping[str, Any]) -> dict[str, Any]:
         vocabulary = list(KNOWN_OPTIONS) + list(QUERY_KEYWORDS)
         details = []
         for key in unknown:
+            if key in QUERY_KEYWORDS:
+                # A real argument, just not one this call takes — discover(on_error=...) used
+                # to answer "did you mean 'on_error'?", proposing the exact string it had just
+                # rejected. Say where the argument actually lives instead.
+                details.append(
+                    f"{key!r} (that is a fetch() argument, not a provider option — "
+                    "pass it to fetch())"
+                )
+                continue
             close = difflib.get_close_matches(key, vocabulary, n=1, cutoff=0.55)
             if not close:
                 # "latitude" and "lat" score below any sensible cutoff, but a prefix match is
@@ -413,7 +442,7 @@ class Query:
             end=end,
             bbox=_normalize_bbox(bbox),
             variables=frozenset(variables) if variables else None,
-            depth=(float(depth[0]), float(depth[1])) if depth else None,
+            depth=_depth_range(depth),
             providers=tuple(providers) if providers else None,
             max_rows=max_rows,
             options=_validate_options(options),
@@ -475,7 +504,7 @@ class Query:
             bbox=_union_bbox([s.bbox for s in resolved]),
             sites=resolved,
             variables=frozenset(variables) if variables else None,
-            depth=(float(depth[0]), float(depth[1])) if depth else None,
+            depth=_depth_range(depth),
             providers=tuple(providers) if providers else None,
             max_rows=max_rows,
             options=_validate_options(options),
