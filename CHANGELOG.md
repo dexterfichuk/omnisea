@@ -1,57 +1,76 @@
 # Changelog
 
-## 0.1.0 — unreleased
-
-First release.
-
-### What it does
+## 0.1.0 — first release
 
 One Python client for marine data that is otherwise spread across a dozen incompatible APIs.
 **18 data sources across 5 organizations** — DFO tide gauges, thirteen ECCC climate, weather,
 buoy and hydrometric collections, any ERDDAP server worldwide, Ocean Networks Canada's cabled
 observatories, and CIOOS metadata records.
 
+### What it does
+
 - **One query shape** for every source: an area or a list of named sites, a time window, CF
   variable names. Deliberately EDR-shaped.
 - **Discovery before download.** `discover()` returns a printable catalogue with row estimates;
   `fetch()` refuses anything over a ceiling, with the knob to change it in the message.
-- **CF canonicalization** that never silently rescales. Values stay in provider units with the
-  units recorded beside them; `to_cf_units=True` is opt-in. Encoding *repairs* — ECCC ships wind
-  direction in tens of degrees — are always applied, because those are not a unit choice.
-- **Nothing is dropped.** Fields with no CF mapping travel under the provider's own name, tagged
-  `omnisea_mapped = 0`. QC flags are carried as `<var>_qc`.
-- **`align()`** joins ragged sources onto one time axis, choosing each variable's resampling from
-  its CF `cell_methods` rather than guessing: sums stay sums, extremes stay extremes, compass
-  bearings are combined as unit vectors, and only instantaneous values are interpolated. Every
-  choice is recorded in `attrs["omnisea_aggregation"]`.
+- **CF canonicalization that never silently rescales.** Values stay in provider units with the
+  units recorded beside them; `to_cf_units=True` is opt-in and leaves a trace on the variable.
+  Encoding *repairs* — ECCC ships wind direction in tens of degrees — are always applied,
+  because those are not a unit choice.
+- **Nothing is dropped.** Fields with no CF mapping travel under the provider's own name,
+  tagged `omnisea_mapped = 0`. QC flags are carried as `<var>_qc`.
+- **`align()`** joins ragged sources onto one time axis, choosing each variable's resampling
+  from its CF `cell_methods` rather than guessing: sums stay sums, extremes stay extremes,
+  compass bearings are combined as unit vectors, and only instantaneous values are
+  interpolated. Sources that label rows by local calendar date are matched in local time.
+  Every choice is recorded in `attrs["omnisea_aggregation"]`, keyed by the column names the
+  frame actually carries.
 - **`correlations()` / `drop_correlated()` / `model_matrix()`** turn a lossless tree into a
   defensible model matrix, and say what they removed and why.
-- **`provenance()` / `citation()`** derive attribution from the result rather than from memory,
-  including DOIs where a provider supplies them, and report what went wrong.
+- **`provenance()` / `citation()`** derive attribution from the result — naming stations, DOIs
+  where a provider supplies them, and what went wrong — rather than from memory.
 - **`xarray.DataTree`** output that round-trips losslessly to netCDF.
 
 ### Adding a source
 
-A new data source is one new file implementing `discover()` and `fetch()`. Third-party providers
-register through the `omnisea.providers` entry point and are indexed automatically. The contract
-is executable: `python -m omnisea.conformance`.
+One new file implementing `discover()` and `fetch()`. Third-party providers register through
+the `omnisea.providers` entry point and are indexed automatically. The contract is executable:
+`python -m omnisea.conformance`.
+
+### Operational
+
+- `set_timeout()`, `set_max_concurrency()`, `enable_cache()` and `clear_caches()` for
+  unattended runs. A single response body is capped at 512 MB
+  (`omnisea.http.MAX_RESPONSE_BYTES`).
+- API tokens passed in a query string are redacted from log lines, from every error message,
+  from response bodies that echo them back, and from the `source_url` written into saved files.
+- `fetch()` raises when a source fails, in either the discovery or the retrieval phase; pass
+  `on_error="collect"` to proceed with what answered.
+- Fully typed, with `py.typed`.
+
+### Testing
+
+706 offline tests over committed real API responses, plus 55 live integration tests (3 need an
+ONC token). CI runs the offline suite, ruff and the conformance checker on Python 3.11–3.13,
+with a separate job pinned to the oldest supported dependency versions and a weekly live run to
+catch upstream drift.
 
 ### Known limitations
 
 - Not on PyPI yet; install from the repository (see the README's Installing section).
-- Optional extras are `cache`, `netcdf`, `cioos` and `examples`. `erddap`, `cmems` and
-  `stac` were declared during development and removed before release: erddapy is deliberately
-  unused, and the other two were for providers that do not exist yet.
+- Optional extras are `cache`, `netcdf`, `cioos` and `examples`. `erddap`, `cmems` and `stac`
+  were declared during development and removed before release: erddapy is deliberately unused,
+  and the other two were for providers that do not exist yet.
 - Ocean Networks Canada requires a free API token (`onc_token=` or `ONC_TOKEN`). Every other
-  source works without a credential.
+  source works without a credential, and ONC is skipped rather than failing when none is set.
 - `climate-normals` is deliberately unsupported — it is not a time series.
 - Antimeridian-crossing bounding boxes are refused rather than silently mishandled.
+- `radius_km` is capped at 2,000 km per site; use `bbox=` for a genuinely global query.
 - Row estimates are cadence x window, not inventory-aware, so a part-time station can return
   fewer rows than its catalogue entry advertised.
-- A single response body is capped at 512 MB (`omnisea.http.MAX_RESPONSE_BYTES`); a server
-  streaming an endless body is refused rather than growing the process without bound.
-- `radius_km` is capped at 2,000 km per site — a slipped decimal point otherwise becomes
-  thousands of requests. Use `bbox=` for a genuinely global query.
 - ERDDAP's `to_cf_units=True` is a no-op: those datasets state the units their numbers are in,
   not how to reach canonical CF units, and omnisea will not guess a scale factor for someone
   else's data.
+- A local-date source is joined using an offset estimated from the station's longitude, since
+  the responses carry no UTC offset. That is approximate within about an hour near a timezone
+  boundary, against a whole day of error if the stamp were read as UTC.
