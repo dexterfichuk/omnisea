@@ -38,7 +38,10 @@ is executable: `python -m omnisea.conformance`.
 
 ### Known limitations
 
-- Not on PyPI yet; install from the repository.
+- Not on PyPI yet; install from the repository (see the README's Installing section).
+- Optional extras are `cache`, `netcdf`, `cioos` and `examples`. `erddap`, `cmems` and
+  `stac` were declared during development and removed before release: erddapy is deliberately
+  unused, and the other two were for providers that do not exist yet.
 - Ocean Networks Canada requires a free API token (`onc_token=` or `ONC_TOKEN`). Every other
   source works without a credential.
 - `climate-normals` is deliberately unsupported — it is not a time series.

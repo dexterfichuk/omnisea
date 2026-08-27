@@ -8,21 +8,122 @@ adapters per source, CF-standard canonicalization, EDR-shaped spatial-temporal q
 `xarray.DataTree` as the output container so 1-D point series and 4-D grids can coexist without a
 lossy flat join.
 
+## Installing
+
+Not on PyPI yet, so install from the repository. Python 3.11 or newer.
+
 ```bash
 pip install "omnisea[cache,netcdf] @ git+https://github.com/dexterfichuk/omnisea"
 ```
 
-Not on PyPI yet, so install from the repository. To develop it:
+<details>
+<summary>uv, conda, a requirements file, or a local build</summary>
+
+```bash
+# uv
+uv pip install "omnisea[cache,netcdf] @ git+https://github.com/dexterfichuk/omnisea"
+
+# in a requirements.txt / pyproject dependency list
+omnisea[cache,netcdf] @ git+https://github.com/dexterfichuk/omnisea@main
+
+# conda: make the environment, then pip into it — omnisea is not on conda-forge
+conda create -n omnisea python=3.12 && conda activate omnisea
+pip install "omnisea[cache,netcdf] @ git+https://github.com/dexterfichuk/omnisea"
+
+# from a local clone, without installing an editable copy
+git clone https://github.com/dexterfichuk/omnisea && cd omnisea
+pip install ".[cache,netcdf]"
+
+# build the wheel and sdist yourself
+uv build          # or: python -m build
+pip install dist/omnisea-0.1.0-py3-none-any.whl
+```
+</details>
+
+Check it worked:
+
+```bash
+python -c "import omnisea; print(omnisea.__version__, len(omnisea.sources()), 'sources')"
+```
+
+### Extras
+
+The core install needs only `requests`, `pandas`, `numpy` and `xarray`. Everything else is
+optional, and **using a feature without its extra tells you exactly what to install** rather
+than failing obscurely.
+
+| Extra | Pulls in | You need it for |
+|---|---|---|
+| `cache` | `requests-cache` | `omnisea.enable_cache()` |
+| `netcdf` | `netCDF4` | `omnisea.to_netcdf()`, and ERDDAP gridded data over OPeNDAP |
+| `cioos` | `PyYAML` | CIOOS metadata records written as YAML |
+| `examples` | `matplotlib`, `jupyter`, `scikit-learn` | running [`examples/bamfield.ipynb`](examples/bamfield.ipynb) |
+| `dev` | the above plus `pytest`, `ruff` | working on omnisea itself |
+
+`cache,netcdf` is the combination most people want. To develop:
 
 ```bash
 git clone https://github.com/dexterfichuk/omnisea && cd omnisea
 pip install -e ".[dev]"
+pytest -m "not network"     # should be green before you change anything
 ```
 
-Core dependencies are just `requests`, `pandas`, `numpy` and `xarray`; everything else —
-response caching, netCDF output, the example notebook's plotting — is an optional extra, and
-using a feature without its extra tells you exactly what to install. Python 3.11+; the test
-suite runs in CI against both the latest and the oldest supported dependency versions.
+## Credentials
+
+**Seventeen of the eighteen sources need no credential at all.** Only Ocean Networks Canada
+does, and omnisea simply leaves it out of any query where no token is available — you never
+have to configure anything to use the rest.
+
+To add ONC: register free at [data.oceannetworks.ca](https://data.oceannetworks.ca), then
+**Profile → Web Services API**. Pass the token either way:
+
+```bash
+export ONC_TOKEN="your-token-here"          # picked up automatically
+```
+
+```python
+omnisea.fetch(..., providers="onc_scalardata", onc_token="your-token-here")
+```
+
+### Keeping it out of your repository
+
+The environment variable is the safer of the two, because it keeps the token out of the
+notebook or script you commit. A `.env` file works well and should be gitignored:
+
+```bash
+echo 'ONC_TOKEN=your-token-here' >> .env
+echo '.env' >> .gitignore
+```
+
+```python
+# pip install python-dotenv
+from dotenv import load_dotenv
+load_dotenv()          # ONC_TOKEN is now in the environment; omnisea finds it
+```
+
+In CI, use the runner's secret store (`${{ secrets.ONC_TOKEN }}` on GitHub Actions) rather
+than a file.
+
+### What omnisea does with it
+
+ONC authenticates with a `?token=` **query parameter**, which means a URL carrying your
+credential would otherwise end up in three places that outlive the request. omnisea redacts it
+from all of them:
+
+- **Log lines** — `omnisea.http` logs every request at `DEBUG`, with the token as `REDACTED`.
+- **Error messages** — including the corrected URL that ONC helpfully quotes back to you
+  *with your token in it* when a request is malformed.
+- **`source_url` on every node** — this one matters most, because it is written into the
+  netCDF files people share and commit. It is built without the token rather than scrubbed
+  afterwards.
+
+A release review specifically tried to find the token in the debug log, the error messages,
+the echoed upstream error bodies and the sqlite cache file, and found it in none of them.
+There is a test asserting no token reaches the result of a live fetch.
+
+If you write your own provider for an API that needs a credential, the same machinery is
+available — see [the provider guide](docs/adding-a-provider.md) and
+`omnisea.http.SENSITIVE_PARAMS`.
 
 **Want to see what it's like to use?** → **[examples/bamfield.ipynb](examples/bamfield.ipynb)**
 is a complete walkthrough with output and plots already rendered, or run
@@ -372,12 +473,12 @@ indexed by an integer `Year` column and publishes no `time` variable at all — 
 
 ONC runs cabled observatories, moorings and autonomous platforms off both Canadian coasts and in
 the Arctic — 1,992 locations, 219 measured properties. It is the one built-in source that needs
-a credential. Register at [data.oceannetworks.ca](https://data.oceannetworks.ca), then
-**Profile → Web Services API**:
+a credential; see [Credentials](#credentials) for getting a token and how omnisea keeps it out
+of your logs, errors and saved files.
 
 ```python
 omnisea.fetch(lat=48.8145, lon=-125.2825, radius_km=6, time=("2024-07-01", "2024-07-02"),
-              providers="onc_scalardata", onc_token="…")     # or export ONC_TOKEN=…
+              providers="onc_scalardata")     # ONC_TOKEN from the environment
 ```
 
 ```
@@ -385,12 +486,6 @@ omnisea.fetch(lat=48.8145, lon=-125.2825, radius_km=6, time=("2024-07-01", "2024
  /in_situ/onc/FGPD/CTD     Folger Deep    1440  sea_water_temperature, sea_water_pressure, …
 /in_situ/onc/FGPPN/CTD Folger Pinnacle    1440  sea_water_temperature, sea_water_practical_salinity, …
 ```
-
-**Your token stays out of everything omnisea writes down.** ONC authenticates with a `?token=`
-query parameter, and a URL like that would otherwise reach the debug log, the message of every
-error, and the `source_url` recorded on each node — which gets written into netCDF files people
-share and commit. All three are redacted, and so is the token ONC helpfully echoes back *inside*
-its own error bodies.
 
 One node per (location, instrument), because a location can carry a CTD and a hydrophone and a
 current meter and those are not one time series. Raw ONC data can be 1 Hz — a day of one CTD is
