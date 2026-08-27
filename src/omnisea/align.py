@@ -173,6 +173,7 @@ def _node_frames(
             "time_reference": str(ds.attrs.get("time_reference") or ""),
             "longitude": _scalar_or_none(ds, "longitude"),
             "source_name": str(ds.attrs.get("source_name") or ""),
+            "period": str(ds.attrs.get("omnisea_period") or ""),
         }
         out.append((label, node.path, frame.sort_index(), attrs, node_meta))
     return out
@@ -347,7 +348,11 @@ def align(
             if freq is not None:
                 aligned, rule = _resample(series, freq, grid, down, up)
             else:
-                interval = bool(str(attrs.get(variable, {}).get("cell_methods") or "").strip())
+                # Interval-scoped if the variable summarizes one, *or* if the whole source
+                # publishes one row per period — a daily reading belongs to its day either way.
+                interval = bool(
+                    str(attrs.get(variable, {}).get("cell_methods") or "").strip()
+                ) or bool(node_meta.get("period"))
                 aligned, rule = _join_to(
                     series, target, tolerance, direction, interval,
                     local_offset=_local_day_offset(node_meta),
@@ -360,7 +365,11 @@ def align(
             # emitting two identically-named columns.
             key = (str(variable), label)
             if key in used:
-                key = (str(variable), f"{label}/{_branch(node_path)}")
+                # The branch, not the whole path: "08545/predictions_tides_hilo" read as a
+                # malformed identifier inside a var@station scheme. "08545:predictions" says
+                # the same thing and parses.
+                branch = _branch(node_path).split("_")[0] or "node"
+                key = (str(variable), f"{label}:{branch}")
             if key in used:
                 # Two nodes of one station in one branch — build_tree's _unique() fires twice
                 # for the same station id. A third collision would emit two identically named

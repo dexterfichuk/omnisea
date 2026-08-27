@@ -720,7 +720,7 @@ test validates every emitted `standard_name` against the published table.
 ## Tests
 
 ```bash
-pytest -m "not network"   # 686 offline tests over committed real API responses
+pytest -m "not network"   # 706 offline tests over committed real API responses
 pytest -m network         # 55 live integration tests (3 need ONC_TOKEN)
 ```
 

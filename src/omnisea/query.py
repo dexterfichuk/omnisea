@@ -583,10 +583,12 @@ class Query:
             # JSON rather than a list: _clean_attrs joins lists with ", " for netCDF, and a
             # label is very often "48.8353,-125.1358" or "Tofino, BC" — re-splitting that on
             # commas invented sites that were never requested and reported them as empty.
+            # All four as JSON: netCDF writes a one-element numeric array as a scalar, so a
+            # single-site query and a multi-site one used to come back different shapes.
             attrs["query_site_names"] = json.dumps([s.label for s in self.sites])
-            attrs["query_site_lats"] = [s.lat for s in self.sites]
-            attrs["query_site_lons"] = [s.lon for s in self.sites]
-            attrs["query_site_radius_km"] = [s.radius_km for s in self.sites]
+            attrs["query_site_lats"] = json.dumps([s.lat for s in self.sites])
+            attrs["query_site_lons"] = json.dumps([s.lon for s in self.sites])
+            attrs["query_site_radius_km"] = json.dumps([s.radius_km for s in self.sites])
         if self.variables:
             attrs["query_variables"] = sorted(self.variables)
         if self.depth is not None:

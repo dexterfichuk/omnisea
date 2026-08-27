@@ -298,6 +298,13 @@ class DataSource(ABC):
             "source_name": self.name,
             **self.provider.attribution(),
         }
+        if self.period:
+            # Recorded so align() can tell that every row here covers a whole day or month.
+            # A once-a-day snow-depth reading is not a *summary* of its day and rightly has no
+            # cell_methods, but it still belongs to that day: without this it was matched as an
+            # instantaneous value and a 30-minute tolerance found nothing, producing a column
+            # of NaN from a variable that was fully populated.
+            attrs["omnisea_period"] = self.period
         attrs.update({k: v for k, v in extra.items() if v is not None})
         return attrs
 

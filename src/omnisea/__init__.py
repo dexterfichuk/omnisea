@@ -72,6 +72,7 @@ from .tree import (
     coverage,
     describe,
     fields,
+    query_attrs,
     stations,
     summary,
     to_dataframe,
@@ -118,6 +119,7 @@ __all__ = [
     "to_dataframe",
     "to_netcdf",
     "coverage",
+    "query_attrs",
     # extension
     "Provider",
     "DataSource",
@@ -210,7 +212,35 @@ def variables() -> pd.DataFrame:
     frame = pd.DataFrame(rows)
     if frame.empty:
         return frame
-    return frame.sort_values(["variable", "source"]).reset_index(drop=True)
+    frame = frame.sort_values(["variable", "source"]).reset_index(drop=True)
+    return _VariablesFrame(frame)
+
+
+class _VariablesFrame(pd.DataFrame):
+    """The :func:`variables` table, with membership testing that means what it looks like.
+
+    ``"air_temperature" in omnisea.variables()`` reads as a question about variables, but a
+    plain DataFrame answers it about *column* names — so it returned False for every real
+    variable and True for "units". Containment here asks the question the reader meant.
+    """
+
+    _metadata: list[str] = []
+
+    @property
+    def _constructor(self):
+        return _VariablesFrame
+
+    def __contains__(self, key: object) -> bool:
+        name = str(key)
+        if name in self.columns:
+            return True
+        return bool(
+            (self["variable"] == name).any() or (self["standard_name"] == name).any()
+        )
+
+    def names(self) -> list[str]:
+        """Just the variable names, for when a list is what you wanted."""
+        return sorted(set(self["variable"]) | (set(self["standard_name"]) - {""}))
 
 
 # --------------------------------------------------------------------------- queries
@@ -301,6 +331,12 @@ def discover(
     **options: Any,
 ) -> Catalog:
     """Find out what data exists for a query, without downloading any of it.
+
+    ``time`` accepts a ``(start, end)`` pair, a ``slice``, or a single date meaning that whole
+    day — so ``time="2024-07-01"`` is 1 July, and ``time="2024"`` is **1 January 2024 only**,
+    not the year. Write a pair for a range: ``time=("2024-01-01", "2025-01-01")``. Naive
+    timestamps are read as UTC, which is what every marine API speaks.
+
 
     Returns a :class:`Catalog` — a printable table of stations with row estimates — which you
     then narrow with ``.filter(...)`` and pull with ``.fetch()``. Separating the two steps is

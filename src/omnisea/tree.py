@@ -36,6 +36,7 @@ __all__ = [
     "to_netcdf",
     "coverage",
     "describe",
+    "query_attrs",
 ]
 
 log = logging.getLogger("omnisea.tree")
@@ -466,6 +467,27 @@ def fields(tree: xr.DataTree, *, mapped: bool | None = None) -> pd.DataFrame:
     elif mapped is False:
         frame = frame[~frame["cf_mapped"] & (frame["kind"] != "qc flag")]
     return frame.sort_values(["node", "kind", "variable"]).reset_index(drop=True)
+
+
+def query_attrs(tree: xr.DataTree) -> dict[str, Any]:
+    """The query that produced this tree, decoded back into Python values.
+
+    The root records the query as netCDF-safe attributes — JSON strings for the per-site
+    arrays, since netCDF writes a one-element array as a scalar and readers would otherwise
+    have to handle both shapes. This decodes them.
+    """
+    out: dict[str, Any] = {}
+    for key, value in tree.attrs.items():
+        if not str(key).startswith(("query_", "omnisea_")):
+            continue
+        if isinstance(value, str) and value[:1] in "[{":
+            try:
+                out[key] = json.loads(value)
+                continue
+            except ValueError:
+                pass
+        out[key] = value
+    return out
 
 
 def coverage(tree: xr.DataTree, query: Query | None = None) -> pd.DataFrame:

@@ -34,7 +34,7 @@ dependencies = [
 cache  = ["requests-cache>=1.2"]        # omnisea.enable_cache()
 netcdf = ["netCDF4>=1.6"]               # omnisea.to_netcdf(), and ERDDAP griddap over OPeNDAP
 cioos  = ["PyYAML>=6.0"]                # CIOOS metadata-xml records are YAML
-examples = ["matplotlib>=3.8", "jupyter>=1.0", "scikit-learn>=1.4"]  # examples/bamfield.ipynb
+examples = ["matplotlib>=3.8", "jupyter>=1.0", "scikit-learn>=1.4", "statsmodels>=0.14"]  # examples/bamfield.ipynb
 dev = [
   "pytest>=8.0",
   "pytest-cov>=5.0",

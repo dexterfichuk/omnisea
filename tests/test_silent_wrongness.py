@@ -1009,3 +1009,91 @@ class TestInProcessMemosCanBeCleared:
         from omnisea.providers.cioos import CioosProvider
 
         assert CioosProvider().clear_cache() is None
+
+
+class TestDailyPointObservationsMatchTheirDay:
+    """A snow-depth reading taken once a day is not a *summary* of that day and rightly has no
+    cell_methods — but it still belongs to that day. Matched as instantaneous, a 30-minute
+    tolerance found nothing and a fully populated variable became a column of NaN."""
+
+    def tree(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=7, freq="D", tz="UTC", name="time")
+        frame = pd.DataFrame({
+            "surface_snow_thickness": [3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.0],   # no cell_methods
+            "air_temperature": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+        }, index=idx)
+        match = StationMatch(source="daily", provider="p", station_id="S", name="S",
+                             lat=48.8353, lon=-125.1358)
+        return build_tree(q, [StationSeries(
+            match=match, frame=frame, node_path="in_situ/daily/S",
+            # What a source with period="D" stamps on every node it produces.
+            attrs={"provider": "p", "source_name": "daily", "omnisea_period": "D"},
+            var_attrs={
+                "surface_snow_thickness": {"units": "cm"},
+                "air_temperature": {"units": "degC", "cell_methods": "time: mean"},
+            },
+        )])
+
+    def afternoon(self):
+        return pd.DataFrame({
+            "time": pd.date_range("2024-07-02 14:00", periods=4, freq="D", tz="UTC")
+        })
+
+    def test_a_point_observation_in_a_daily_source_matches(self):
+        got = align(self.tree(), on=self.afternoon(), tolerance="30min")
+        assert got["surface_snow_thickness"].notna().sum() == 4, "a full column became NaN"
+
+    def test_it_is_matched_as_an_interval_not_a_nearest_reading(self):
+        out = align(self.tree(), on=self.afternoon(), tolerance="30min")
+        assert "within its own" in out.attrs["omnisea_aggregation"]["surface_snow_thickness"]
+
+    def test_a_sub_daily_source_is_unaffected(self):
+        """Only sources that declare a period get this; an hourly reading is still nearest."""
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=48, freq="h", tz="UTC", name="time")
+        tree = build_tree(q, [node("H", "in_situ/hourly",
+                                   pd.DataFrame({"v": np.arange(48.0)}, index=idx),
+                                   {"v": {"units": "m"}})])
+        out = align(tree, on=self.afternoon(), tolerance="30min")
+        assert "nearest" in out.attrs["omnisea_aggregation"]["v"]
+
+
+class TestQueryAttrsRoundTrip:
+    def test_site_arrays_are_the_same_shape_for_one_site_and_many(self, tmp_path):
+        """netCDF writes a one-element numeric array as a scalar, so readers had to handle both
+        shapes depending on how many sites happened to be asked for."""
+        import xarray as xr
+
+        pytest.importorskip("netCDF4")
+        for n, sites in ((1, [Site(48.8, -125.1, "A")]),
+                         (2, [Site(48.8, -125.1, "A"), Site(49.1, -125.9, "B")])):
+            path = tmp_path / f"{n}.nc"
+            build_tree(Query.from_sites(sites, WEEK), []).to_netcdf(path)
+            attrs = omnisea.query_attrs(xr.open_datatree(path))
+            assert isinstance(attrs["query_site_names"], list)
+            assert len(attrs["query_site_radius_km"]) == n
+            assert len(attrs["query_site_lats"]) == n
+
+    def test_it_decodes_the_retrieval_settings_too(self):
+        tree = Catalog(Query.from_sites([BAMFIELD], WEEK), []).fetch(max_rows=99)
+        assert omnisea.query_attrs(tree)["omnisea_max_rows"] == 99
+
+
+class TestVariablesReadsAsAQuestionAboutVariables:
+    def test_membership_asks_about_variables_not_columns(self):
+        """`"air_temperature" in omnisea.variables()` returned False for every real variable
+        and True for "units", because a DataFrame tests its column names."""
+        v = omnisea.variables()
+        assert "air_temperature" in v
+        assert "sea_water_temperature" in v
+        assert "definitely_not_a_variable" not in v
+
+    def test_it_is_still_a_dataframe(self):
+        v = omnisea.variables()
+        assert isinstance(v, pd.DataFrame)
+        assert {"variable", "standard_name", "units", "source"} <= set(v.columns)
+
+    def test_names_gives_a_plain_list(self):
+        names = omnisea.variables().names()
+        assert isinstance(names, list) and "air_temperature" in names
