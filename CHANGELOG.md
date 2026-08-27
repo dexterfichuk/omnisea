@@ -37,6 +37,13 @@ observatories, and CIOOS metadata records.
   US river discharge, stage and water temperature under the same branch as ECCC's gauges,
   excluding discontinued sites by their own period of record. A cross-border query produces
   one tree shape with both countries' licences attributed.
+- **`usgs_water_daily`** — daily mean discharge, stage and water temperature, the partner to
+  `eccc_hydrometric_daily`, labelled by local calendar date and read in station-local time the
+  same way. NWIS discovery now counts only the record kinds each source can serve, so a site
+  holding nothing but water-quality grab samples is no longer promised and fetched empty.
+- **Constant text is stored once.** A mooring that repeats `scientist`, `project` and `agency`
+  on every ten-minute row becomes a node whose metadata is scalar coordinates — one netCDF
+  write went from 9.8 MB to under 1 MB with nothing lost.
 - **Faster, and kinder to the servers.** Request concurrency is two-level — 4 per host, 24
   overall — so a bare discovery across ~26 sources at fifteen institutions is bounded by the
   slowest server rather than rationed through one pool of eight, while no single institution

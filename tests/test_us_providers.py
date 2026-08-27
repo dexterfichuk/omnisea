@@ -47,13 +47,17 @@ COOPS_HILO = {
 NWIS_RDB = (
     "# comment\n"
     "agency_cd\tsite_no\tstation_nm\tsite_tp_cd\tdec_lat_va\tdec_long_va\tparm_cd\t"
-    "begin_date\tend_date\n"
-    "5s\t15s\t50s\t7s\t16s\t16s\t5s\t10d\t10d\n"
+    "data_type_cd\tbegin_date\tend_date\n"
+    "5s\t15s\t50s\t7s\t16s\t16s\t5s\t2s\t10d\t10d\n"
     "USGS\t12045500\tELWHA RIVER AT MCDONALD BR\tST\t48.0547802\t-123.5832136\t00060\t"
-    "1897-10-01\t2026-08-27\n"
+    "uv\t1897-10-01\t2026-08-27\n"
     "USGS\t12045500\tELWHA RIVER AT MCDONALD BR\tST\t48.0547802\t-123.5832136\t00065\t"
-    "2007-10-01\t2026-08-27\n"
-    "USGS\t99999999\tLONG GONE CREEK\tST\t48.1\t-123.4\t00060\t1910-01-01\t1972-10-31\n"
+    "uv\t2007-10-01\t2026-08-27\n"
+    "USGS\t12045500\tELWHA RIVER AT MCDONALD BR\tST\t48.0547802\t-123.5832136\t00060\t"
+    "dv\t1897-10-01\t2026-08-27\n"
+    # A site holding ONLY water-quality grab samples: the IV service answers nothing for it.
+    "USGS\t88888888\tQW ONLY CREEK\tST\t48.06\t-123.55\t00060\tqw\t2000-01-01\t2026-08-27\n"
+    "USGS\t99999999\tLONG GONE CREEK\tST\t48.1\t-123.4\t00060\tuv\t1910-01-01\t1972-10-31\n"
 )
 NWIS_IV = {
     "value": {
@@ -154,7 +158,7 @@ class TestCoopsMirrorsTheCanadianTideShape:
 class TestNwisTranslation:
     def test_rdb_parsing_skips_comments_and_the_dtype_row(self):
         rows = _parse_rdb(NWIS_RDB)
-        assert len(rows) == 3
+        assert len(rows) == 5
         assert rows[0]["site_no"] == "12045500" and rows[0]["parm_cd"] == "00060"
 
     def source(self, monkeypatch):
@@ -191,6 +195,43 @@ class TestNwisTranslation:
         (series,) = source.fetch(q, source.discover(q))
         assert series.frame["river_discharge"].iloc[0] == pytest.approx(28.316846592)
         assert series.var_attrs["river_discharge"]["units"] == "m3 s-1"
+
+    def test_a_grab_sample_only_site_is_not_promised_by_the_iv_source(self, monkeypatch):
+        """seriesCatalogOutput lists water-quality grab samples too — 573 'qw' rows in one
+        Olympic Peninsula box — and the IV service answers nothing for those sites."""
+        source = self.source(monkeypatch)
+        ids = [m.station_id for m in source.discover(query(lat=48.05, lon=-123.58))]
+        assert "88888888" not in ids
+
+    def test_the_daily_source_serves_means_labelled_by_local_date(self, monkeypatch):
+        from omnisea.providers.usgs import UsgsProvider, UsgsWaterDailySource
+
+        source = UsgsWaterDailySource(UsgsProvider())
+        monkeypatch.setattr(usgs_mod, "get_text",
+                            lambda url, params, provider=None, **_: NWIS_RDB)
+
+        def dv(url, params, provider=None, **_):
+            assert url.endswith("/dv/"), "the daily source must ask the DV service"
+            assert params["statCd"] == "00003", "the mean — the statistic cell_methods asserts"
+            return {
+                "value": {"timeSeries": [{
+                    "variable": {"variableCode": [{"value": "00060"}],
+                                 "unit": {"unitCode": "ft3/s"}, "noDataValue": -999999.0},
+                    "values": [{"value": [
+                        {"value": "1020", "qualifiers": ["A"],
+                         "dateTime": "2024-07-01T00:00:00.000"},
+                    ]}],
+                }]}
+            }
+
+        monkeypatch.setattr(usgs_mod, "get_json", dv)
+        q = query(lat=48.05, lon=-123.58)
+        (series,) = source.fetch(q, source.discover(q))
+        assert series.node_path == "in_situ/hydrometric_daily/12045500"
+        assert series.frame["river_discharge"].iloc[0] == 1020.0
+        assert series.var_attrs["river_discharge"]["cell_methods"] == "time: mean"
+        assert "LOCAL_DATE" in series.attrs["time_reference"]
+        assert series.attrs["omnisea_period"] == "D"
 
     def test_us_and_canadian_rivers_share_a_branch(self, monkeypatch):
         source = self.source(monkeypatch)

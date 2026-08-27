@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import timedelta
 from typing import Any
 
@@ -43,6 +44,7 @@ __all__ = ["UsgsProvider"]
 
 SITE_SERVICE = "https://waterservices.usgs.gov/nwis/site/"
 IV_SERVICE = "https://waterservices.usgs.gov/nwis/iv/"
+DV_SERVICE = "https://waterservices.usgs.gov/nwis/dv/"
 
 #: Typical NWIS reporting interval is 15 minutes.
 SAMPLES_PER_DAY = 96.0
@@ -61,10 +63,11 @@ class UsgsProvider(Provider):
     cache_policy = {
         "waterservices.usgs.gov/nwis/site*": timedelta(days=7),
         "waterservices.usgs.gov/nwis/iv*": NEVER_CACHE,
+        "waterservices.usgs.gov/nwis/dv*": timedelta(hours=1),
     }
 
     def build_sources(self) -> Sequence[RetrievalSource]:
-        return [UsgsWaterSource(self)]
+        return [UsgsWaterSource(self), UsgsWaterDailySource(self)]
 
 
 class UsgsWaterSource(RetrievalSource):
@@ -74,6 +77,8 @@ class UsgsWaterSource(RetrievalSource):
     title = "USGS NWIS instantaneous values"
     node_path = "in_situ/hydrometric"
     feature_type = "timeSeries"
+    #: ``data_type_cd`` values whose records this source can actually serve.
+    record_kinds = frozenset({"uv", "iv", "rt"})
 
     #: Keyed by NWIS parameter code. Same CF names as the ECCC hydrometric sources, so a
     #: cross-border query serves comparable columns under identical names.
@@ -134,9 +139,15 @@ class UsgsWaterSource(RetrievalSource):
 
         # One row per (site, parameter, record); fold to one match per site, keeping the
         # union period of record so a discontinued gauge excludes itself by its own dates.
+        # data_type_cd names the record kind — 'uv' instantaneous, 'dv' daily, 'qw' grab
+        # samples — and only the kind this source fetches counts as availability: one box on
+        # the Olympic Peninsula holds 573 water-quality records that the IV service would
+        # answer with nothing.
         by_site: dict[str, dict[str, Any]] = {}
         for row in rows:
             if row.get("parm_cd") not in self.fields:
+                continue
+            if row.get("data_type_cd") not in self.record_kinds:
                 continue
             site = by_site.setdefault(
                 str(row["site_no"]),
@@ -195,6 +206,20 @@ class UsgsWaterSource(RetrievalSource):
         )
         return [r for r in results if r is not None]
 
+    @property
+    def _service(self) -> str:
+        return IV_SERVICE
+
+    def _request_params(self, match: StationMatch, params_wanted: list[str],
+                        start: Any, end: Any) -> dict[str, Any]:
+        return {
+            "format": "json",
+            "sites": match.station_id,
+            "parameterCd": ",".join(params_wanted),
+            "startDT": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "endDT": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+
     def _fetch_site(self, query: Query, match: StationMatch) -> StationSeries | None:
         params_wanted = match.extra.get("params") or list(self.fields)
         to_cf = self.to_cf_units(query)
@@ -205,14 +230,8 @@ class UsgsWaterSource(RetrievalSource):
         for start, end in chunk_time(query.start, query.end, max_days=MAX_DAYS_PER_REQUEST):
             try:
                 payload = get_json(
-                    IV_SERVICE,
-                    {
-                        "format": "json",
-                        "sites": match.station_id,
-                        "parameterCd": ",".join(params_wanted),
-                        "startDT": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                        "endDT": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    },
+                    self._service,
+                    self._request_params(match, params_wanted, start, end),
                     provider=self.name,
                 )
             except UpstreamError as exc:
@@ -261,6 +280,65 @@ class UsgsWaterSource(RetrievalSource):
             ),
             var_attrs=var_attrs,
         )
+
+
+class UsgsWaterDailySource(UsgsWaterSource):
+    """Daily mean discharge, stage and water temperature — the historical archive.
+
+    The partner to ``eccc_hydrometric_daily``, under the matching branch. NWIS labels each
+    daily row by the site's **local calendar date** stamped at midnight with no offset —
+    ECCC's convention exactly — so the node records ``time_reference`` and ``align()`` reads
+    those stamps in station-local time rather than handing an afternoon sample the next
+    day's mean.
+    """
+
+    name = "usgs_water_daily"
+    title = "USGS NWIS daily values"
+    node_path = "in_situ/hydrometric_daily"
+    record_kinds = frozenset({"dv"})
+    period = "D"
+    #: One row per day.
+    samples_per_day = 1.0
+
+    fields = {
+        code: replace(
+            spec,
+            cell_methods="time: mean",
+            long_name=f"Daily mean {spec.long_name.lower()}",
+        )
+        for code, spec in UsgsWaterSource.fields.items()
+    }
+
+    def discover(self, query: Query) -> list[StationMatch]:
+        matches = super().discover(query)
+        for match in matches:
+            match.n_rows_est = max(1, int(query.days))
+        return matches
+
+    def _fetch_site(self, query: Query, match: StationMatch) -> StationSeries | None:
+        series = super()._fetch_site(query, match)
+        if series is None:
+            return None
+        series.attrs["time_reference"] = (
+            "LOCAL_DATE: daily values are labelled by the site's local calendar date and "
+            "stamped at midnight with no UTC offset."
+        )
+        return series
+
+    @property
+    def _service(self) -> str:
+        return DV_SERVICE
+
+    def _request_params(self, match: StationMatch, params_wanted: list[str],
+                        start: Any, end: Any) -> dict[str, Any]:
+        return {
+            "format": "json",
+            "sites": match.station_id,
+            "parameterCd": ",".join(params_wanted),
+            "statCd": "00003",  # the daily MEAN; the statistic the cell_methods asserts
+            "startDT": start.strftime("%Y-%m-%d"),
+            "endDT": end.strftime("%Y-%m-%d"),
+        }
 
 
 def _number(value: Any, no_data: Any) -> float | None:
