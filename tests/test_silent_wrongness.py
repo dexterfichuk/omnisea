@@ -20,7 +20,7 @@ import pytest
 
 import omnisea
 from omnisea import http
-from omnisea.align import align
+from omnisea.align import _read_local_labels, align
 from omnisea.catalog import Catalog
 from omnisea.errors import PayloadTooLargeError, QueryError
 from omnisea.providers.base import StationMatch, StationSeries, frame_from_records
@@ -503,6 +503,60 @@ class TestLocalDateSourcesDoNotLeakTheFuture:
         sample = pd.DataFrame({"time": [pd.Timestamp("2024-07-29T01:38:00Z")]})
         out = align(self.tree(), on=sample)
         assert "station-local time" in out.attrs["omnisea_aggregation"]["precipitation_amount"]
+
+    def test_a_resampled_grid_gets_the_same_correction_as_a_join(self):
+        """The first fix landed on align(on=) only, so align(freq=) still handed out the next
+        day's rain for the first eight hours of every UTC day — the two paths disagreed by a
+        whole day's weather, silently, over the same tree."""
+        grid = align(self.tree(), freq="1h")["precipitation_amount"]
+        # 01:00Z on the 29th is 18:00 PDT on the 28th: the 28th's total, not the 29th's.
+        assert grid.loc["2024-07-29 01:00"] == 14.6
+        assert grid.loc["2024-07-28 16:00"] == 14.6
+
+    def test_the_two_paths_agree_instant_for_instant(self):
+        """Over the span the grid covers, joining and resampling must answer identically.
+
+        (They differ in *extent*, not in value: an on= join reaches backward into the last
+        summary's own interval, while a freq= grid stops at the last observation.)
+        """
+        tree = self.tree()
+        gridded = align(tree, freq="1h")["precipitation_amount"]
+        stamps = pd.DatetimeIndex(gridded.index).tz_localize("UTC")
+        joined = align(tree, on=pd.DataFrame({"time": stamps}))["precipitation_amount"]
+        assert list(joined.to_numpy()) == list(gridded.to_numpy())
+
+    def test_the_resampled_audit_line_says_so_too(self):
+        out = align(self.tree(), freq="1h")
+        assert "station-local time" in out.attrs["omnisea_aggregation"]["precipitation_amount"]
+
+    def test_a_recorded_zone_beats_the_longitude_estimate(self):
+        """Checked against ECCC's own hourly data: binning hourly precipitation by *civil*
+        local date reproduced the published daily total on 1,273 of 1,369 station-days during
+        daylight time, against 982 for a fixed standard-time offset. So when the provider
+        knows the zone, the conversion follows the zone -- DST and all."""
+        stamps = pd.DatetimeIndex(["2024-01-15", "2024-07-15"])  # PST then PDT
+        shifted, described = _read_local_labels(
+            stamps, {"time_reference": "LOCAL_DATE", "time_zone": "America/Vancouver",
+                     "longitude": -125.77},
+        )
+        assert list(shifted) == [pd.Timestamp("2024-01-15T08:00"),
+                                 pd.Timestamp("2024-07-15T07:00")]
+        assert "America/Vancouver" in described
+
+    def test_longitude_is_the_fallback_when_no_zone_is_recorded(self):
+        stamps = pd.DatetimeIndex(["2024-07-15"])
+        shifted, described = _read_local_labels(
+            stamps, {"time_reference": "LOCAL_DATE", "longitude": -125.77},
+        )
+        # Rounded to the hour: a raw lon/15 of -8.38 h put ~23 minutes of every day on the
+        # wrong side of midnight.
+        assert list(shifted) == [pd.Timestamp("2024-07-15T08:00")]
+        assert described == "read in station-local time (UTC-8, estimated from longitude)"
+
+    def test_a_node_with_neither_is_left_alone(self):
+        assert _read_local_labels(
+            pd.DatetimeIndex(["2024-07-15"]), {"time_reference": "LOCAL_DATE"}
+        ) == (None, "")
 
     def test_the_returned_index_is_the_callers_own_timestamps(self):
         stamps = pd.DatetimeIndex(["2024-07-29T01:38:00Z", "2024-07-28T16:00:00Z"])

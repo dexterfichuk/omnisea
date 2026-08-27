@@ -820,75 +820,110 @@ class TestLiveDefaultServer:
 class TestLiveCioosPacific:
     """A second server, reached the way a user would reach it: through ``erddap_server=``.
 
-    This is the wave buoy's home server, so the physics checks live here — and no offline test
-    exercises the ``erddap_server=`` knob against a real installation, so this class is also
-    the proof that "any ERDDAP" is more than a claim.
+    No offline test exercises that knob against a real installation, so this class is the proof
+    that "any ERDDAP" is more than a claim. It deliberately names **no dataset**: this
+    catalogue is a third party's to change, and it does — it used to host a Barkley Sound wave
+    buoy that has since been withdrawn. Pinning an id here would have turned somebody else's
+    housekeeping into a failing build, which is exactly the coupling omnisea exists to avoid.
+    What is asserted is what omnisea promises about whatever the server does return.
     """
 
     CIOOS_PACIFIC = "https://data.cioospacific.ca/erddap"
+    WINDOW = ("2021-04-01", "2021-04-08")
 
     @pytest.fixture(scope="class")
     def catalog(self):
         source = ErddapTableSource(ErddapProvider())
         query = Query.from_position(
-            **BAMFIELD, time=("2021-04-01", "2021-04-08"), radius_km=80,
+            **BAMFIELD, time=self.WINDOW, radius_km=80,
             erddap_server=self.CIOOS_PACIFIC,
         )
         try:
-            return source, query, source.discover(query)
+            matches = source.discover(query)
         except UpstreamError as exc:
             skip_if_unreachable(exc)
+        if not matches:
+            pytest.skip("CIOOS Pacific published nothing near Bamfield in this window")
+        return source, query, matches
 
-    def test_the_barkley_sound_wave_buoy_is_discoverable(self, catalog):
-        _, _, matches = catalog
-        ids = {m.station_id for m in matches}
-        assert "PRIMED_wavebuoy" in ids, f"CIOOS Pacific returned {sorted(ids)}"
-
-    def test_discovery_reports_a_plausible_position_and_period(self, catalog):
-        _, _, matches = catalog
-        buoy = next(m for m in matches if m.station_id == "PRIMED_wavebuoy")
-        assert 48.5 < buoy.lat < 49.5 and -126.5 < buoy.lon < -125.0
-        assert buoy.distance_km < 80
-        assert buoy.first < pd.Timestamp("2021-04-01T00:00:00Z") < buoy.last
-
-    def test_a_real_fetch_returns_waves_in_the_requested_window(self, catalog):
+    @pytest.fixture(scope="class")
+    def fetched(self, catalog):
+        """The first match that actually returns rows, with its series."""
         source, query, matches = catalog
-        buoy = [m for m in matches if m.station_id == "PRIMED_wavebuoy"]
-        (series,) = source.fetch(query, buoy)
+        for match in matches:
+            try:
+                series = source.fetch(query, [match])
+            except UpstreamError as exc:
+                skip_if_unreachable(exc)
+            for item in series:
+                if not item.is_empty:
+                    return match, item
+        pytest.skip("every dataset near Bamfield was empty for this window")
+
+    def test_discovery_reports_positions_inside_the_radius_it_was_given(self, catalog):
+        _, _, matches = catalog
+        for match in matches:
+            assert match.distance_km is not None and match.distance_km <= 80.0, match.station_id
+            assert -90 <= match.lat <= 90 and -180 <= match.lon <= 180
+
+    def test_discovery_only_offers_records_overlapping_the_window(self, catalog):
+        _, _, matches = catalog
+        start, end = (pd.Timestamp(t, tz="UTC") for t in self.WINDOW)
+        for match in matches:
+            assert match.first is None or match.first <= end, match.station_id
+            assert match.last is None or match.last >= start, match.station_id
+
+    def test_a_real_fetch_stays_inside_the_requested_window(self, fetched):
+        _, series = fetched
         frame = series.frame
         assert not frame.empty
-        assert frame.index.min() >= pd.Timestamp("2021-04-01T00:00:00Z")
-        assert frame.index.max() <= pd.Timestamp("2021-04-08T00:00:00Z")
+        assert frame.index.min() >= pd.Timestamp(self.WINDOW[0], tz="UTC")
+        assert frame.index.max() <= pd.Timestamp(self.WINDOW[1], tz="UTC")
+        assert frame.index.is_monotonic_increasing and frame.index.is_unique
 
-        # This buoy reports significant wave height twice — from the downcrossing analysis and
-        # from the spectrum — so both keep their own names and neither takes the CF one.
-        significant = [
-            col
-            for col, attrs in series.var_attrs.items()
-            if attrs.get("standard_name") == "sea_surface_wave_significant_height"
-        ]
-        assert len(significant) == 2, significant
-        for col in significant:
-            heights = frame[col].dropna()
-            assert 0.0 < heights.min() and heights.max() < 15.0  # metres, open Pacific coast
+    def test_cell_methods_are_the_datasets_own(self, fetched):
+        """align() resamples on these, so omnisea has to pass through exactly what the dataset
+        declares — no drops, and nothing invented where the dataset is silent. Read back from
+        the server's own info response rather than assumed, because whether these datasets
+        declare cell_methods at all is their choice, not omnisea's."""
+        import requests
 
-    def test_the_datasets_cell_methods_reach_the_output(self, catalog):
-        """align() resamples on these, so what the dataset declares has to reach the output."""
-        source, query, matches = catalog
-        buoy = [m for m in matches if m.station_id == "PRIMED_wavebuoy"]
-        (series,) = source.fetch(query, buoy)
-        methods = {a.get("cell_methods") for a in series.var_attrs.values()}
-        assert "time: point" in methods
+        match, series = fetched
+        info = requests.get(
+            f"{self.CIOOS_PACIFIC}/info/{match.station_id}/index.json", timeout=120
+        ).json()["table"]
+        columns = info["columnNames"]
+        variable, attribute, value = (
+            columns.index("Variable Name"), columns.index("Attribute Name"),
+            columns.index("Value"),
+        )
+        declared = {
+            row[variable]: row[value]
+            for row in info["rows"]
+            if row[attribute] == "cell_methods"
+        }
+        emitted = {
+            attrs.get("source_field") or name: attrs["cell_methods"]
+            for name, attrs in series.var_attrs.items()
+            if attrs.get("cell_methods")
+        }
+        invented = set(emitted) - set(declared)
+        assert not invented, f"omnisea invented cell_methods for {sorted(invented)}"
+        if not declared:
+            pytest.skip(
+                f"{match.station_id} declares no cell_methods upstream, so there is nothing "
+                "here to pass through — the pass-through itself is covered offline"
+            )
+        for field in set(emitted) & set(declared):
+            assert emitted[field] == declared[field], field
 
-    def test_every_standard_name_emitted_is_a_real_cf_name(self, catalog):
+    def test_every_standard_name_emitted_is_a_real_cf_name(self, fetched):
         """These names are the dataset's, not omnisea's — but they still land in the output."""
         import re
 
         import requests
 
-        source, query, matches = catalog
-        buoy = [m for m in matches if m.station_id == "PRIMED_wavebuoy"]
-        (series,) = source.fetch(query, buoy)
+        _, series = fetched
         table = requests.get(
             "https://cfconventions.org/Data/cf-standard-names/current/src/"
             "cf-standard-name-table.xml",
@@ -901,8 +936,14 @@ class TestLiveCioosPacific:
             for attrs in series.var_attrs.values()
             if attrs.get("standard_name")
         }
-        assert emitted, "the buoy published no standard names at all"
+        assert emitted, "the dataset published no standard names at all"
         assert not (emitted - valid), f"not CF standard names: {sorted(emitted - valid)}"
+
+    def test_the_series_is_placed_and_attributed(self, fetched):
+        match, series = fetched
+        assert series.node_path.startswith("in_situ/erddap/")
+        assert series.attrs.get("source_url", "").startswith(self.CIOOS_PACIFIC)
+        assert series.attrs.get("license")
 
 
 @live

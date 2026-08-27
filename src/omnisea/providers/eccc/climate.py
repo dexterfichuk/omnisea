@@ -34,6 +34,7 @@ from .common import (
     MM_TO_KGM2,
     TENS_NOTE,
     TENS_OF_DEGREES,
+    time_zone_for,
 )
 
 __all__ = [
@@ -226,8 +227,13 @@ class EcccClimateDaily(OgcFeaturesSource):
         attrs = super().node_attrs(query, match)
         attrs["time_reference"] = (
             "LOCAL_DATE: daily aggregates are labelled by local calendar date and stamped at "
-            "00:00Z. climate-daily publishes no UTC_DATE, so no offset is applied."
+            "00:00Z. climate-daily publishes no UTC_DATE, so no offset is applied here."
         )
+        # Which local date, though? align() needs the station's actual zone to read one of
+        # these rows against a UTC instant, and the response never says. The province does.
+        zone = time_zone_for(match.extra.get("properties", {}), match.lon)
+        if zone:
+            attrs["time_zone"] = zone
         return attrs
 
 
@@ -422,9 +428,12 @@ class EcccClimateMonthly(OgcFeaturesSource):
         attrs["time_reference"] = (
             "LOCAL_DATE: monthly aggregates are labelled by local calendar month and stamped at "
             "00:00Z on the first day of that month. climate-monthly publishes no UTC date and "
-            "no day of month, so no offset is applied. SNOW_ON_GROUND_LAST_DAY is the one "
+            "no day of month, so no offset is applied here. SNOW_ON_GROUND_LAST_DAY is the one "
             "exception: it is read on the last day of the month it is stamped at the start of."
         )
+        zone = time_zone_for(match.extra.get("properties", {}), match.lon)
+        if zone:
+            attrs["time_zone"] = zone
         return attrs
 
 

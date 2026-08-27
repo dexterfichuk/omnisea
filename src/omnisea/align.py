@@ -175,7 +175,18 @@ def _node_frames(
             "source_name": str(ds.attrs.get("source_name") or ""),
             "period": str(ds.attrs.get("omnisea_period") or ""),
         }
-        out.append((label, node.path, frame.sort_index(), attrs, node_meta))
+        node_meta["time_zone"] = str(ds.attrs.get("time_zone") or "")
+        frame = frame.sort_index()
+        # If this node labels each row by its LOCAL calendar date, move the stamps to the UTC
+        # instants those local days actually start at — once, here. Every path downstream (the
+        # freq= grid, the on= lookup, the span the grid is built from) then works in honest
+        # UTC. Doing it inside the join instead fixed on= and left freq= handing out the next
+        # day's weather for the first eight hours of every UTC day.
+        shifted, described = _read_local_labels(frame.index, node_meta)
+        if shifted is not None:
+            frame = frame.set_axis(shifted)
+        node_meta["local_shift"] = described
+        out.append((label, node.path, frame, attrs, node_meta))
     return out
 
 
@@ -353,10 +364,10 @@ def align(
                 interval = bool(
                     str(attrs.get(variable, {}).get("cell_methods") or "").strip()
                 ) or bool(node_meta.get("period"))
-                aligned, rule = _join_to(
-                    series, target, tolerance, direction, interval,
-                    local_offset=_local_day_offset(node_meta),
-                )
+                aligned, rule = _join_to(series, target, tolerance, direction, interval)
+
+            if aligned is not None and node_meta.get("local_shift"):
+                rule += f", {node_meta['local_shift']}"
 
             if aligned is None:
                 continue
@@ -512,7 +523,6 @@ def _join_to(
     tolerance: str | pd.Timedelta | None,
     direction: str,
     interval: bool,
-    local_offset: pd.Timedelta | None = None,
 ) -> tuple[pd.Series | None, str]:
     """Join a series onto supplied timestamps, matching by what the variable actually is.
 
@@ -527,15 +537,6 @@ def _join_to(
     is close enough" is a real judgement the caller should make.
     """
     cadence = _native_cadence(series)
-
-    described_shift = ""
-    if interval and local_offset is not None:
-        # This source labels each row by its LOCAL calendar date. Shift the caller's UTC
-        # timestamps into the station's approximate local time so a sample lands on the day it
-        # actually happened, rather than on the next day's summary. See _local_day_offset.
-        target = target + local_offset
-        hours = local_offset / pd.Timedelta(hours=1)
-        described_shift = f", matched in station-local time (UTC{hours:+.1f}h)"
 
     if interval:
         used_direction = "backward"
@@ -575,15 +576,11 @@ def _join_to(
     merged = pd.merge_asof(
         left, right, on="__t", direction=used_direction, tolerance=window
     )
-    index = pd.DatetimeIndex(merged["__t"])
-    if local_offset is not None:
-        # Hand back the caller's own timestamps, not the shifted ones used for matching.
-        index = index - local_offset
-    out = pd.Series(merged["__v"].to_numpy(), index=index)
+    out = pd.Series(merged["__v"].to_numpy(), index=pd.DatetimeIndex(merged["__t"]))
     matched = int(out.notna().sum())
     if matched == 0:
         log.debug("no rows within %s for a series of %d points", described, len(series))
-    return out, f"{described}{described_shift} ({matched}/{len(target)} matched)"
+    return out, f"{described} ({matched}/{len(target)} matched)"
 
 
 def _pretty(delta: pd.Timedelta | None) -> str:
@@ -1012,25 +1009,43 @@ def _scalar_or_none(ds: xr.Dataset, name: str) -> float | None:
         return None
 
 
-def _local_day_offset(node_meta: Mapping[str, Any]) -> pd.Timedelta | None:
-    """How far this node's timestamps sit from the local day they are labelled with.
+def _read_local_labels(
+    index: pd.DatetimeIndex, node_meta: Mapping[str, Any]
+) -> tuple[pd.DatetimeIndex | None, str]:
+    """Re-read local-calendar-date labels as the UTC instants those local days begin at.
 
     Some sources label a daily or monthly summary by its **local calendar date** and stamp it
     at 00:00Z — ECCC's ``climate-daily`` publishes no UTC date at all, and omnisea records that
-    in the node's ``time_reference``. Matching such a row against a UTC instant then lands a
-    late-afternoon sample on the *following* day's summary: at Tofino a 18:38 PDT cast is
-    01:38Z the next day, so it collected rain, Tmax and Tmin for weather that had not yet
-    happened — systematically, for every afternoon sample.
+    in the node's ``time_reference``. Such an index is a local clock reading wearing a UTC
+    stamp. Taken at face value it lands a late-afternoon sample on the *following* day's
+    summary: at Tofino a 18:38 PDT cast is 01:38Z the next day, so it collected rain, Tmax and
+    Tmin for weather that had not yet happened — systematically, for every afternoon sample.
 
-    There is no UTC offset in the response, so it is estimated from the station's longitude
-    (solar time, 15 deg per hour). That is approximate near a timezone boundary and near local
-    midnight, but it is wrong by at most an hour where reading the stamp as UTC is wrong by a
-    whole day. ``None`` when the node does not label by local date, or has no longitude.
+    The station's zone is what settles it, and providers that know it record it in the node's
+    ``time_zone``; the conversion is then exact, daylight saving included. Failing that the
+    offset is estimated from longitude (solar time, 15 deg per hour, rounded to the hour),
+    which can be an hour out against being a whole day out. Returns ``(None, "")`` when the
+    node does not label by local date, or offers nothing to convert with.
     """
     reference = str(node_meta.get("time_reference") or "").upper()
     if "LOCAL" not in reference:
-        return None
+        return None, ""
+
+    zone = str(node_meta.get("time_zone") or "").strip()
+    if zone:
+        try:
+            localized = index.tz_localize(zone, nonexistent="shift_forward", ambiguous=True)
+        except Exception:  # an unknown zone name should not cost the caller the whole node
+            log.warning("node records time_zone=%r, which pandas cannot resolve", zone)
+        else:
+            return (
+                pd.DatetimeIndex(localized.tz_convert("UTC").tz_localize(None)),
+                f"read in station-local time ({zone})",
+            )
+
     longitude = node_meta.get("longitude")
     if longitude is None or pd.isna(longitude):
-        return None
-    return pd.Timedelta(hours=float(longitude) / 15.0)
+        return None, ""
+    offset = pd.Timedelta(hours=round(float(longitude) / 15.0))
+    hours = int(offset / pd.Timedelta(hours=1))
+    return index - offset, f"read in station-local time (UTC{hours:+d}, estimated from longitude)"

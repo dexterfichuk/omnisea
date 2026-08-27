@@ -527,8 +527,11 @@ Every node carries the institution that published it, the licence and the URL it
 so attribution comes out of the result rather than out of memory:
 
 ```python
-omnisea.provenance(tree)     # one row per source: institution, licence, terms, stations, span
-omnisea.citation(tree)       # an attribution block for a methods section
+omnisea.provenance(tree)                    # one row per source: institution, licence, span
+omnisea.provenance(tree, by="node")         # one row per station, with the exact URL used
+omnisea.provenance(tree, by="provider")     # one row per organization
+omnisea.citation(tree)                      # an attribution block for a methods section
+omnisea.citation(tree, include_urls=True)   # ... with every endpoint listed
 ```
 
 ```
@@ -541,10 +544,11 @@ covering 2024-07-01 to 2024-07-08.
     Licence: Open Government Licence – Canada. Terms: https://eccc-msc.github.io/...
 ```
 
-It also reports what went *wrong* — an incomplete fetch, or stations that matched but returned
-no rows. Publishing a partial pull without noticing is the failure this is meant to prevent.
-Pass `include_urls=True` for the exact endpoint each series came from, which matters for
-realtime sources whose contents cannot be recovered later from the query alone.
+`citation()` also reports what went *wrong* — an incomplete fetch, or stations that matched but
+returned no rows. Publishing a partial pull without noticing is the failure this is meant to
+prevent. Its `include_urls=True` lists the exact endpoint each series came from, which matters
+for realtime sources whose contents cannot be recovered later from the query alone;
+`provenance(tree, by="node")` gives the same URLs as a frame.
 
 ## Adding your own source
 

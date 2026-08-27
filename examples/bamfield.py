@@ -20,7 +20,10 @@ import pandas as pd
 
 import omnisea
 
-warnings.simplefilter("ignore")
+# Third-party deprecations only. omnisea's own warnings are left on: they are how it tells you
+# a join is about to be wrong, and an example that hides them teaches the wrong habit.
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 # A Site is the location type: coordinates, a search radius, and the name you know it by.
 # That name travels with the results, so what comes back is joinable to your own records.
@@ -192,10 +195,12 @@ print(joined.groupby("site")["value"].agg(["count", "mean"]).round(3).to_string(
 rule("10. Bring your own data and build a model")
 
 rng = np.random.default_rng(0)
+# Pacific local time, made explicit. Drop the tz_localize and omnisea will warn you that it is
+# reading these as UTC -- which on a tide series is metres of error.
 field_times = pd.to_datetime([
     "2024-07-01 09:14", "2024-07-01 15:40", "2024-07-02 10:05", "2024-07-03 08:50",
     "2024-07-04 14:20", "2024-07-05 09:00", "2024-07-06 16:30", "2024-07-07 11:10",
-])
+]).tz_localize("America/Vancouver")
 mine = pd.DataFrame({
     "time": field_times,
     "chlorophyll_ug_L": rng.uniform(1.5, 8.0, len(field_times)).round(2),
@@ -248,17 +253,30 @@ except ImportError:
     print("scikit-learn is not installed; skipping "
           '(pip install -e ".[examples]" to run this section)')
 else:
-    # A mock five-day deployment sampling every two hours. The samples are SYNTHETIC,
-    # generated from the real fetched drivers with coefficients we choose, plus noise --
-    # so this tests the pipeline, not oceanography. If the join were misaligned by the
-    # station's UTC offset, or a daily total had been interpolated, the fit would not
-    # recover the numbers we put in.
-    stamps = pd.date_range("2024-07-02 00:00", "2024-07-07 00:00", freq="2h")
-    drivers = omnisea.align(tree, on=pd.DataFrame({"time": stamps}), tolerance="30min")
+    # A mock logger deployment, sampling every two hours in Pacific local time. The response
+    # is SYNTHETIC -- built from the real fetched drivers with coefficients we choose, plus
+    # noise -- so this tests the pipeline, not oceanography.
+    #
+    # HOW it is built matters. We go around align() entirely: raw node series, interpolated
+    # with plain pandas, and the daily lighthouse value looked up by LOCAL calendar date. If
+    # we generated the response from align()'s output and then refit on align()'s output, any
+    # systematic join error would appear identically on both sides and cancel exactly -- the
+    # recovery would look perfect while the join was hours out. Building the truth outside the
+    # join is what makes the recovery below an actual test of it.
+    local = pd.date_range("2024-07-02 00:00", "2024-07-07 00:00", freq="2h",
+                          tz="America/Vancouver")
+    naive = local.tz_convert("UTC").tz_localize(None)
 
-    tide = drivers["water_surface_height_above_reference_datum"].to_numpy()
-    air_max = drivers["air_temperature_max"].to_numpy()
-    diurnal = np.sin(2 * np.pi * (drivers.index.hour.to_numpy() - 9) / 24)
+    tide_raw = tides["water_surface_height_above_reference_datum"].to_series()
+    tide_at = (tide_raw.reindex(tide_raw.index.union(naive))
+               .interpolate(method="time").reindex(naive).to_numpy())
+
+    daily = weather["air_temperature_max"].to_series()
+    # The lighthouse record is labelled by local calendar date, so a sample takes the value
+    # for the local day it fell on. Looked up directly here, without asking align().
+    tmax_at = daily.reindex(
+        pd.DatetimeIndex(local.normalize().tz_localize(None))
+    ).to_numpy()
 
     TRUE = {
         "intercept": 6.00,
@@ -266,29 +284,34 @@ else:
         "air_temperature_max": 0.30,
         "hour_sin": 0.60,
     }
+    diurnal = np.sin(2 * np.pi * (local.hour.to_numpy() - 9) / 24)
     logger = pd.DataFrame({
-        "time": drivers.index,
+        "time": local,
         "water_temp_c": (
             TRUE["intercept"]
-            + TRUE["water_surface_height_above_reference_datum"] * tide
-            + TRUE["air_temperature_max"] * air_max
+            + TRUE["water_surface_height_above_reference_datum"] * tide_at
+            + TRUE["air_temperature_max"] * tmax_at
             + TRUE["hour_sin"] * diurnal
-            + rng.normal(0, 0.15, len(drivers))
+            + rng.normal(0, 0.15, len(local))
         ).round(2),
-    })
+    }).dropna()
 
+    # ... and only now does align() see the problem, from the timestamps alone.
     data = omnisea.align(tree, on=logger, tolerance="30min")
-    data["hour_sin"] = np.sin(2 * np.pi * (data.index.hour - 9) / 24)
+    # align() hands back UTC; the diurnal term is a local-clock effect, so convert back.
+    local_hours = data.index.tz_localize("UTC").tz_convert("America/Vancouver").hour
+    data["hour_sin"] = np.sin(2 * np.pi * (local_hours - 9) / 24)
 
     predictors = ["water_surface_height_above_reference_datum",
                   "air_temperature_max", "hour_sin"]
-    X, y = data[predictors], data["water_temp_c"]
+    usable = data[[*predictors, "water_temp_c"]].dropna()
+    X, y = usable[predictors], usable["water_temp_c"]
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.3, random_state=0)
     model = LinearRegression().fit(X_train, y_train)
     predicted = model.predict(X_test)
 
-    print(f"{len(data)} synthetic samples over 5 days, joined to real drivers")
+    print(f"{len(usable)} synthetic samples over 5 days, joined to real drivers")
     print(f"held-out R2  = {r2_score(y_test, predicted):.3f}")
     print(f"held-out MAE = {mean_absolute_error(y_test, predicted):.3f} degC")
 
@@ -297,8 +320,10 @@ else:
     print(f"  {'intercept':44s} {model.intercept_:8.3f} {TRUE['intercept']:7.2f}")
     for term, coefficient in zip(predictors, model.coef_, strict=True):
         print(f"  {term:44s} {coefficient:8.3f} {TRUE[term]:7.2f}")
-    print("\nThose numbers matching is the end-to-end proof: the join, the units and")
-    print("the time handling are all right, not merely plausible.")
+    print("\nThe truth was constructed without touching align(), so those numbers agreeing")
+    print("is evidence about the JOIN: a join off by the station's UTC offset, a daily total")
+    print("that had been interpolated, or a unit silently converted would all show up here")
+    print("as coefficients that miss.")
 
     # -- correlated features across the sources: see them, then drop them -------------
     print("\nMultiple sources publish the same physical signal several ways over, and a")

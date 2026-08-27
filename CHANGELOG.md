@@ -22,7 +22,8 @@ observatories, and CIOOS metadata records.
 - **`align()`** joins ragged sources onto one time axis, choosing each variable's resampling
   from its CF `cell_methods` rather than guessing: sums stay sums, extremes stay extremes,
   compass bearings are combined as unit vectors, and only instantaneous values are
-  interpolated. Sources that label rows by local calendar date are matched in local time.
+  interpolated. Sources that label rows by local calendar date are read in the station's own
+  time zone, on both the `on=` and `freq=` paths.
   Every choice is recorded in `attrs["omnisea_aggregation"]`, keyed by the column names the
   frame actually carries.
 - **`correlations()` / `drop_correlated()` / `model_matrix()`** turn a lossless tree into a
@@ -71,6 +72,7 @@ catch upstream drift.
 - ERDDAP's `to_cf_units=True` is a no-op: those datasets state the units their numbers are in,
   not how to reach canonical CF units, and omnisea will not guess a scale factor for someone
   else's data.
-- A local-date source is joined using an offset estimated from the station's longitude, since
-  the responses carry no UTC offset. That is approximate within about an hour near a timezone
-  boundary, against a whole day of error if the stamp were read as UTC.
+- A local-date source is read in the station's own time zone, daylight saving included, when
+  the provider knows it — ECCC's daily and monthly collections resolve it from the station's
+  province. Elsewhere the offset is estimated from longitude and rounded to the hour, which can
+  be an hour out against a whole day of error if the stamp were read as UTC.
