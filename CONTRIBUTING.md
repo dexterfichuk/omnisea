@@ -12,7 +12,11 @@ pytest -m "not network"        # should be green before you start
 ```
 
 1. **Copy the template.** [`examples/provider_template.py`](examples/provider_template.py) is a
-   complete, runnable source with every hook commented. Start there, not from scratch.
+   complete, runnable source with every hook commented. Start there, not from scratch. For a
+   real-world shape to imitate, [`src/omnisea/providers/noaa.py`](src/omnisea/providers/noaa.py)
+   and [`src/omnisea/providers/usgs.py`](src/omnisea/providers/usgs.py) are the two most recent
+   additions and the cleanest references — one JSON API with chunked windows and a datum
+   option, one RDB-catalogue/JSON-data pair with period-of-record discovery.
 2. **Read [`docs/adding-a-provider.md`](docs/adding-a-provider.md).** It is the contract: the
    two base classes, `FieldSpec` semantics, and the traps that have already bitten us.
 3. **Probe the API before you write the field table.** Every trap in this codebase was found by

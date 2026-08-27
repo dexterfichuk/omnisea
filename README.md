@@ -68,6 +68,9 @@ pip install -e ".[dev]"
 pytest -m "not network"     # should be green before you change anything
 ```
 
+Releases publish to PyPI from a version tag (`git tag v0.1.0 && git push --tags`) via trusted
+publishing — see `.github/workflows/release.yml` for the one-time PyPI-side setup.
+
 `dev` deliberately stops short of `examples` — the test suite needs neither a plotting stack
 nor a notebook kernel, and CI installs `dev` three times over. Add `".[dev,examples]"` if you
 want to re-run the notebook.
@@ -280,6 +283,12 @@ already publishes, says what each variable *is*:
 | `time: maximum` (gust speed) | **max** — the max of maxima is a real maximum; their mean is a statistic of nothing | forward-fill |
 | `time: mean` (daily mean temp) | mean | forward-fill — a daily mean spread across its own day is honest |
 | none / `time: point` (tide height) | mean | **interpolate** — the only case where it's safe |
+
+One convention `cell_methods` does not carry: some models stamp an hourly *mean* at the
+interval's **centre** (SalishSeaCast's 00:30 row is the mean over 00:00–01:00). A left-labelled
+resample moves it half an interval; measured against a tide gauge that cost 12% in RMSE. For
+interval-centred output, join with `align(on=<the model's own stamps>)` — the lookup keeps every
+value on the instant its publisher chose.
 
 The same metadata governs the `on=` join. An **interval summary** matches *backwards within its
 own interval* — a sample at 10:05 gets the total for the day containing it. An **instantaneous
