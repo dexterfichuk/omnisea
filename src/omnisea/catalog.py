@@ -39,6 +39,8 @@ COLUMNS = [
     "n_rows_est",
     "first",
     "last",
+    "server",
+    "status",
 ]
 
 
@@ -278,6 +280,7 @@ class Catalog:
         max_workers: int = DEFAULT_MAX_WORKERS,
         max_rows: int | None = None,
         on_error: str = "raise",
+        **options: Any,
     ) -> xr.DataTree:
         """Download the catalogued stations and assemble them into a tree.
 
@@ -316,7 +319,15 @@ class Catalog:
                 "recorded in the tree's omnisea_fetch_errors attribute."
             )
         ceiling = max_rows if max_rows is not None else self.query.max_rows
-        estimate = self.n_rows_est
+        # Lazy griddap matches are excluded from the pre-fetch ceiling: opening one downloads
+        # nothing, and their catalogue estimate is the honest FULL-grid cell count — charging
+        # a 17-million-cell model grid against a 2-million row ceiling would refuse a fetch
+        # that costs a metadata read. The grid's own guards are omnisea_cells_estimate on the
+        # node, align() refusing to flatten it, and to_netcdf() warning before materializing.
+        estimate = int(sum(
+            m.n_rows_est for m in self.matches
+            if (m.extra or {}).get("protocol") != "griddap"
+        ))
         if ceiling and estimate > ceiling:
             # The suggested max_rows is underscore-separated so it can be pasted straight into
             # Python. Only that number: applying .replace() to the whole message turned every
@@ -333,6 +344,12 @@ class Catalog:
             )
 
         query = self.query
+        if options:
+            # The same provider options omnisea.fetch() takes -- series=, resolution=,
+            # onc_token= -- so the documented discover -> filter -> fetch workflow can carry
+            # one instead of forcing it back onto discover(). Validated the same way, so a
+            # typo still gets the did-you-mean error rather than a silent no-op.
+            query = query.replace(options={**dict(query.options), **options})
         if to_cf_units:
             query = query.replace(options={**dict(query.options), "to_cf_units": True})
         # Everything that shaped this result, so a saved tree can be re-run. Without these you

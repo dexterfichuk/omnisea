@@ -118,6 +118,13 @@ class StationMatch:
             "n_rows_est": self.n_rows_est,
             "first": self.first,
             "last": self.last,
+            # Which installation an ERDDAP row came from, and whether the operator has marked
+            # a station discontinued. Recovering the server by zipping .frame against .matches
+            # silently mislabelled 48 of 52 rows in one sweep -- the two are sorted differently
+            # -- and the only reason anyone reached for that idiom was that the column was
+            # missing. Empty for sources where the concept does not apply.
+            "server": self.extra.get("server_name") or None,
+            "status": self.extra.get("status") or None,
         }
 
 

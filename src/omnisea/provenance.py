@@ -45,6 +45,7 @@ def provenance(tree: xr.DataTree, *, by: str = "source") -> pd.DataFrame:
                 "node": path,
                 "source_url": attrs.get("source_url", ""),
                 "n_time": int(times.size) if times is not None else 0,
+                "n_values": _n_values(ds),
                 "first": pd.Timestamp(times.min()) if times is not None else pd.NaT,
                 "last": pd.Timestamp(times.max()) if times is not None else pd.NaT,
                 "variables": ", ".join(
@@ -159,9 +160,24 @@ def citation(
             ["station_id", "station_name"],
         ].drop_duplicates()
         named = _describe_stations(stations)
+        if int(row["n_stations"]) == 0 and int(row["n_nodes"]) > 0:
+            # A gridded source has datasets, not stations; "0 station(s): nan" credited the
+            # data while reading like nothing was fetched. Name the datasets by node.
+            members = detail.loc[
+                (detail["source"] == row["source"])
+                & (detail["institution"] == row["institution"]),
+                "node",
+            ]
+            tails = sorted({str(n).rstrip("/").rsplit("/", 1)[-1] for n in members})
+            counted = f"{row['n_nodes']} dataset(s)"
+            named = ": " + ", ".join(tails[:6]) + (
+                f" and {len(tails) - 6} more" if len(tails) > 6 else ""
+            )
+        else:
+            counted = f"{row['n_stations']} station(s)"
         entry = (
             f"{row['institution'] or row['provider']} — {row['source']}"
-            f" ({row['n_stations']} station(s){span}){named}. "
+            f" ({counted}{span}){named}. "
             f"Licence: {row['license'] or 'see provider'}."
         )
         if row["terms"]:
@@ -223,13 +239,43 @@ def _incompleteness_lines(tree: xr.DataTree, bullet: str) -> list[str]:
     return lines
 
 
+def _n_values(ds: Any) -> int | None:
+    """Non-null values across the node's measurements, or ``None`` for a lazy grid.
+
+    Counting a grid's nulls would read the whole grid — the exact cost its laziness exists to
+    avoid — so unknown is stated rather than paid for.
+    """
+    total = 0
+    for name, variable in ds.data_vars.items():
+        if str(name).endswith("_qc"):
+            continue
+        if len(variable.dims) > 1 or not getattr(variable.variable, "_in_memory", True):
+            return None
+        try:
+            total += int(variable.notnull().sum())
+        except (TypeError, ValueError):
+            total += int(variable.size)
+    return total
+
+
+def _text(value: Any) -> str:
+    """A display string, treating NaN as absent.
+
+    ``str(row["station_name"] or "")`` let ``nan`` through — float NaN is truthy — so a
+    gridded node's citation line read "…: nan." in a block meant to be pasted unedited.
+    """
+    if value is None or (isinstance(value, float) and value != value):
+        return ""
+    return str(value).strip()
+
+
 def _describe_stations(stations: pd.DataFrame, limit: int = 6) -> str:
     """``: Bamfield (08545), Cape Beale Light (1031316)`` — what a reader needs to repeat it."""
     if stations.empty:
         return ""
     parts = []
     for _, row in stations.head(limit).iterrows():
-        name, code = str(row["station_name"] or "").strip(), str(row["station_id"] or "").strip()
+        name, code = _text(row["station_name"]), _text(row["station_id"])
         if name and code and name != code:
             parts.append(f"{name} ({code})")
         elif name or code:

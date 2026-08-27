@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
+import sys
+from contextlib import contextmanager
 from typing import Any
 
 import xarray as xr
@@ -101,7 +104,8 @@ class ErddapGridSource(ErddapSource):
         # hard dependency; without it xarray's own lazy indexing still defers every byte.
         chunks: dict[str, Any] | None = {} if importlib.util.find_spec("dask") else None
         try:
-            return xr.open_dataset(url, chunks=chunks, decode_timedelta=False)
+            with _quiet_hdf5_stderr():
+                return xr.open_dataset(url, chunks=chunks, decode_timedelta=False)
         except Exception as exc:  # noqa: BLE001 - surfaced as an omnisea error
             raise UpstreamError(
                 f"could not open griddap dataset: {exc}", provider="erddap_griddap", url=url
@@ -172,3 +176,32 @@ def _match_longitude_convention(coord: xr.DataArray, bbox: BBox) -> tuple[float,
     if float(values.max()) > 180.0 and bbox.west < 0:
         return bbox.west + 360.0, bbox.east + 360.0
     return bbox.west, bbox.east
+
+
+@contextmanager
+def _quiet_hdf5_stderr() -> Any:
+    """Silence the HDF5 error stack a *successful* DAP open prints.
+
+    netCDF-C probes the URL as a local file before falling back to the DAP client, and HDF5
+    prints a ~2.3 KB "unable to open file" stack to C-level stderr on that probe — on opens
+    that then succeed. It lands in notebook cells and reads as a failure. Python-level
+    redirection cannot catch it (it is written by C), so the OS file descriptor is swapped for
+    the duration of the open and restored in all cases. Skipped when stderr has no real fd
+    (some embedded interpreters), where the noise cannot appear anyway.
+    """
+    try:
+        stderr_fd = sys.stderr.fileno()
+    except (AttributeError, OSError, ValueError):
+        yield
+        return
+    saved = os.dup(stderr_fd)
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    try:
+        sys.stderr.flush()
+        os.dup2(devnull, stderr_fd)
+        yield
+    finally:
+        sys.stderr.flush()
+        os.dup2(saved, stderr_fd)
+        os.close(saved)
+        os.close(devnull)

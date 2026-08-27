@@ -25,7 +25,7 @@ from ...errors import (
 from ...http import DEFAULT_MAX_WORKERS, get_json, map_threads
 from ...query import BBox, Query, register_option
 from ..base import RetrievalSource, StationMatch
-from .info import DatasetInfo, cached_info, parse_info, store_info
+from .info import DatasetInfo, cached_info, is_time, parse_info, store_info
 from .servers import ErddapServer, resolve_servers, server_name_for_url
 
 log = logging.getLogger("omnisea.erddap")
@@ -431,11 +431,27 @@ class ErddapSource(RetrievalSource):
         return match
 
     def _estimate_rows(self, query: Query, info: DatasetInfo) -> int:
-        """Rows the window would pull, over the part of it the dataset actually covers."""
+        """Rows the window would pull, over the part of it the dataset actually covers.
+
+        For a grid the honest unit is cells, not time steps: the max_rows guard used to compare
+        1,368 hourly steps against the ceiling while the node declared 488,928,672 cells, so
+        the one safety feature meant to stop an accidental multi-gigabyte pull was inert on the
+        exact path where such a pull is most likely.
+        """
         start = max(query.start, info.first) if info.first is not None else query.start
         end = min(query.end, info.last) if info.last is not None else query.end
         days = max((end - start) / pd.Timedelta(days=1), 0.0)
-        return int(days * info.samples_per_day)
+        steps = int(days * info.samples_per_day)
+        if self.data_structure != "grid":
+            return steps
+        spatial = 1
+        for name, description in info.dimensions.items():
+            if is_time(name):
+                continue
+            n = _dimension_size(description)
+            if n:
+                spatial *= n
+        return steps * max(spatial, 1)
 
     # ------------------------------------------------------------------ candidate listing
 
@@ -620,7 +636,17 @@ class ErddapSource(RetrievalSource):
         # dataset says about its vertical reference travels with it.
         datum = str(globals_.get("vertical_datum") or globals_.get("geospatial_vertical_crs")
                     or "") or None
+        # The dataset's own CF geometry, not a blanket "timeSeries". A ferry crossing is a
+        # trajectory; writing featureType="timeSeries" at its mean position put a CF assertion
+        # into saved files that is simply untrue, at a point the ferry never stops at.
+        declared = info.cdm_data_type or ""
+        feature = {
+            "timeseries": "timeSeries", "trajectory": "trajectory", "profile": "profile",
+            "timeseriesprofile": "timeSeriesProfile", "trajectoryprofile": "trajectoryProfile",
+            "point": "point",
+        }.get(declared.lower())
         return self.base_attrs(
+            **({"featureType": feature} if feature else {}),
             title=info.title,
             summary=str(globals_.get("summary") or "") or None,
             institution=info.institution or None,
@@ -703,6 +729,18 @@ def _as_list(value: Any) -> list[str]:
 
 def safe_name(text: Any) -> str:
     return "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in str(text)) or "unknown"
+
+
+def _dimension_size(description: str) -> int:
+    """The ``nValues=`` count from an ERDDAP dimension description, or 0 when unstated."""
+    if "nValues=" not in (description or ""):
+        return 0
+    tail = description.split("nValues=", 1)[1]
+    digits = "".join(ch for ch in tail if ch.isdigit() or ch == ",").split(",")[0]
+    try:
+        return int(digits.replace(",", ""))
+    except ValueError:
+        return 0
 
 
 def _covers_query(coverage: tuple[float, float, float, float] | None, query: Query) -> bool:

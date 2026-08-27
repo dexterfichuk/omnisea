@@ -150,6 +150,12 @@ class EcccClimateDaily(OgcFeaturesSource):
             var="air_temperature", standard_name="air_temperature", units="degC",
             cell_methods="time: mean", long_name="Daily mean air temperature",
             qc_field="MEAN_TEMPERATURE_FLAG", **DEGC_TO_K,
+            # ECCC's convention, disclosed: checked against the same station's 24 hourly
+            # observations, this ran +1.1 degC — the midrange over-weights warm afternoons.
+            extra_attrs={"comment": (
+                "ECCC computes the daily mean as (min + max) / 2, the climatological "
+                "midrange, not the mean of the hourly observations."
+            )},
         ),
         "MIN_TEMPERATURE": cf.FieldSpec(
             var="air_temperature_min", standard_name="air_temperature", units="degC",
