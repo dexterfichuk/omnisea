@@ -1639,3 +1639,41 @@ class TestAStationThatContributedIsNotDisownedByCitation:
         assert "08866" in listed
         assert "08863" not in listed, "the station contributed observed data"
         assert "08863" not in omnisea.citation(tree).split("NOTE")[-1]
+
+
+class TestConstantTextIsStoredOnceNotPerTimestamp:
+    """An ERDDAP mooring repeats `scientist`, `project` and `agency` on every ten-minute row,
+    and writing two months of four stations to netCDF cost 9.8 MB — almost all of it eleven
+    string columns times 50,000 timestamps saying the same thing. A value that never varies
+    within a node is a property of the node: it becomes a scalar coordinate, like station_id.
+    """
+
+    def series_with(self, frame):
+        match = StationMatch(source="t", provider="t", station_id="X", name="X",
+                             lat=48.8, lon=-125.1, site="S")
+        return StationSeries(match=match, frame=frame, node_path="in_situ/x/X",
+                             attrs={"provider": "t"}, var_attrs={})
+
+    def frame(self, n=60, project="Line P"):
+        idx = pd.date_range("2024-07-01", periods=n, freq="15min", tz="UTC", name="time")
+        return pd.DataFrame({
+            "sea_water_temperature": np.linspace(8.0, 9.0, n),
+            "project": [project] * n,
+            "weather_note": ["fog"] * (n // 2) + ["clear"] * (n - n // 2),  # varies: stays
+            "sea_water_temperature_qc": ["1"] * n,  # flags are data even when constant
+        }, index=idx)
+
+    def test_a_constant_column_becomes_a_scalar_coordinate(self):
+        from omnisea.tree import series_to_dataset
+
+        ds = series_to_dataset(self.series_with(self.frame()))
+        assert "project" not in ds.data_vars
+        assert str(ds.coords["project"].values) == "Line P"
+        assert "weather_note" in ds.data_vars, "a varying column is data"
+        assert "sea_water_temperature_qc" in ds.data_vars, "flags stay beside their variable"
+
+    def test_short_frames_are_left_alone(self):
+        from omnisea.tree import series_to_dataset
+
+        ds = series_to_dataset(self.series_with(self.frame(n=10)))
+        assert "project" in ds.data_vars

@@ -115,6 +115,30 @@ def _netcdf_safe_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
+def _hoist_constant_text(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
+    """Split constant text columns out of the frame, to become scalar coordinates.
+
+    Only text, only truly constant (one non-null value), and only for frames long enough for
+    the repetition to matter — a three-row frame keeps its columns, because rewriting tiny
+    nodes buys nothing and surprises tests.
+    """
+    if len(frame) < 50:
+        return frame, {}
+    constants: dict[str, str] = {}
+    for column in frame.columns:
+        if str(column).endswith("_qc"):
+            continue  # flags are data even when a quiet week makes them constant
+        kind = frame[column].dtype
+        if not (pd.api.types.is_object_dtype(kind) or pd.api.types.is_string_dtype(kind)):
+            continue
+        values = frame[column].dropna().unique()
+        if len(values) == 1 and isinstance(values[0], str):
+            constants[str(column)] = values[0]
+    if not constants:
+        return frame, {}
+    return frame.drop(columns=list(constants)), constants
+
+
 def series_to_dataset(series: StationSeries) -> xr.Dataset:
     """Turn one :class:`StationSeries` into a CF discrete-sampling-geometry ``Dataset``.
 
@@ -146,7 +170,16 @@ def series_to_dataset(series: StationSeries) -> xr.Dataset:
     if frame is None or frame.empty:
         ds = xr.Dataset()
     else:
+        frame, constants = _hoist_constant_text(frame)
         ds = xr.Dataset.from_dataframe(_netcdf_safe_frame(frame))
+        if constants:
+            # Per-node metadata that arrived as per-row columns. An ERDDAP mooring repeats
+            # `scientist`, `project` and `agency` on every ten-minute row, and writing two
+            # months of four stations to netCDF cost 9.8 MB — almost all of it eleven string
+            # columns times 50,000 timestamps saying the same thing. A value that never varies
+            # within the node is a property of the node: it becomes a scalar coordinate, the
+            # same standing station_id already has, readable in one place and written once.
+            ds = ds.assign_coords(constants)
         if "time" in ds.coords:
             ds["time"].attrs.update(
                 {

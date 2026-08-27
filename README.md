@@ -430,6 +430,7 @@ omnisea.fields(tree)     # what a particular fetch actually returned
 | `dfo_tides` | `dfo` | Water levels: observed, predicted, and high/low events (1573 stations) |
 | `noaa_coops` | `noaa_coops` | **US tide gauges**, natively: six-minute observed water levels and predicted extrema, datum stated (MLLW/MSL/NAVD, IGLD on the Great Lakes) |
 | `usgs_water` | `usgs` | **US river gauges**: discharge, stage and water temperature at native cadence, period of record honoured |
+| `usgs_water_daily` | `usgs` | US daily mean discharge/stage/temperature — the historical archive, read in station-local time |
 | `eccc_climate` | `eccc` | Hourly surface climate observations |
 | `eccc_climate_daily` | `eccc` | Daily climate summaries |
 | `eccc_hydrometric` | `eccc` | Realtime water level and river discharge (~30 days) |
