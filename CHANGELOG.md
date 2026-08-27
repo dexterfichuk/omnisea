@@ -37,6 +37,11 @@ observatories, and CIOOS metadata records.
   US river discharge, stage and water temperature under the same branch as ECCC's gauges,
   excluding discontinued sites by their own period of record. A cross-border query produces
   one tree shape with both countries' licences attributed.
+- **Faster, and kinder to the servers.** Request concurrency is two-level — 4 per host, 24
+  overall — so a bare discovery across ~26 sources at fifteen institutions is bounded by the
+  slowest server rather than rationed through one pool of eight, while no single institution
+  sees more than four connections. ERDDAP catalogue metadata participates in
+  `enable_cache()`. Bare discovery: 8.2 s → 4.6 s warm.
 - **Eleven ERDDAP installations by name.** `erddap_server="hakai"`, a list of names, or `"all"`
   — one adapter already read every ERDDAP, and this removes the part that needed you to know a
   URL. `omnisea.erddap_servers()` says what each one holds. A sweep survives one institution
