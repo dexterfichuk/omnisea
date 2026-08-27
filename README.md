@@ -281,6 +281,12 @@ already publishes, says what each variable *is*:
 | `time: mean` (daily mean temp) | mean | forward-fill — a daily mean spread across its own day is honest |
 | none / `time: point` (tide height) | mean | **interpolate** — the only case where it's safe |
 
+One convention `cell_methods` does not carry: some models stamp an hourly *mean* at the
+interval's **centre** (SalishSeaCast's 00:30 row is the mean over 00:00–01:00). A left-labelled
+resample moves it half an interval; measured against a tide gauge that cost 12% in RMSE. For
+interval-centred output, join with `align(on=<the model's own stamps>)` — the lookup keeps every
+value on the instant its publisher chose.
+
 The same metadata governs the `on=` join. An **interval summary** matches *backwards within its
 own interval* — a sample at 10:05 gets the total for the day containing it. An **instantaneous
 reading** matches to the nearest observation within `tolerance`. Without that distinction, a
