@@ -458,7 +458,12 @@ hundred other institutions, so **one adapter reaches all of them** — point it 
 server and that institution's whole catalogue is queryable with no new code:
 
 The barrier there is not technical, it is that you cannot query a server you have never heard
-of. So eleven installations have short names, checked live in CI:
+of. So **eleven installations are providers in their own right** — ERDDAP is software, and
+Hakai, IOOS and NOAA CoastWatch are organizations. They list in `omnisea.sources()`,
+`providers="hakai"` selects one the way `providers="eccc"` does, and **an unqualified query
+sweeps the ones whose region contains it**: a BC query reaches CIOOS Pacific, Hakai and the
+Glider DAC without being asked; an Atlantic one reaches CIOOS Atlantic and St. Lawrence
+instead. All eleven are checked live in CI:
 
 ```python
 omnisea.erddap_servers()          # what each one is, and what it holds
@@ -494,8 +499,11 @@ different answers. Node paths carry the server (`/in_situ/erddap/cioos_pacific/�
 dataset id identifies a dataset *on one server*: DFO's gliders are published on CIOOS Pacific
 and on the Glider DAC under identical ids.
 
-The table is a convenience, not a boundary — `erddap_server=` still takes any URL, and an
-installation that is not listed is not unsupported.
+The two global satellite archives stay out of an unqualified sweep: they match essentially any
+bounding box, so every bare query would hit their dataset ceiling. Name them and they answer.
+
+The table is a convenience, not a boundary — `erddap_server=` still takes any URL for an
+installation omnisea does not know, and one that is not listed is not unsupported.
 
 **No field table is hardcoded.** Each dataset publishes its own `standard_name`, `units`,
 `cell_methods` and QARTOD `ancillary_variables`, and omnisea reads that rather than replacing
@@ -774,12 +782,17 @@ test validates every emitted `standard_name` against the published table.
 | [examples/bamfield.ipynb](examples/bamfield.ipynb) | The full walkthrough, executed, with plots |
 | [examples/bamfield.py](examples/bamfield.py) | The same walkthrough as a terminal script |
 | [examples/csv_stations.py](examples/csv_stations.py) | A complete third-party provider in ~100 lines |
+| [examples/prince_rupert.ipynb](examples/prince_rupert.ipynb) | Rainfall, freshet and tide on the north coast — and a defensible null result |
+| [examples/calvert_island.ipynb](examples/calvert_island.ipynb) | A research institute's observatory joined to federal monitoring |
+| [examples/strait_of_georgia.ipynb](examples/strait_of_georgia.ipynb) | A numerical model checked against the instruments |
+| [examples/juan_de_fuca.ipynb](examples/juan_de_fuca.ipynb) | One strait, two countries, six sampling grains, one time axis |
+| [examples/run_all.py](examples/run_all.py) | Re-executes every notebook against the live APIs |
 
 ## Tests
 
 ```bash
-pytest -m "not network"   # 706 offline tests over committed real API responses
-pytest -m network         # 55 live integration tests (3 need ONC_TOKEN)
+pytest -m "not network"   # 750 offline tests over committed real API responses
+pytest -m network         # 68 live integration tests (3 need ONC_TOKEN)
 ```
 
 The network suite covers the edge cases fixtures cannot: the IWLS interval caps and chunk

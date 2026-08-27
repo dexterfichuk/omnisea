@@ -1335,3 +1335,204 @@ class TestNamingADatasetOnTheWrongErddapSource:
             DatasetInfo(dataset_id="IOS_P26_Annualized", variables={"Year": {}}, dimensions={})
         )
         assert reason and "no 'time' variable" in reason
+
+
+class TestATableWithSeveralRowsPerInstantIsNotCollapsed:
+    """Found independently by two user testers, at two sites, on two servers.
+
+    A tabledap response is not always one series. Hakai's Pruth Bay mooring reports twelve
+    depths on one clock; DFO's IOS_CUR_Moorings carries two current meters 80 m apart on one
+    mooring. Splitting on the station alone left every row of an instant competing for the same
+    index entry, one survived, and which one varied — so `sea_water_temperature` wandered
+    between 0 m and 60 m (8 degC to 14 degC) and `sea_water_pressure` swung 90 dbar between
+    adjacent samples, both looking like ordinary time series. 91.7% of the rows were dropped
+    with no warning, nothing at DEBUG, and nothing in omnisea_fetch_errors.
+    """
+
+    def source(self):
+        from omnisea.providers.erddap import ErddapProvider, ErddapTableSource
+
+        return ErddapTableSource(ErddapProvider())
+
+    def info(self, **globals_):
+        from omnisea.providers.erddap.info import DatasetInfo
+
+        return DatasetInfo(
+            dataset_id="mooring",
+            global_attrs=globals_,
+            variables={
+                "time": {},
+                "station": {},
+                "depth": {"axis": "Z", "standard_name": "depth", "units": "m"},
+                "sea_water_temperature": {"standard_name": "sea_water_temperature"},
+            },
+        )
+
+    def rows(self, depths=(0.0, 10.0), stamps=("2024-07-01T00:00:00Z", "2024-07-01T00:05:00Z")):
+        return [
+            {"time": t, "station": "PruthBay", "depth": d, "sea_water_temperature": 14.0 - d / 5}
+            for t in stamps
+            for d in depths
+        ]
+
+    def test_every_declared_identity_variable_is_used_not_just_the_first(self):
+        """Hakai declares `station,latitude,longitude,depth` — the publisher had already told
+        us the depths apart, and taking only the first entry threw that away."""
+        info = self.info(cdm_timeseries_variables="station,latitude,longitude,depth")
+        assert info.identity_variables == ("station", "depth")
+
+    def test_the_rows_split_one_node_per_depth(self):
+        groups, keys = self.source()._grouped(
+            self.info(cdm_timeseries_variables="station,latitude,longitude,depth"), self.rows()
+        )
+        assert len(groups) == 2, groups
+        assert sum(len(g) for g in groups.values()) == 4, "no row may be dropped"
+        for group in groups.values():
+            assert len({row["depth"] for row in group}) == 1
+
+    def test_a_depth_the_dataset_did_not_declare_is_still_found(self):
+        """IOS_CUR_Moorings declares only `profile`, and declares a `depth` axis it does not
+        actually return — the two instruments are told apart by `instrument_depth`."""
+        info = self.info(cdm_timeseries_variables="profile")
+        rows = [
+            {"time": t, "profile": "chat2", "instrument_depth": d, "sea_water_pressure": d + 4}
+            for t in ("2024-09-15T00:00:00Z", "2024-09-15T00:10:00Z")
+            for d in (100.0, 180.6)
+        ]
+        groups, keys = self.source()._grouped(info, rows)
+        assert len(groups) == 2, groups
+        assert "instrument_depth" in keys
+
+    def test_the_node_name_says_what_the_series_is(self):
+        """A node called `10` says nothing; `depth_10` says which instrument."""
+        groups, _ = self.source()._grouped(
+            self.info(cdm_timeseries_variables="station,depth"), self.rows()
+        )
+        assert set(groups) == {"depth_0.0", "depth_10.0"}
+
+    def test_a_plain_one_station_table_is_unchanged(self):
+        """The split must not fire where there is nothing to split — one series, one node."""
+        info = self.info(cdm_timeseries_variables="station")
+        rows = self.rows(depths=(0.0,))
+        groups, _ = self.source()._grouped(info, rows)
+        assert list(groups) == [None]
+
+    def test_rows_that_cannot_be_told_apart_are_announced(self):
+        """If nothing distinguishes them, keeping one silently is the failure this whole class
+        is about. Say so instead."""
+        info = self.info(cdm_timeseries_variables="station")
+        rows = [
+            {"time": "2024-07-01T00:00:00Z", "station": "A", "sea_water_temperature": v}
+            for v in (10.0, 11.0)
+        ]
+        with pytest.warns(UserWarning, match="share a timestamp"):
+            self.source()._grouped(info, rows)
+
+
+class TestAGridIsNotFlattenedToFindOutItIsAGrid:
+    """A user tester's blocker: align() on a griddap node built the whole grid, then checked.
+
+    `to_dataframe()` flattens the product of every dimension. A week of SalishSeaCast sea
+    surface height is 17 million rows and 926 MB — paid in full and thrown away, to reach a
+    check the dimensions could have answered. The tester's real 3-D physics node would have
+    been 19,557,146,880 rows; they never dared run it. The message was wrong too: it reported
+    the flattened MultiIndex's name (None) as "its time dimension", sending the reader to look
+    for a coordinate that was there all along.
+    """
+
+    def tree(self):
+        import numpy as np
+        import xarray as xr
+
+        grid = xr.Dataset(
+            {"ssh": (("time", "y", "x"), np.zeros((4, 60, 40)))},
+            coords={
+                "time": pd.date_range("2024-05-05", periods=4, freq="h"),
+                "y": np.arange(60),
+                "x": np.arange(40),
+            },
+            attrs={"source_name": "erddap_griddap", "provider": "erddap"},
+        )
+        return xr.DataTree.from_dict({"/gridded/erddap/model": grid})
+
+    def test_it_is_skipped_without_being_materialized(self, monkeypatch):
+        import xarray as xr
+
+        def explode(*_a, **_k):
+            raise AssertionError("to_dataframe() was called on a grid")
+
+        monkeypatch.setattr(xr.Dataset, "to_dataframe", explode)
+        assert align(self.tree(), freq="1h").empty
+
+    def test_the_message_names_the_shape_and_the_way_out(self, caplog):
+        with caplog.at_level("WARNING", logger="omnisea.align"):
+            align(self.tree(), freq="1h")
+        message = caplog.text
+        assert "4x60x40 grid" in message
+        assert "y, x" in message
+        assert "add_local()" in message
+
+    def test_an_ordinary_time_series_is_untouched(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        frame = pd.DataFrame(
+            {"water_surface_height_above_reference_datum": [1.0, 2.0, 3.0]},
+            index=utc("2024-07-01", "2024-07-02", "2024-07-03"),
+        )
+        out = align(build_tree(q, [node("08545", "in_situ/tides", frame, {})]), freq="1D")
+        assert len(out) == 3
+
+
+class TestAGriddedNodeIsVisibleInEverySummary:
+    def tree(self):
+        import numpy as np
+        import xarray as xr
+
+        grid = xr.Dataset(
+            {"ssh": (("time", "y", "x"), np.zeros((3, 4, 5)))},
+            coords={"time": pd.date_range("2024-05-05", periods=3, freq="h"),
+                    "y": np.arange(4), "x": np.arange(5)},
+            attrs={"source_name": "erddap_griddap", "provider": "erddap"},
+        )
+        return xr.DataTree.from_dict({"/gridded/erddap/model": grid})
+
+    def test_stations_does_not_silently_drop_it(self):
+        """A grid has no station id, and pandas' groupby drops null keys by default — so a
+        tree whose entire content was a model reported zero stations, and auditing a saved
+        file that way says the model was never fetched."""
+        assert len(omnisea.stations(self.tree())) == 1
+
+    def test_summary_and_coverage_already_saw_it(self):
+        assert len(omnisea.summary(self.tree())) == 1
+        assert int(omnisea.coverage(self.tree())["n_nodes"].sum()) == 1
+
+
+class TestSomeoneElsesDataAddedLocallyIsStillTheirs:
+    """add_local() is the documented route for a gridded node you have subset yourself, and
+    that data is not yours. citation() credited UBC's SalishSeaCast model as "your own data"
+    and dropped the Apache licence they ask for — from the function whose only job is
+    attribution."""
+
+    def frames(self):
+        import xarray as xr
+
+        tree = xr.DataTree()
+        idx = pd.date_range("2024-05-05", periods=4, freq="D", tz="UTC")
+        return tree, pd.DataFrame({"time": idx, "value": [1.0, 2, 3, 4]})
+
+    def test_naming_an_institution_credits_it_properly(self):
+        tree, frame = self.frames()
+        out = omnisea.add_local(
+            tree, frame, name="SalishSeaCast SSH", lat=49.3, lon=-123.7, station_id="SSC",
+            institution="UBC EOAS — SalishSeaCast Project", license="Apache License 2.0",
+        )
+        text = omnisea.citation(out)
+        assert "UBC EOAS — SalishSeaCast Project" in text
+        assert "Apache License 2.0" in text
+        assert "your own data" not in text
+
+    def test_your_own_field_sheet_is_still_yours(self):
+        tree, frame = self.frames()
+        out = omnisea.add_local(
+            tree, frame, name="My grab samples", lat=48.8, lon=-125.1, station_id="MINE"
+        )
+        assert "your own data" in omnisea.citation(out)

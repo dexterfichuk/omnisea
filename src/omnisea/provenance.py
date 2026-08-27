@@ -132,9 +132,20 @@ def citation(
 
     for _, row in summary.iterrows():
         span = _describe_span(row["first"], row["last"])
+        if row["provider"] == "local" and not str(row.get("license") or "").strip().rstrip(
+            "."
+        ).endswith("your own data") and str(row["institution"]).strip():
+            # Added with add_local(), but named an institution — someone else's data the caller
+            # routed through omnisea, which is exactly how a subset gridded node gets into a
+            # tree. It is credited like any other source, licence included.
+            lines.append(
+                f"{bullet}{row['institution']} — added with add_local() "
+                f"({row['n_stations']} dataset(s){span}). Licence: {row['license']}."
+            )
+            continue
         if row["provider"] == "local":
-            # Data the caller added with add_local(). Listing it among the sources to credit
-            # would have them citing themselves as a third party.
+            # The caller's own measurements. Listing them among the sources to credit would
+            # have them citing themselves as a third party.
             lines.append(
                 f"{bullet}{row['institution']} — your own data, added with add_local() "
                 f"({row['n_stations']} dataset(s){span})."
