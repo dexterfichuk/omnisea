@@ -30,6 +30,13 @@ observatories, and CIOOS metadata records.
   defensible model matrix, and say what they removed and why.
 - **`provenance()` / `citation()`** derive attribution from the result — naming stations, DOIs
   where a provider supplies them, and what went wrong — rather than from memory.
+- **US tides and rivers, natively.** `noaa_coops` mirrors `dfo_tides` branch for branch —
+  six-minute observed water levels under `in_situ/tides`, predicted extrema under
+  `predictions/tides_hilo`, with the vertical datum stated on the node and the variable
+  (MLLW by default, IGLD on the Great Lakes, `coops_datum=` to choose). `usgs_water` serves
+  US river discharge, stage and water temperature under the same branch as ECCC's gauges,
+  excluding discontinued sites by their own period of record. A cross-border query produces
+  one tree shape with both countries' licences attributed.
 - **Eleven ERDDAP installations by name.** `erddap_server="hakai"`, a list of names, or `"all"`
   — one adapter already read every ERDDAP, and this removes the part that needed you to know a
   URL. `omnisea.erddap_servers()` says what each one holds. A sweep survives one institution

@@ -528,6 +528,41 @@ def get_json(
         ) from exc
 
 
+def get_text(
+    url: str,
+    params: dict[str, Any] | None = None,
+    *,
+    provider: str | None = None,
+    timeout: tuple[int, int] | None = None,
+) -> str:
+    """GET a plain-text body through the same session, retries, redaction and size ceiling.
+
+    For the endpoints that never speak JSON — USGS publishes its site catalogue only as
+    tab-delimited RDB. Everything that makes :func:`get_json` safe applies identically; only
+    the decoding differs.
+    """
+    session = get_session()
+    log.debug("GET %s params=%s", redact_url(url), redact_params(params))
+    with _request_slots:
+        try:
+            resp = session.get(url, params=params, timeout=timeout or _timeout)
+        except requests.RequestException as exc:
+            safe = redact_url(url)
+            raise UpstreamError(
+                f"request to {safe} failed: {exc}", provider=provider, url=safe
+            ) from exc
+    if not resp.ok:
+        raise UpstreamError(
+            "upstream request failed",
+            provider=provider,
+            url=redact_url(resp.url),
+            status=resp.status_code,
+            detail=_scrub_secrets(_extract_detail(resp), params),
+        )
+    _check_size(resp, url)
+    return resp.text
+
+
 def paginate_ogc_items(
     url: str,
     params: dict[str, Any] | None = None,

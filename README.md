@@ -74,7 +74,7 @@ want to re-run the notebook.
 
 ## Credentials
 
-**Seventeen of the eighteen sources need no credential at all.** Only Ocean Networks Canada
+**Every source but one needs no credential at all.** Only Ocean Networks Canada
 does, and a query that does not name it simply leaves it out when no token is available — you
 never have to configure anything to use the rest. Ask for `providers="onc_scalardata"` without
 a token and it raises instead, naming the two ways to supply one: you asked for that source by
@@ -163,7 +163,7 @@ eccc_hydrometric_daily    08HB048     CARNATION CREEK AT THE MOUTH        13.47 
   (showing 6 of 12 columns; catalog.frame has them all: provider, site, lat, lon, first, last)
 ```
 
-Drop the `providers=` argument to search all eighteen sources at once. The DFO tide gauge is
+Drop the `providers=` argument to search every registered source at once. The DFO tide gauge is
 80 m from the research station — now pull the nearest station per source:
 
 ```python
@@ -428,6 +428,8 @@ omnisea.fields(tree)     # what a particular fetch actually returned
 | Source | Provider | Data |
 |---|---|---|
 | `dfo_tides` | `dfo` | Water levels: observed, predicted, and high/low events (1573 stations) |
+| `noaa_coops` | `noaa_coops` | **US tide gauges**, natively: six-minute observed water levels and predicted extrema, datum stated (MLLW/MSL/NAVD, IGLD on the Great Lakes) |
+| `usgs_water` | `usgs` | **US river gauges**: discharge, stage and water temperature at native cadence, period of record honoured |
 | `eccc_climate` | `eccc` | Hourly surface climate observations |
 | `eccc_climate_daily` | `eccc` | Daily climate summaries |
 | `eccc_hydrometric` | `eccc` | Realtime water level and river discharge (~30 days) |
