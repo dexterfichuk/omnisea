@@ -1,0 +1,1261 @@
+"""Regressions for defects found by an adversarial audit of the whole library.
+
+Every test here pins a case where omnisea returned a **wrong or truncated answer without
+saying so** — the one failure mode the library exists to prevent. They are collected in one
+file rather than scattered because what they have in common is the failure mode, not the
+module: a wrong number, a dropped station, a merged site, a truncated page.
+
+Each test names the wrong behaviour it replaces, so a future reader can tell what the
+assertion is defending and why it is worth the line.
+"""
+
+from __future__ import annotations
+
+import io
+import warnings
+
+import numpy as np
+import pandas as pd
+import pytest
+
+import omnisea
+from omnisea import http
+from omnisea.align import _read_local_labels, align
+from omnisea.catalog import Catalog
+from omnisea.errors import PayloadTooLargeError, QueryError
+from omnisea.providers.base import StationMatch, StationSeries, frame_from_records
+from omnisea.query import Query, Site
+from omnisea.tree import build_tree
+
+WEEK = ("2024-07-01", "2024-07-08")
+BAMFIELD = Site(48.8353, -125.1358, "Bamfield", radius_km=30)
+RAIN = {"precipitation_amount": {"units": "mm", "cell_methods": "time: sum"}}
+
+
+def node(station_id, path, frame, var_attrs):
+    match = StationMatch(source="t", provider="t", station_id=station_id, name=station_id,
+                         lat=48.8353, lon=-125.1358, site="Bamfield")
+    return StationSeries(match=match, frame=frame, node_path=f"{path}/{station_id}",
+                         attrs={"provider": "t"}, var_attrs=var_attrs)
+
+
+def utc(*stamps):
+    return pd.DatetimeIndex(list(stamps), tz="UTC", name="time")
+
+
+def wide_frame(n=40, seed=7):
+    """A model matrix with a planted near-duplicate cluster and one independent column."""
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range("2024-07-01", periods=n, freq="2h", name="time")
+    base = np.sin(np.arange(n) / 5.0) * 4 + 15
+    return pd.DataFrame({
+        "temp_mean": base + rng.normal(0, 0.05, n),
+        "temp_max": base + 3 + rng.normal(0, 0.05, n),
+        "tide": np.sin(np.arange(n) / 1.9) + 2 + rng.normal(0, 0.3, n),
+    }, index=idx)
+
+
+# --------------------------------------------------------------------------- wrong numbers
+
+
+class TestASingleSampleIsNotStretched:
+    """One 12 mm daily total used to become 12 mm on every following day — 72 mm a week."""
+
+    def tree(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        one = pd.DataFrame({"precipitation_amount": [12.0]}, index=utc("2024-07-01"))
+        # A second node only to give the shared grid a span to cover.
+        span = pd.DataFrame({"other": [0.0, 0.0]}, index=utc("2024-07-01", "2024-07-06"))
+        return q, build_tree(q, [
+            node("A", "in_situ/rain", one, RAIN),
+            node("B", "in_situ/other", span, {"other": {"units": "1"}}),
+        ])
+
+    def test_the_total_is_not_multiplied_across_the_grid(self):
+        _, tree = self.tree()
+        column = align(tree, freq="1D")["precipitation_amount"]
+        assert column.sum() == 12.0, f"12 mm became {column.sum()} mm"
+        assert column.notna().sum() == 1, "the value belongs to its own day only"
+
+    def test_the_audit_line_says_it_was_not_extended(self):
+        _, tree = self.tree()
+        out = align(tree, freq="1D")
+        assert "not extended" in out.attrs["omnisea_aggregation"]["precipitation_amount"]
+
+
+class TestASingleIntervalSampleRespectsTolerance:
+    """A lone January daily total used to match every timestamp in July."""
+
+    def tree(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        january = pd.DataFrame({"precipitation_amount": [5.0]}, index=utc("2024-01-01"))
+        return build_tree(q, [node("C", "in_situ/rain", january, RAIN)])
+
+    def july(self, n=5):
+        return pd.DataFrame({"time": pd.date_range("2024-07-01", periods=n, freq="D")})
+
+    def test_a_six_month_old_reading_does_not_match_within_an_hour(self):
+        got = align(self.tree(), on=self.july(), tolerance="1h")
+        assert got["precipitation_amount"].isna().all(), "January matched July under 1h"
+
+    def test_with_no_tolerance_the_unbounded_reach_is_declared(self):
+        got = align(self.tree(), on=self.july(3))
+        rule = got.attrs["omnisea_aggregation"]["precipitation_amount"]
+        assert "UNBOUNDED" in rule, f"an unbounded match must say so; got {rule!r}"
+
+
+class TestNumbersSpelledAsStringsStayNumbers:
+    """One row's ``"8.2"`` made the column object dtype; it was then stored as *text*, and
+    align() treated a daily mean as a category."""
+
+    def test_a_mixed_numeric_column_is_coerced(self):
+        frame = frame_from_records([
+            {"time": "2024-07-01", "v": "8.1"},
+            {"time": "2024-07-02", "v": 8.3},
+        ])
+        assert pd.api.types.is_numeric_dtype(frame["v"])
+        assert frame["v"].tolist() == [8.1, 8.3]
+
+    def test_prose_columns_are_left_alone(self):
+        # Asserted on behaviour rather than dtype: pandas 3 infers StringDtype where 2.2 used
+        # object, and what matters is that words did not become numbers.
+        frame = frame_from_records([
+            {"time": "2024-07-01", "weather": "CLOUDY"},
+            {"time": "2024-07-02", "weather": "RAIN"},
+        ])
+        assert not pd.api.types.is_numeric_dtype(frame["weather"])
+        assert frame["weather"].tolist() == ["CLOUDY", "RAIN"]
+
+    def test_a_column_of_mostly_numbers_and_one_word_stays_prose(self):
+        """Coercion must be all-or-nothing: a stray word means it was never a number column."""
+        frame = frame_from_records([
+            {"time": "2024-07-01", "v": "8.1"},
+            {"time": "2024-07-02", "v": "TRACE"},
+        ])
+        assert not pd.api.types.is_numeric_dtype(frame["v"])
+        assert frame["v"].tolist() == ["8.1", "TRACE"], "no value may be lost to coercion"
+
+
+# --------------------------------------------------------------------------- dropped data
+
+
+class TestPagingDoesNotStopAtAShortPage:
+    """A server that caps `limit` made the FIRST page short — and 1500 of 2500 stations
+    vanished with no error, no note, and a catalogue that looked complete."""
+
+    def paged(self, sizes, matched, monkeypatch):
+        pages, offset = {}, 0
+        for size in sizes:
+            pages[offset] = [{"id": offset + i} for i in range(size)]
+            offset += size
+        pages[offset] = []
+        seen: list[int] = []
+
+        def fake(url, params, provider=None, **kwargs):
+            seen.append(params["offset"])
+            return {"features": pages.get(params["offset"], []), "numberMatched": matched}
+
+        monkeypatch.setattr(http, "get_json", fake)
+        return seen
+
+    def test_a_capped_first_page_does_not_end_the_collection(self, monkeypatch):
+        self.paged([1000, 1000, 500], 2500, monkeypatch)
+        got = list(http.paginate_ogc_items("u", {}, page_size=10_000))
+        assert len(got) == 2500, f"silently truncated to {len(got)}"
+
+    def test_a_short_page_mid_stream_does_not_end_it_either(self, monkeypatch):
+        self.paged([1000, 700, 1000], 2700, monkeypatch)
+        got = list(http.paginate_ogc_items("u", {}, page_size=1000))
+        assert len(got) == 2700
+
+    def test_numbermatched_still_ends_it_without_a_wasted_request(self, monkeypatch):
+        seen = self.paged([1000, 1000], 2000, monkeypatch)
+        assert len(list(http.paginate_ogc_items("u", {}, page_size=1000))) == 2000
+        assert seen == [0, 1000], "a known total should not need a proving empty page"
+
+
+class TestChunkTimeCannotHang:
+    @pytest.mark.parametrize("max_days", [0, -1, 1e-18])
+    def test_a_non_advancing_span_raises_instead_of_spinning(self, max_days):
+        start = pd.Timestamp("2024-01-01", tz="UTC")
+        with pytest.raises(ValueError, match="max_days"):
+            http.chunk_time(start, start + pd.Timedelta(days=10), max_days=max_days)
+
+
+class TestToDataframeSaysWhatItSkipped:
+    def test_a_node_with_no_time_coordinate_is_reported(self, caplog):
+        import xarray as xr
+
+        q = Query.from_sites([BAMFIELD], WEEK)
+        tree = build_tree(q, [])
+        profile = xr.Dataset({"sea_water_temperature": ("depth", [9.1, 8.4, 7.2])},
+                             coords={"depth": [0, 10, 20]})
+        tree["/profiles/P1"] = xr.DataTree(profile)
+        with caplog.at_level("WARNING", logger="omnisea.tree"):
+            frame = omnisea.to_dataframe(tree)
+        assert frame.empty
+        assert any("no 'time' coordinate" in r.message for r in caplog.records)
+
+
+# --------------------------------------------------------------------------- merged sites
+
+
+class TestSitesCannotSilentlyMerge:
+    def test_two_sites_with_one_name_are_refused(self):
+        """The label is the join key; merging two farms into one row loses a whole location."""
+        with pytest.raises(QueryError, match="duplicate site label"):
+            Query.from_sites([
+                {"lat": 48.8, "lon": -125.1, "name": "Farm A"},
+                {"lat": 50.0, "lon": -126.5, "name": "Farm A"},
+            ], WEEK)
+
+    def test_blank_names_in_a_csv_do_not_all_become_nan(self):
+        csv = io.StringIO("name,lat,lon\n,48.8,-125.1\n,50.0,-126.5\n")
+        sites = Query.from_sites(pd.read_csv(csv), WEEK).sites
+        labels = [s.label for s in sites]
+        assert labels == ["48.8000,-125.1000", "50.0000,-126.5000"], labels
+
+    def test_a_blank_radius_column_is_refused_rather_than_matching_nothing(self):
+        csv = io.StringIO("name,lat,lon,radius_km\nA,48.8,-125.1,10\nB,48.3,-123.5,\n")
+        with pytest.raises(QueryError, match="radius_km is NaN"):
+            Query.from_sites(pd.read_csv(csv), WEEK)
+
+
+class TestPolarQueriesCoverEveryMeridian:
+    def test_a_circle_spanning_all_longitudes_is_not_halved(self):
+        """dlon was clamped to 180 and then applied as lon +/- 180, keeping half the meridians."""
+        q = Query.from_position(89.9, 100.0, WEEK, radius_km=100)
+        assert (q.bbox.west, q.bbox.east) == (-180.0, 180.0)
+        assert q.contains(89.9, -100.0), "a station 22 km away across the pole"
+
+
+class TestNaTWindows:
+    def test_an_unparseable_end_date_is_refused(self):
+        with pytest.raises(QueryError, match="NaT"):
+            Query.from_area((-126, 48, -125, 49), ("2024-01-01", pd.NaT))
+
+
+# --------------------------------------------------------------------------- readable output
+
+
+class TestMessagesAndSchemas:
+    def test_the_payload_error_is_prose_not_underscores(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        match = StationMatch(source="dfo_tides", station_id="x", name="x",
+                             lat=48.8, lon=-125.1, n_rows_est=5_000_000)
+        with pytest.raises(PayloadTooLargeError) as excinfo:
+            Catalog(q, [match]).fetch(max_rows=1000)
+        message = str(excinfo.value)
+        assert "station(s), over" in message, "prose commas became underscores"
+        assert "max_rows=5_000_001" in message, "the number stays pasteable"
+
+    def test_coverage_has_one_schema_whichever_way_you_asked(self):
+        area = Catalog(Query.from_area((-126, 48, -125, 49), WEEK), []).coverage()
+        site = Catalog(Query.from_sites([BAMFIELD], WEEK), []).coverage()
+        assert list(area.columns) == list(site.columns)
+        assert "has_match" in area.columns
+
+    def test_summary_and_fields_are_addressable_when_empty(self):
+        empty = build_tree(Query.from_sites([BAMFIELD], WEEK), [])
+        assert omnisea.summary(empty)["node"].empty
+        assert omnisea.fields(empty)["variable"].empty
+        assert omnisea.stations(empty)["station_id"].empty
+
+
+class TestCorrelationCountsFiniteValues:
+    def test_n_is_what_the_correlation_was_actually_computed_on(self):
+        """n is the number min_overlap is judged on — the defence against a spurious r=1.0."""
+        n = 500
+        frame = pd.DataFrame({
+            "a": np.r_[np.arange(12.0), np.full(n - 12, np.inf)],
+            "b": np.r_[np.arange(12.0) * 2, np.full(n - 12, np.inf)],
+        })
+        pairs = omnisea.correlations(frame, threshold=0.5)
+        assert not pairs.empty
+        assert pairs["n"].iloc[0] == 12, "n counted +/-inf rows the correlation ignored"
+
+
+class TestAddLocalDoesNotOverwrite:
+    def test_two_names_that_sanitize_alike_are_refused(self):
+        """'Reef 1' and 'Reef.1' both become Reef_1; the first survey used to be destroyed."""
+        tree = build_tree(Query.from_sites([BAMFIELD], WEEK), [])
+        mine = pd.DataFrame({"time": pd.date_range("2024-07-01", periods=2), "x": [1.0, 2.0]})
+        tree = omnisea.add_local(tree, mine, name="Reef 1", lat=48.8, lon=-125.1)
+        with pytest.raises(QueryError, match="already has a node"):
+            omnisea.add_local(tree, mine, name="Reef.1", lat=48.8, lon=-125.1)
+
+
+class TestAlignRefusesDuplicateTimestamps:
+    def test_the_error_names_the_node_and_the_instant(self):
+        """It used to surface from inside pandas as "cannot reindex on an axis with
+        duplicate labels", naming neither."""
+        q = Query.from_sites([BAMFIELD], WEEK)
+        frame = pd.DataFrame({"v": [1.0, 2.0]}, index=utc("2024-07-01", "2024-07-01"))
+        tree = build_tree(q, [node("D", "in_situ/x", frame, {"v": {"units": "m"}})])
+        with pytest.raises(QueryError, match="repeated timestamp"):
+            align(tree, freq="1h")
+
+
+# --------------------------------------------------------------------------- reporting
+
+
+class TestCoverageDoesNotInventSites:
+    """Found by a first-time user: one site in, two empty rows out.
+
+    Labels are joined with ", " for netCDF and were then re-split on commas — so every
+    auto-generated "lat,lon" label, and any name like "Tofino, BC", became several phantom
+    sites all reported as having no data, in the one function whose whole job is showing gaps.
+    """
+
+    def test_an_auto_generated_lat_lon_label_stays_one_site(self):
+        q = Query.from_position(49.153, -125.906, WEEK)
+        rows = omnisea.coverage(build_tree(q, []))
+        assert len(rows) == 1, f"one site requested, {len(rows)} reported"
+        assert rows["site"].iloc[0] == "49.1530,-125.9060"
+
+    def test_a_name_containing_a_comma_stays_one_site(self):
+        q = Query.from_sites([Site(49.153, -125.906, "Tofino, BC")], WEEK)
+        assert list(omnisea.coverage(build_tree(q, []))["site"]) == ["Tofino, BC"]
+
+    def test_a_site_that_did_get_data_is_not_reported_empty(self):
+        q = Query.from_sites([Site(48.8353, -125.1358, "Bamfield")], WEEK)
+        idx = pd.date_range("2024-07-01", periods=4, freq="D", tz="UTC", name="time")
+        tree = build_tree(q, [node("A", "in_situ/t", pd.DataFrame({"v": [1.0] * 4}, index=idx),
+                                   {"v": {"units": "m"}})])
+        rows = omnisea.coverage(tree)
+        assert bool(rows["has_data"].iloc[0]), "a site with 4 timesteps reported as empty"
+
+    def test_labels_survive_a_netcdf_round_trip(self, tmp_path):
+        import xarray as xr
+
+        pytest.importorskip("netCDF4")
+        q = Query.from_position(49.153, -125.906, WEEK)
+        path = tmp_path / "sites.nc"
+        build_tree(q, []).to_netcdf(path)
+        assert len(omnisea.coverage(xr.open_datatree(path))) == 1
+
+
+class TestNothingCheckedIsNotACleanBillOfHealth:
+    def test_correlations_says_when_min_overlap_excluded_everything(self, caplog):
+        """8 grab samples in a week is an ordinary field sheet. An empty table read as
+        'nothing is collinear' when the truth was 'nothing was examined'."""
+        frame = wide_frame(n=8)
+        with caplog.at_level("WARNING", logger="omnisea.align"):
+            pairs = omnisea.correlations(frame)
+        assert pairs.empty
+        assert pairs.attrs["omnisea_pairs_below_min_overlap"] > 0
+        assert any("nothing was checked" in r.message for r in caplog.records)
+
+    def test_a_genuinely_uncorrelated_frame_warns_about_nothing(self, caplog):
+        frame = wide_frame(n=40)[["tide"]].assign(other=np.arange(40.0) % 7)
+        with caplog.at_level("WARNING", logger="omnisea.align"):
+            omnisea.correlations(frame, threshold=0.99)
+        assert not [r for r in caplog.records if "nothing was checked" in r.message]
+
+
+class TestAnEmptyFetchExplainsItself:
+    def test_a_query_matching_no_station_says_so(self):
+        """discover()'s repr has always explained this; fetch() returned a bare empty tree."""
+        q = Query.from_sites([Site(0.0, 0.0, "Null Island", radius_km=5)], WEEK)
+        tree = Catalog(q, []).fetch()
+        assert "No station matched" in tree.attrs["omnisea_empty_reason"]
+        assert "No station matched" in omnisea.citation(tree)
+
+    def test_a_failure_is_reported_instead_of_the_no_match_hint(self):
+        q = Query.from_sites([Site(0.0, 0.0, "Null Island", radius_km=5)], WEEK)
+        tree = Catalog(q, [], {"dfo_tides": "UpstreamError: HTTP 503"}).fetch(
+            on_error="collect"
+        )
+        assert "omnisea_empty_reason" not in tree.attrs, "a real failure is not 'no match'"
+        assert "503" in tree.attrs["omnisea_fetch_errors"]
+
+
+class TestModelMatrix:
+    def test_text_and_constant_columns_are_excluded_with_reasons(self):
+        """align() is lossless, so it carries weather prose; sklearn dies on the first string."""
+        frame = wide_frame(n=20)
+        frame["WEATHER_ENG_DESC"] = "NA"
+        frame["always_five"] = 5.0
+        frame["all_missing"] = np.nan
+        matrix = omnisea.model_matrix(frame)
+        assert "WEATHER_ENG_DESC" not in matrix.columns
+        assert "always_five" not in matrix.columns
+        assert "all_missing" not in matrix.columns
+        assert "tide" in matrix.columns
+        excluded = matrix.attrs["omnisea_excluded"]
+        assert "not numeric" in excluded["WEATHER_ENG_DESC"]
+        assert "constant" in excluded["always_five"]
+
+    def test_the_result_is_actually_usable_by_a_linear_model(self):
+        frame = wide_frame(n=30)
+        frame["WEATHER_ENG_DESC"] = "NA"
+        matrix = omnisea.model_matrix(frame).dropna()
+        # The advertised one-liner: straight into a least-squares fit, no cleaning.
+        np.linalg.lstsq(matrix.to_numpy(dtype=float), np.arange(len(matrix), dtype=float),
+                        rcond=None)
+
+    def test_a_pinned_column_survives_whatever_it_looks_like(self):
+        frame = wide_frame(n=20).assign(label="site-a")
+        assert "label" in omnisea.model_matrix(frame, keep="label").columns
+
+
+class TestColocatedStations:
+    def test_nearest_prefers_the_longer_record_at_an_identical_position(self):
+        """ECCC splits one physical site across station ids; picking arbitrarily cost a user
+        46% of their temperature series with no signal."""
+        from omnisea.catalog import _nearest_per_site
+
+        short = StationMatch(source="eccc_climate", station_id="1038204", name="TOFINO A",
+                             lat=49.08, lon=-125.77, site="T", distance_km=8.0, n_rows_est=92)
+        long_ = StationMatch(source="eccc_climate", station_id="1038210", name="TOFINO A",
+                             lat=49.08, lon=-125.77, site="T", distance_km=8.0, n_rows_est=169)
+        assert [m.station_id for m in _nearest_per_site([short, long_], 1)] == ["1038210"]
+        assert [m.station_id for m in _nearest_per_site([long_, short], 1)] == ["1038210"]
+
+    def test_a_genuinely_closer_station_still_wins(self):
+        from omnisea.catalog import _nearest_per_site
+
+        near = StationMatch(source="s", station_id="near", name="A", lat=1, lon=1,
+                            site="T", distance_km=1.0, n_rows_est=10)
+        far = StationMatch(source="s", station_id="far", name="B", lat=2, lon=2,
+                           site="T", distance_km=50.0, n_rows_est=10_000)
+        assert [m.station_id for m in _nearest_per_site([far, near], 1)] == ["near"]
+
+
+class TestMissingExtras:
+    def test_writing_netcdf_without_the_engine_names_the_extra(self, monkeypatch, tmp_path):
+        """The README promises "using a feature without its extra tells you exactly what to
+        install"; the bare xarray error named two libraries the user never asked for."""
+        import importlib.util
+
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+        tree = build_tree(Query.from_sites([BAMFIELD], WEEK), [])
+        with pytest.raises(omnisea.MissingDependencyError) as excinfo:
+            omnisea.to_netcdf(tree, tmp_path / "x.nc")
+        assert 'pip install "omnisea[netcdf]"' in str(excinfo.value)
+
+
+class TestKeywordMistakes:
+    def test_a_misspelled_position_keyword_names_the_keys_typed(self):
+        """`latitude=`/`longitude=` used to die on "give one of bbox=, sites= or lat/lon="
+        without ever mentioning the three keys the user actually typed."""
+        with pytest.raises(QueryError) as excinfo:
+            omnisea.discover(latitude=49.1, longitude=-125.9, time=WEEK)
+        message = str(excinfo.value)
+        assert "latitude" in message and "longitude" in message
+        assert "did you mean" in message
+
+
+# --------------------------------------------------------------------------- the join itself
+
+
+def daily_local_node(station_id="1034600", lon=-125.77):
+    """An ECCC-style daily summary: labelled by LOCAL calendar date, stamped 00:00Z."""
+    idx = pd.DatetimeIndex(
+        ["2024-07-27", "2024-07-28", "2024-07-29"], tz="UTC", name="time"
+    )
+    frame = pd.DataFrame({"precipitation_amount": [1.0, 14.6, 14.2]}, index=idx)
+    match = StationMatch(source="eccc_climate_daily", provider="eccc", station_id=station_id,
+                         name="TOFINO", lat=49.08, lon=lon, site="Tofino")
+    return StationSeries(
+        match=match, frame=frame, node_path=f"in_situ/weather_daily/{station_id}",
+        attrs={
+            "provider": "eccc",
+            "source_name": "eccc_climate_daily",
+            "time_reference": (
+                "LOCAL_DATE: daily aggregates are labelled by local calendar date and stamped "
+                "at 00:00Z. climate-daily publishes no UTC_DATE, so no offset is applied."
+            ),
+        },
+        var_attrs={"precipitation_amount": {"units": "mm", "cell_methods": "time: sum"}},
+    )
+
+
+class TestLocalDateSourcesDoNotLeakTheFuture:
+    """Found by a researcher: 20% of samples got the NEXT day's weather.
+
+    ECCC daily summaries carry a local calendar date stamped 00:00Z. A late-afternoon Pacific
+    sample is the following day in UTC, so a backward interval match on the UTC stamp handed
+    it tomorrow's rain, Tmax and Tmin — weather that had not yet happened — while the audit
+    line asserted "backward within its own 1d interval". Systematic, and correlated with time
+    of day, which is worse than noise.
+    """
+
+    def tree(self):
+        q = Query.from_sites([Site(49.08, -125.77, "Tofino", radius_km=30)],
+                             ("2024-07-27", "2024-07-30"))
+        return build_tree(q, [daily_local_node()])
+
+    def test_an_evening_sample_gets_its_own_local_day(self):
+        # 18:38 PDT on 28 July == 01:38Z on 29 July.
+        sample = pd.DataFrame({"time": [pd.Timestamp("2024-07-29T01:38:00Z")]})
+        got = align(self.tree(), on=sample)["precipitation_amount"].iloc[0]
+        assert got == 14.6, (
+            f"got {got} — the 29 July total, for a sample taken on the afternoon of the 28th"
+        )
+
+    def test_a_morning_sample_is_unaffected(self):
+        # 09:00 PDT on 28 July == 16:00Z the same day; this one was always right.
+        sample = pd.DataFrame({"time": [pd.Timestamp("2024-07-28T16:00:00Z")]})
+        assert align(self.tree(), on=sample)["precipitation_amount"].iloc[0] == 14.6
+
+    def test_the_audit_line_says_the_match_was_made_in_local_time(self):
+        sample = pd.DataFrame({"time": [pd.Timestamp("2024-07-29T01:38:00Z")]})
+        out = align(self.tree(), on=sample)
+        assert "station-local time" in out.attrs["omnisea_aggregation"]["precipitation_amount"]
+
+    def test_a_resampled_grid_gets_the_same_correction_as_a_join(self):
+        """The first fix landed on align(on=) only, so align(freq=) still handed out the next
+        day's rain for the first eight hours of every UTC day — the two paths disagreed by a
+        whole day's weather, silently, over the same tree."""
+        grid = align(self.tree(), freq="1h")["precipitation_amount"]
+        # 01:00Z on the 29th is 18:00 PDT on the 28th: the 28th's total, not the 29th's.
+        assert grid.loc["2024-07-29 01:00"] == 14.6
+        assert grid.loc["2024-07-28 16:00"] == 14.6
+
+    def test_the_two_paths_agree_instant_for_instant(self):
+        """Over the span the grid covers, joining and resampling must answer identically.
+
+        (They differ in *extent*, not in value: an on= join reaches backward into the last
+        summary's own interval, while a freq= grid stops at the last observation.)
+        """
+        tree = self.tree()
+        gridded = align(tree, freq="1h")["precipitation_amount"]
+        stamps = pd.DatetimeIndex(gridded.index).tz_localize("UTC")
+        joined = align(tree, on=pd.DataFrame({"time": stamps}))["precipitation_amount"]
+        assert list(joined.to_numpy()) == list(gridded.to_numpy())
+
+    def test_the_resampled_audit_line_says_so_too(self):
+        out = align(self.tree(), freq="1h")
+        assert "station-local time" in out.attrs["omnisea_aggregation"]["precipitation_amount"]
+
+    def test_a_recorded_zone_beats_the_longitude_estimate(self):
+        """Checked against ECCC's own hourly data: binning hourly precipitation by *civil*
+        local date reproduced the published daily total on 1,273 of 1,369 station-days during
+        daylight time, against 982 for a fixed standard-time offset. So when the provider
+        knows the zone, the conversion follows the zone -- DST and all."""
+        stamps = pd.DatetimeIndex(["2024-01-15", "2024-07-15"])  # PST then PDT
+        shifted, described = _read_local_labels(
+            stamps, {"time_reference": "LOCAL_DATE", "time_zone": "America/Vancouver",
+                     "longitude": -125.77},
+        )
+        assert list(shifted) == [pd.Timestamp("2024-01-15T08:00"),
+                                 pd.Timestamp("2024-07-15T07:00")]
+        assert "America/Vancouver" in described
+
+    def test_longitude_is_the_fallback_when_no_zone_is_recorded(self):
+        stamps = pd.DatetimeIndex(["2024-07-15"])
+        shifted, described = _read_local_labels(
+            stamps, {"time_reference": "LOCAL_DATE", "longitude": -125.77},
+        )
+        # Rounded to the hour: a raw lon/15 of -8.38 h put ~23 minutes of every day on the
+        # wrong side of midnight.
+        assert list(shifted) == [pd.Timestamp("2024-07-15T08:00")]
+        assert described == "read in station-local time (UTC-8, estimated from longitude)"
+
+    def test_a_node_with_neither_is_left_alone(self):
+        assert _read_local_labels(
+            pd.DatetimeIndex(["2024-07-15"]), {"time_reference": "LOCAL_DATE"}
+        ) == (None, "")
+
+    def test_the_returned_index_is_the_callers_own_timestamps(self):
+        stamps = pd.DatetimeIndex(["2024-07-29T01:38:00Z", "2024-07-28T16:00:00Z"])
+        out = align(self.tree(), on=pd.DataFrame({"time": stamps}))
+        assert list(out.index) == sorted(stamps.tz_convert("UTC").tz_localize(None))
+
+    def test_a_utc_stamped_source_is_not_shifted(self):
+        """Only sources that say they are local-date labelled get the offset."""
+        q = Query.from_sites([Site(49.08, -125.77, "Tofino", radius_km=30)],
+                             ("2024-07-27", "2024-07-30"))
+        plain = daily_local_node()
+        plain.attrs.pop("time_reference")
+        out = align(build_tree(q, [plain]),
+                    on=pd.DataFrame({"time": [pd.Timestamp("2024-07-29T01:38:00Z")]}))
+        assert "station-local time" not in out.attrs["omnisea_aggregation"][
+            "precipitation_amount"
+        ]
+
+
+class TestNaiveTimestampsAreAnnounced:
+    """A field sheet in local time joined 7 hours off — 1.3 m mean error on a tide series,
+    3.4 m worst case, the whole tidal range — with every audit line reading '35/35 matched'."""
+
+    def tree(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=48, freq="h", tz="UTC", name="time")
+        frame = pd.DataFrame({"v": np.sin(np.arange(48) / 3.0)}, index=idx)
+        return build_tree(q, [node("A", "in_situ/t", frame, {"v": {"units": "m"}})])
+
+    def test_a_naive_frame_warns(self):
+        mine = pd.DataFrame({"time": pd.date_range("2024-07-01 09:00", periods=5, freq="6h")})
+        with pytest.warns(UserWarning, match="no timezone"):
+            align(self.tree(), on=mine, tolerance="2h")
+
+    def test_a_tz_aware_frame_does_not_warn(self):
+        mine = pd.DataFrame({
+            "time": pd.date_range("2024-07-01 09:00", periods=5, freq="6h",
+                                  tz="America/Vancouver")
+        })
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            align(self.tree(), on=mine, tolerance="2h")
+
+    def test_the_convention_is_recorded_on_the_frame(self):
+        mine = pd.DataFrame({
+            "time": pd.date_range("2024-07-01 09:00", periods=5, freq="6h", tz="UTC")
+        })
+        assert "UTC" in align(self.tree(), on=mine, tolerance="2h").attrs["omnisea_time_zone"]
+
+
+class TestAggIsNotSilentlyIgnored:
+    def test_agg_with_on_raises_rather_than_being_discarded(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=5, freq="D", tz="UTC", name="time")
+        tree = build_tree(q, [node("A", "in_situ/rain",
+                                   pd.DataFrame({"precipitation_amount": [1.0] * 5}, index=idx),
+                                   RAIN)])
+        mine = pd.DataFrame({"time": pd.date_range("2024-07-01", periods=3, freq="D", tz="UTC")})
+        with pytest.raises(QueryError, match="agg= applies to freq="):
+            align(tree, on=mine, agg={"precipitation_amount": "mean"})
+
+
+class TestUnitsTravelWithTheModelFrame:
+    def test_align_records_the_units_of_every_column(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=6, freq="h", tz="UTC", name="time")
+        tree = build_tree(q, [node("A", "in_situ/w",
+                                   pd.DataFrame({"wind_speed": np.arange(6.0)}, index=idx),
+                                   {"wind_speed": {"units": "km h-1"}})])
+        out = align(tree, freq="1h")
+        assert out.attrs["omnisea_units"]["wind_speed"] == "km h-1"
+
+    def test_the_same_measurement_in_two_units_is_never_pruned_to_one(self):
+        """align() names these wind_speed@A and wind_speed@B. Correlation is scale-invariant,
+        so km/h and m/s sit at r=1.0 — pruning one leaves survivors that silently disagree."""
+        n = 40
+        frame = pd.DataFrame({
+            "wind_speed@A": np.arange(n) * 3.6,
+            "wind_speed@B": np.arange(n) * 1.0,
+        })
+        frame.attrs["omnisea_units"] = {"wind_speed@A": "km h-1", "wind_speed@B": "m s-1"}
+        pruned = omnisea.drop_correlated(frame, threshold=0.95)
+        assert set(pruned.columns) == {"wind_speed@A", "wind_speed@B"}
+
+    def test_two_different_quantities_that_correlate_are_still_pruned(self):
+        """heating_degree_days is derived from air_temperature and carries different units —
+        that is real redundancy, not one measurement reported twice."""
+        n = 40
+        base = np.linspace(5.0, 25.0, n)
+        frame = pd.DataFrame({"air_temperature": base, "heating_degree_days": 18.0 - base})
+        frame.attrs["omnisea_units"] = {
+            "air_temperature": "degC", "heating_degree_days": "degC day",
+        }
+        assert len(omnisea.drop_correlated(frame, threshold=0.95).columns) == 1
+
+    def test_matching_units_still_prune_normally(self):
+        n = 40
+        frame = pd.DataFrame({"a": np.arange(n) * 1.0, "b": np.arange(n) * 2.0})
+        frame.attrs["omnisea_units"] = {"a": "m", "b": "m"}
+        assert len(omnisea.drop_correlated(frame, threshold=0.95).columns) == 1
+
+
+class TestAuditKeysMatchColumnNames:
+    def test_every_column_can_be_looked_up_in_the_audit_trail(self):
+        """With the default columns='auto' the audit said 'v@A' while the column was 'v', so a
+        methods table of 'column -> how it was joined' could not be built mechanically."""
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=6, freq="h", tz="UTC", name="time")
+        tree = build_tree(q, [
+            node("A", "in_situ/a", pd.DataFrame({"v": np.arange(6.0)}, index=idx),
+                 {"v": {"units": "m"}}),
+            node("B", "in_situ/b", pd.DataFrame({"w": np.arange(6.0)}, index=idx),
+                 {"w": {"units": "m"}}),
+        ])
+        out = align(tree, freq="1h")
+        audit = out.attrs["omnisea_aggregation"]
+        assert set(out.columns) <= set(audit), f"unjoinable: {set(out.columns) - set(audit)}"
+
+    def test_it_holds_when_two_stations_share_a_variable(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=6, freq="h", tz="UTC", name="time")
+        tree = build_tree(q, [
+            node("A", "in_situ/a", pd.DataFrame({"v": np.arange(6.0)}, index=idx),
+                 {"v": {"units": "m"}}),
+            node("B", "in_situ/b", pd.DataFrame({"v": np.arange(6.0)}, index=idx),
+                 {"v": {"units": "m"}}),
+        ])
+        out = align(tree, freq="1h")
+        assert set(out.columns) <= set(out.attrs["omnisea_aggregation"])
+
+
+class TestModelMatrixIsActuallyModelReady:
+    def test_a_mostly_missing_column_is_excluded_rather_than_eating_the_rows(self):
+        frame = wide_frame(n=35)
+        frame["humidex"] = np.nan
+        frame.loc[frame.index[:4], "humidex"] = [20.0, 21.5, 19.0, 22.3]  # 4 of 35
+        matrix = omnisea.model_matrix(frame)
+        assert "humidex" not in matrix.columns
+        assert "missing" in matrix.attrs["omnisea_excluded"]["humidex"]
+        assert len(matrix.dropna()) >= 30, "dropna() should not cost most of the samples"
+
+    def test_a_compass_bearing_is_excluded_from_a_linear_model(self):
+        frame = wide_frame(n=30)
+        frame["wind_from_direction"] = np.linspace(0, 359, 30)
+        frame.attrs["omnisea_units"] = {"wind_from_direction": "degree"}
+        matrix = omnisea.model_matrix(frame)
+        assert "wind_from_direction" not in matrix.columns
+        assert "compass bearing" in matrix.attrs["omnisea_excluded"]["wind_from_direction"]
+
+    def test_a_bearing_you_pinned_is_kept(self):
+        frame = wide_frame(n=30)
+        frame["wind_from_direction"] = np.linspace(0, 359, 30)
+        frame.attrs["omnisea_units"] = {"wind_from_direction": "degree"}
+        assert "wind_from_direction" in omnisea.model_matrix(
+            frame, keep="wind_from_direction"
+        ).columns
+
+
+class TestTheProviderContractFailsLoudly:
+    """A contributor's four most likely mistakes, each of which used to be silent or cryptic."""
+
+    def a_source(self, fetch_impl):
+        from omnisea.providers.base import Provider, RetrievalSource
+
+        class P(Provider):
+            name, title, license, base_url = "c", "C", "CC0", "https://example.org"
+
+            def build_sources(self):
+                return []
+
+        return type("S", (RetrievalSource,), {
+            "name": "c_src", "title": "C", "node_path": "in_situ/c",
+            "discover": lambda self, q: [],
+            "fetch": fetch_impl,
+        })(P())
+
+    def catalog_for(self, source):
+        from omnisea import registry
+
+        registry.register_source(source, replace=True)
+        q = Query.from_sites([BAMFIELD], WEEK)
+        match = StationMatch(source="c_src", provider="c", station_id="X", name="X",
+                             lat=48.8, lon=-125.1)
+        return Catalog(q, [match])
+
+    def test_returning_a_bare_series_instead_of_a_list_says_so(self):
+        series = StationSeries(
+            match=StationMatch(source="c_src", station_id="X", name="X", lat=48.8, lon=-125.1),
+            frame=pd.DataFrame(), node_path="in_situ/c/X",
+        )
+        source = self.a_source(lambda self, q, m: series)
+        with pytest.raises(omnisea.ProviderError, match="bare StationSeries"):
+            self.catalog_for(source).fetch()
+
+    def test_returning_a_dataframe_names_the_expected_type(self):
+        """It used to surface as "'str' object has no attribute 'is_empty'" from tree
+        assembly — no source name, no expected type, a private attribute as the only clue."""
+        source = self.a_source(lambda self, q, m: pd.DataFrame({"time": [], "v": []}))
+        with pytest.raises(omnisea.ProviderError, match="list\\[StationSeries"):
+            self.catalog_for(source).fetch()
+
+    def test_a_stray_exception_is_wrapped_so_omniseaerror_stays_a_complete_catch(self):
+        def boom(self, q, m):
+            raise ValueError("upstream returned HTML instead of CSV")
+
+        with pytest.raises(omnisea.OmniseaError) as excinfo:
+            self.catalog_for(self.a_source(boom)).fetch()
+        assert "HTML instead of CSV" in str(excinfo.value)
+
+    def test_collecting_still_records_rather_than_raising(self):
+        def boom(self, q, m):
+            raise ValueError("upstream down")
+
+        tree = self.catalog_for(self.a_source(boom)).fetch(on_error="collect")
+        assert "upstream down" in tree.attrs["omnisea_fetch_errors"]
+
+    def test_a_timezone_naive_frame_from_a_provider_is_announced(self):
+        """A network publishing local wall-clock times shipped every timestamp shifted by its
+        own offset, values unchanged, with nothing anywhere saying so."""
+        from omnisea.tree import series_to_dataset
+
+        naive = pd.DataFrame(
+            {"v": [1.0, 2.0]},
+            index=pd.DatetimeIndex(["2024-07-01 00:00", "2024-07-01 01:00"], name="time"),
+        )
+        series = StationSeries(
+            match=StationMatch(source="c_src", station_id="X", name="X", lat=48.8, lon=-125.1),
+            frame=naive, node_path="in_situ/c/X",
+        )
+        with pytest.warns(UserWarning, match="timezone-naive"):
+            series_to_dataset(series)
+
+
+class TestRegisteringASourceDoesNotCorruptTheRegistry:
+    def test_a_variant_source_does_not_unregister_its_providers_others(self):
+        """register_source back-registered the provider before entry points had loaded, so the
+        provider name was taken and its own sources never registered — then select() raised
+        "unknown provider 'x'; registered providers: ..., x"."""
+        from omnisea import registry
+        from omnisea.providers.dfo import DfoProvider, DfoTidesSource
+
+        class Variant(DfoTidesSource):
+            name = "dfo_tides_variant"
+
+        registry.register_source(Variant(DfoProvider()), replace=True)
+        try:
+            assert "dfo_tides" in omnisea.sources(), "the original source was unregistered"
+            assert [s.name for s in registry.select(["dfo"])] == ["dfo_tides"]
+        finally:
+            registry._SOURCES.pop("dfo_tides_variant", None)
+
+
+class TestTimeoutsAreBoundedAndConfigurable:
+    """A server that accepts a connection and then never answers cost ~480 s before the caller
+    saw anything: a 120 s read timeout multiplied by a retry ladder that kept trying. A
+    pipeline cannot wait eight minutes on one dead endpoint."""
+
+    def test_the_default_is_documented_and_readable(self):
+        assert http.get_timeout() == http.DEFAULT_TIMEOUT
+
+    def test_a_pipeline_can_shorten_it(self):
+        try:
+            omnisea.set_timeout(5, 20)
+            assert http.get_timeout() == (5, 20)
+        finally:
+            omnisea.set_timeout()
+
+    def test_a_nonsense_timeout_is_refused(self):
+        with pytest.raises(ValueError, match="positive"):
+            omnisea.set_timeout(5, 0)
+
+    def test_read_timeouts_are_not_retried_into_a_long_wait(self):
+        """A hung server does not un-hang; retrying only multiplies the wait."""
+        adapter = http.get_session().get_adapter("https://example.org/")
+        assert adapter.max_retries.read <= 1
+        assert adapter.max_retries.connect >= 1, "a refused connection is worth retrying"
+
+    def test_get_json_uses_the_configured_timeout(self, monkeypatch):
+        seen = {}
+
+        class Session:
+            def get(self, url, params=None, timeout=None, **kwargs):
+                seen["timeout"] = timeout
+                raise __import__("requests").RequestException("stop here")
+
+        monkeypatch.setattr(http, "get_session", lambda: Session())
+        try:
+            omnisea.set_timeout(3, 7)
+            with pytest.raises(omnisea.UpstreamError):
+                http.get_json("https://example.org/x")
+            assert seen["timeout"] == (3, 7)
+        finally:
+            omnisea.set_timeout()
+
+
+class TestAFailedSourceIsNotSilentSuccess:
+    """The README's strongest operational promise: fetch() raises by default, because a tree
+    quietly missing a source looks exactly like a tree where that source had nothing to say.
+    It was true for the retrieval phase and false for the discovery phase — which is the
+    dominant real-world class: expired credentials, DNS, upstream 5xx, timeouts. A nightly job
+    published an empty product with exit code 0."""
+
+    def catalog(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        return Catalog(q, [], {"erddap_tabledap": "UpstreamError: HTTP 401 (expired token)"})
+
+    def test_a_discovery_failure_raises_by_default(self):
+        with pytest.raises(omnisea.ProviderError) as excinfo:
+            self.catalog().fetch()
+        message = str(excinfo.value)
+        assert "erddap_tabledap" in message
+        assert "401" in message
+        assert "on_error='collect'" in message, "the message must name the escape hatch"
+
+    def test_collect_still_returns_what_answered(self):
+        tree = self.catalog().fetch(on_error="collect")
+        assert "401" in tree.attrs["omnisea_fetch_errors"]
+
+    def test_a_clean_discovery_does_not_raise(self):
+        assert Catalog(Query.from_sites([BAMFIELD], WEEK), []).fetch() is not None
+
+    def test_a_retention_note_is_not_a_failure(self):
+        """"That collection only keeps 30 days" is an explanation, not an error."""
+        q = Query.from_sites([BAMFIELD], WEEK)
+        tree = Catalog(q, [], notes={"eccc_swob": "holds only the last ~30 days"}).fetch()
+        assert "30 days" in tree.attrs["omnisea_source_notes"]
+
+
+class TestResponseBytesAreBounded:
+    """The row ceiling bounds a catalogue's *estimate*. Nothing bounded the bytes on the wire,
+    so a server streaming an endless body grew the process to 2.2 GB in 146 s — the read
+    timeout only fires on an idle socket, never on a slow trickle."""
+
+    def response(self, body: bytes, declared: str | None = None):
+        class R:
+            ok = True
+            status_code = 200
+            url = "https://example.org/x"
+            headers = {"Content-Length": declared} if declared else {}
+            content = body
+            text = ""
+
+            def json(self):
+                return {"ok": True}
+
+            def close(self):
+                pass
+
+        return R()
+
+    def test_a_declared_oversize_body_is_refused_before_reading_it(self, monkeypatch):
+        monkeypatch.setattr(http, "MAX_RESPONSE_BYTES", 1000)
+        with pytest.raises(PayloadTooLargeError, match="declares"):
+            http._check_size(self.response(b"", declared=str(10_000)), "https://example.org/x")
+
+    def test_an_undeclared_oversize_body_is_refused_after_it_arrives(self, monkeypatch):
+        monkeypatch.setattr(http, "MAX_RESPONSE_BYTES", 1000)
+        with pytest.raises(PayloadTooLargeError, match="returned"):
+            http._check_size(self.response(b"x" * 5000), "https://example.org/x")
+
+    def test_an_ordinary_body_passes(self, monkeypatch):
+        monkeypatch.setattr(http, "MAX_RESPONSE_BYTES", 1_000_000)
+        http._check_size(self.response(b"x" * 100), "https://example.org/x")
+
+    def test_the_message_does_not_leak_a_token(self, monkeypatch):
+        monkeypatch.setattr(http, "MAX_RESPONSE_BYTES", 10)
+        r = self.response(b"x" * 5000)
+        r.url = "https://example.org/x?token=SECRET-VALUE"
+        with pytest.raises(PayloadTooLargeError) as excinfo:
+            http._check_size(r, r.url)
+        assert "SECRET-VALUE" not in str(excinfo.value)
+
+
+class TestARadiusTypoDoesNotBecomeARequestStorm:
+    def test_an_absurd_radius_is_refused(self):
+        """radius_km=20000 matched 1152 stations at only ~49k estimated rows — under the row
+        ceiling — and became ~2,800 requests, which tripped a provider's rate limiter."""
+        with pytest.raises(QueryError, match="ceiling"):
+            Site(48.8, -125.1, "typo", radius_km=20_000)
+
+    def test_a_large_but_sane_radius_is_fine(self):
+        assert Site(48.8, -125.1, "regional", radius_km=500).radius_km == 500
+
+    def test_the_message_says_what_to_do_instead(self):
+        with pytest.raises(QueryError, match="bbox="):
+            Site(48.8, -125.1, "typo", radius_km=1e9)
+
+
+# --------------------------------------------------------------------------- v1 polish
+
+
+class TestCircularMeanStaysInRange:
+    def test_due_north_is_zero_not_360(self):
+        """`% 360` on a hair-negative value returns exactly 360.0 — the same bearing, but
+        outside the [0, 360) range anyone binning into compass sectors assumes."""
+        from omnisea.align import circular_mean
+
+        got = circular_mean([350.0, 10.0])
+        assert 0.0 <= got < 360.0
+        assert got == pytest.approx(0.0, abs=1e-6)
+
+    def test_ordinary_bearings_are_unaffected(self):
+        from omnisea.align import circular_mean
+
+        assert circular_mean([10.0, 20.0]) == pytest.approx(15.0, abs=1e-6)
+        assert circular_mean([180.0, 190.0]) == pytest.approx(185.0, abs=1e-6)
+
+
+class TestAConvertedValueSaysSo:
+    def test_conversion_leaves_a_trace_on_the_variable(self):
+        """A converted value used to carry only its new units, dropping cf_units and the note —
+        so a reader of the netCDF could not tell it from one the provider published that way."""
+        from omnisea import cf
+
+        spec = cf.FieldSpec(var="air_temperature", standard_name="air_temperature",
+                            units="degC", cf_units="K", cf_offset=273.15)
+        attrs = cf.cf_attrs(spec, to_cf_units=True)
+        assert attrs["units"] == "K"
+        assert attrs["omnisea_converted_from"] == "degC"
+        assert "converted by omnisea" in attrs["comment_units"]
+
+    def test_an_unconverted_value_carries_no_such_claim(self):
+        from omnisea import cf
+
+        spec = cf.FieldSpec(var="air_temperature", units="degC", cf_units="K", cf_offset=273.15)
+        attrs = cf.cf_attrs(spec, to_cf_units=False)
+        assert "omnisea_converted_from" not in attrs
+        assert attrs["units"] == "degC"
+
+
+class TestYourOwnDataIsCitedAsYours:
+    def make(self, **kwargs):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        mine = pd.DataFrame({
+            "time": pd.date_range("2024-07-01", periods=3, freq="D", tz="UTC"),
+            "chlorophyll": [1.0, 2.0, 3.0],
+        })
+        return omnisea.add_local(build_tree(q, []), mine, name="Grab samples",
+                                 lat=48.8353, lon=-125.1358, **kwargs)
+
+    def test_it_is_not_listed_as_a_third_party_source(self):
+        """It rendered as "local — local (1 station(s)). Licence: see provider." — a methods
+        section misattributing the author's own field work."""
+        text = omnisea.citation(self.make())
+        assert "Licence: see provider" not in text
+        assert "your own data" in text
+
+    def test_an_institution_can_be_given(self):
+        text = omnisea.citation(self.make(institution="Bamfield Marine Sciences Centre"))
+        assert "Bamfield Marine Sciences Centre" in text
+
+    def test_the_name_is_used_when_no_institution_is_given(self):
+        assert "Grab samples" in omnisea.citation(self.make())
+
+
+class TestCitationNamesItsStations:
+    def test_station_names_and_ids_appear(self):
+        """"1 station(s)" is not something anyone can repeat a query from."""
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=3, freq="D", tz="UTC", name="time")
+        series = StationSeries(
+            match=StationMatch(source="dfo_tides", provider="dfo", station_id="08545",
+                               name="Bamfield", lat=48.8353, lon=-125.1358),
+            frame=pd.DataFrame({"v": [1.0, 2.0, 3.0]}, index=idx),
+            node_path="in_situ/tides/08545",
+            attrs={"provider": "dfo", "source_name": "dfo_tides",
+                   "institution": "DFO", "license": "OGL"},
+        )
+        text = omnisea.citation(build_tree(q, [series]))
+        assert "Bamfield (08545)" in text
+
+
+class TestTheRetrievalIsRecorded:
+    def test_the_settings_that_shaped_the_result_are_on_the_tree(self):
+        """You could not tell a two-station tree from nearest=2 from one where only two
+        stations existed — and the README claims the root records the query."""
+        q = Query.from_sites([BAMFIELD], WEEK)
+        tree = Catalog(q, []).fetch(group_by_site=True, max_rows=1234)
+        assert tree.attrs["omnisea_group_by_site"] == 1
+        assert tree.attrs["omnisea_max_rows"] == 1234
+        assert tree.attrs["omnisea_on_error"] == "raise"
+        assert tree.attrs["omnisea_fetched_stations"] == 0
+
+
+class TestInProcessMemosCanBeCleared:
+    def test_clear_caches_drops_a_providers_memo(self):
+        """The memo sits above the HTTP cache and short-circuits before it, so
+        disable_cache(clear=True) could not reach it: a long-lived worker pinned the station
+        catalogue for the life of the process."""
+        from omnisea.providers import dfo
+
+        dfo._stations_cache = [{"code": "X", "latitude": 1.0, "longitude": 2.0}]
+        omnisea.clear_caches()
+        assert dfo._stations_cache is None
+
+    def test_disable_cache_with_clear_also_drops_the_memos(self):
+        from omnisea.providers import dfo
+
+        dfo._stations_cache = [{"code": "X"}]
+        omnisea.disable_cache(clear=True)
+        assert dfo._stations_cache is None
+
+    def test_a_provider_with_nothing_memoized_is_fine(self):
+        from omnisea.providers.cioos import CioosProvider
+
+        assert CioosProvider().clear_cache() is None
+
+
+class TestDailyPointObservationsMatchTheirDay:
+    """A snow-depth reading taken once a day is not a *summary* of that day and rightly has no
+    cell_methods — but it still belongs to that day. Matched as instantaneous, a 30-minute
+    tolerance found nothing and a fully populated variable became a column of NaN."""
+
+    def tree(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=7, freq="D", tz="UTC", name="time")
+        frame = pd.DataFrame({
+            "surface_snow_thickness": [3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.0],   # no cell_methods
+            "air_temperature": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+        }, index=idx)
+        match = StationMatch(source="daily", provider="p", station_id="S", name="S",
+                             lat=48.8353, lon=-125.1358)
+        return build_tree(q, [StationSeries(
+            match=match, frame=frame, node_path="in_situ/daily/S",
+            # What a source with period="D" stamps on every node it produces.
+            attrs={"provider": "p", "source_name": "daily", "omnisea_period": "D"},
+            var_attrs={
+                "surface_snow_thickness": {"units": "cm"},
+                "air_temperature": {"units": "degC", "cell_methods": "time: mean"},
+            },
+        )])
+
+    def afternoon(self):
+        return pd.DataFrame({
+            "time": pd.date_range("2024-07-02 14:00", periods=4, freq="D", tz="UTC")
+        })
+
+    def test_a_point_observation_in_a_daily_source_matches(self):
+        got = align(self.tree(), on=self.afternoon(), tolerance="30min")
+        assert got["surface_snow_thickness"].notna().sum() == 4, "a full column became NaN"
+
+    def test_it_is_matched_as_an_interval_not_a_nearest_reading(self):
+        out = align(self.tree(), on=self.afternoon(), tolerance="30min")
+        assert "within its own" in out.attrs["omnisea_aggregation"]["surface_snow_thickness"]
+
+    def test_a_sub_daily_source_is_unaffected(self):
+        """Only sources that declare a period get this; an hourly reading is still nearest."""
+        q = Query.from_sites([BAMFIELD], WEEK)
+        idx = pd.date_range("2024-07-01", periods=48, freq="h", tz="UTC", name="time")
+        tree = build_tree(q, [node("H", "in_situ/hourly",
+                                   pd.DataFrame({"v": np.arange(48.0)}, index=idx),
+                                   {"v": {"units": "m"}})])
+        out = align(tree, on=self.afternoon(), tolerance="30min")
+        assert "nearest" in out.attrs["omnisea_aggregation"]["v"]
+
+
+class TestQueryAttrsRoundTrip:
+    def test_site_arrays_are_the_same_shape_for_one_site_and_many(self, tmp_path):
+        """netCDF writes a one-element numeric array as a scalar, so readers had to handle both
+        shapes depending on how many sites happened to be asked for."""
+        import xarray as xr
+
+        pytest.importorskip("netCDF4")
+        for n, sites in ((1, [Site(48.8, -125.1, "A")]),
+                         (2, [Site(48.8, -125.1, "A"), Site(49.1, -125.9, "B")])):
+            path = tmp_path / f"{n}.nc"
+            build_tree(Query.from_sites(sites, WEEK), []).to_netcdf(path)
+            attrs = omnisea.query_attrs(xr.open_datatree(path))
+            assert isinstance(attrs["query_site_names"], list)
+            assert len(attrs["query_site_radius_km"]) == n
+            assert len(attrs["query_site_lats"]) == n
+
+    def test_it_decodes_the_retrieval_settings_too(self):
+        tree = Catalog(Query.from_sites([BAMFIELD], WEEK), []).fetch(max_rows=99)
+        assert omnisea.query_attrs(tree)["omnisea_max_rows"] == 99
+
+
+class TestVariablesReadsAsAQuestionAboutVariables:
+    def test_membership_asks_about_variables_not_columns(self):
+        """`"air_temperature" in omnisea.variables()` returned False for every real variable
+        and True for "units", because a DataFrame tests its column names."""
+        v = omnisea.variables()
+        assert "air_temperature" in v
+        assert "sea_water_temperature" in v
+        assert "definitely_not_a_variable" not in v
+
+    def test_it_is_still_a_dataframe(self):
+        v = omnisea.variables()
+        assert isinstance(v, pd.DataFrame)
+        assert {"variable", "standard_name", "units", "source"} <= set(v.columns)
+
+    def test_names_gives_a_plain_list(self):
+        names = omnisea.variables().names()
+        assert isinstance(names, list) and "air_temperature" in names
+
+
+class TestTheLibraryTrustsItsOwnOutput:
+    """Found by an ops reviewer: omnisea warned about omnisea.
+
+    `align()` returns a naive UTC index and says so in `attrs`. Feeding that back into
+    `align(on=...)` — a two-stage pipeline, or a re-join after adding a feature — tripped the
+    naive-timestamp warning, which exists to catch a field sheet kept in local time. A warning
+    that fires on correct usage is a warning people learn to filter out.
+    """
+
+    def frame(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        readings = pd.DataFrame(
+            {"water_surface_height_above_reference_datum": np.linspace(0.5, 3.0, 30)},
+            index=pd.date_range("2024-07-01", periods=30, freq="1h", tz="UTC", name="time"),
+        )
+        tree = build_tree(q, [node("08545", "in_situ/tides", readings, {})])
+        stamps = pd.date_range("2024-07-01", periods=6, freq="4h", tz="UTC")
+        return tree, align(tree, on=pd.DataFrame({"time": stamps}))
+
+    def test_re_feeding_align_output_does_not_warn(self):
+        tree, first = self.frame()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            again = align(tree, on=first)
+        assert len(again) == len(first)
+
+    def test_a_genuinely_unlabelled_field_sheet_still_warns(self):
+        tree, _ = self.frame()
+        sheet = pd.DataFrame({"time": pd.to_datetime(["2024-07-01 09:00"])})
+        with pytest.warns(UserWarning, match="no timezone"):
+            align(tree, on=sheet)
+
+
+class TestPinningAColumnThatIsNotThere:
+    def test_a_misspelled_keep_says_so(self):
+        """`keep=` silently ignored unknown names, so a typo dropped the very column the
+        caller was trying to protect while the audit read as though they never asked."""
+        frame = pd.DataFrame(
+            {"a": [1.0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+             "b": [2.0, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24]},
+            index=pd.date_range("2024-07-01", periods=12, freq="h"),
+        )
+        with pytest.warns(UserWarning, match="pin nothing"):
+            omnisea.drop_correlated(frame, keep=["a_typo"])
+
+    def test_a_real_name_is_silent(self):
+        frame = pd.DataFrame(
+            {"a": [1.0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+             "b": [2.0, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24]},
+            index=pd.date_range("2024-07-01", periods=12, freq="h"),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            out = omnisea.drop_correlated(frame, keep=["a"])
+        assert "a" in out.columns
+
+
+class TestTheTypesTheReadmePresentsArePublic:
+    def test_bbox_imports_from_the_package(self):
+        """The README's Types section presents Site and BBox side by side; only Site was
+        exported, so half of a documented pair raised ImportError."""
+        from omnisea import BBox, Site
+
+        assert BBox(-125.6, 48.5, -124.7, 49.2).west == -125.6
+        assert Site(48.8, -125.1, "x").name == "x"
+
+
+class TestTheRadiusCeilingMessageQuotesTheRadiusGiven:
+    def test_a_fractional_overshoot_is_not_rounded_into_nonsense(self):
+        """`{:,.0f}` rendered 2000.1 as "2,000", so the message read "radius_km=2,000 is
+        larger than the 2,000 km ceiling"."""
+        with pytest.raises(QueryError) as excinfo:
+            Site(48.8, -125.1, "just over", radius_km=2000.1)
+        assert "2,000.1" in str(excinfo.value)
+
+
+class TestARowEstimateNeverReadsZeroForDataThatExists:
+    """A 7-day query showed `eccc_climate_monthly` stations at `n_rows_est = 0` — and fetching
+    them returned the month those 7 days fall in. `int(days * samples_per_day)` floors to zero
+    as soon as one row covers more than the window, so the estimate said "nothing here" about
+    data that was there. Anyone filtering a catalogue on the estimate loses it silently.
+    """
+
+    def source(self, samples_per_day):
+        from omnisea.providers.ogc import OgcFeaturesSource
+
+        class Monthly(OgcFeaturesSource):
+            name = "monthly"
+            node_template = "in_situ/x/{station_id}"
+
+        Monthly.samples_per_day = samples_per_day
+        return Monthly.__new__(Monthly)
+
+    def test_a_period_longer_than_the_window_estimates_one_row(self):
+        query = Query.from_sites([BAMFIELD], WEEK)
+        assert self.source(1.0 / 30.4375).row_estimate(query) == 1     # monthly
+        assert self.source(1.0 / 365.25).row_estimate(query) == 1      # annual
+
+    def test_an_ordinary_cadence_is_unchanged(self):
+        query = Query.from_sites([BAMFIELD], WEEK)
+        assert self.source(24.0).row_estimate(query) == 168
+        assert self.source(1.0).row_estimate(query) == 7
+
+    def test_it_rounds_up_rather_than_truncating(self):
+        query = Query.from_sites([BAMFIELD], ("2024-07-01", "2024-08-20"))  # 50 days
+        assert self.source(1.0 / 30.4375).row_estimate(query) == 2

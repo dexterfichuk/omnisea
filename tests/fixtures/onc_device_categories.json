@@ -1,0 +1,87 @@
+[
+ {
+  "cvTerm": {
+   "deviceCategory": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/L05/current/115/",
+     "vocabulary": "SeaDataNet device categories"
+    }
+   ]
+  },
+  "description": "Acoustic Doppler Current Profiler 300 kHz ",
+  "deviceCategoryCode": "ADCP300KHZ",
+  "deviceCategoryName": "Acoustic Doppler Current Profiler 300 kHz",
+  "hasDeviceData": "true",
+  "longDescription": " Acoustic Doppler Current Profilers (ADCP) are hydroacoustic instruments, similar to sonars. ADCPs measure current speed and direction at multiple predetermined depths simultaneously. ADCPs use the Doppler effect of sound waves that are scattered by particles in seawater over a depth range."
+ },
+ {
+  "cvTerm": {
+   "deviceCategory": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/L05/current/WPS/",
+     "vocabulary": "SeaDataNet device categories"
+    }
+   ]
+  },
+  "description": "Bottom Pressure Recorder",
+  "deviceCategoryCode": "BPR",
+  "deviceCategoryName": "Bottom Pressure Recorder",
+  "hasDeviceData": "true",
+  "longDescription": " Bottom Pressure Recorders (BPR) are instruments that can detect small changes in pressure on the seafloor."
+ },
+ {
+  "cvTerm": {
+   "deviceCategory": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/L05/current/130/",
+     "vocabulary": "SeaDataNet device categories"
+    }
+   ]
+  },
+  "description": "Conductivity Temperature (and Depth Sensor)",
+  "deviceCategoryCode": "CTD",
+  "deviceCategoryName": "Conductivity Temperature Depth",
+  "hasDeviceData": "true",
+  "longDescription": " Conductivity Temperature Depth (CTD) is an instrument package that contains sensors for measuring the conductivity, temperature, and pressure of seawater. Salinity, sound velocity, depth and density are variables that can be derived from sensor measurements. CTDs can carry additional instruments and sensors such as oxygen sensors, turbidity sensors and fluorometers."
+ },
+ {
+  "cvTerm": {
+   "deviceCategory": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/L05/current/FFES/",
+     "vocabulary": "SeaDataNet device categories"
+    }
+   ]
+  },
+  "description": "Echosounder, Bioacoustic",
+  "deviceCategoryCode": "ECHOSOUNDERBIOA",
+  "deviceCategoryName": "Echosounder, Bioacoustic",
+  "hasDeviceData": "true",
+  "longDescription": " Echosounders are used to measure acoustic backscatter as a proxy for detecting zooplankton, fish, bubbles or other particles in the water-column. An echosounder has one or more transducers which emit acoustic pulses at a particular frequency. When the pulses strike animals or other objects in the water, echoes are produced, which can be detected and converted by the transducers back into electrical signals. Software is then used to determine distances, sizes, concentrations and movements of organisms and other objects in the water."
+ },
+ {
+  "cvTerm": {
+   "deviceCategory": [
+    {
+     "uri": "http://vocab.nerc.ac.uk/collection/L05/current/369/",
+     "vocabulary": "SeaDataNet device categories"
+    }
+   ]
+  },
+  "description": "Hydrophone",
+  "deviceCategoryCode": "HYDROPHONE",
+  "deviceCategoryName": "Hydrophone",
+  "hasDeviceData": "true",
+  "longDescription": " Hydrophones are devices containing transducers that convert underwater sound waves into electrical signals. They are acoustic instruments that can process data while they are being collected to produce calibrated waveform data. Hydrophones are typically used to study vocalizations of marine mammals, ship traffic and ambient noise."
+ },
+ {
+  "cvTerm": {
+   "deviceCategory": []
+  },
+  "description": "Junction Box",
+  "deviceCategoryCode": "JB",
+  "deviceCategoryName": "Junction Box",
+  "hasDeviceData": "true",
+  "longDescription": " Junction Boxes supply power and communications to deployed instruments. Junction boxes have a number of serial and ethernet ports, including 400V ethernet ports that enable connections to other junction boxes and high-voltage instruments. Junction boxes can convert high voltages to lower voltages (15V, 24V or 48V) required by many instruments."
+ }
+]

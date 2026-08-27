@@ -1,0 +1,201 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "08HB014.2024-07-01",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2024-07-01",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATE": "2024-07-01",
+    "LEVEL": 1.5019999742507937,
+    "DISCHARGE": 2.569999933242798,
+    "DISCHARGE_SYMBOL_EN": null,
+    "DISCHARGE_SYMBOL_FR": null,
+    "LEVEL_SYMBOL_EN": null,
+    "LEVEL_SYMBOL_FR": null
+   }
+  },
+  {
+   "id": "08HB014.2024-07-02",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2024-07-02",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATE": "2024-07-02",
+    "LEVEL": 1.4900000095367432,
+    "DISCHARGE": 2.289999961853028,
+    "DISCHARGE_SYMBOL_EN": null,
+    "DISCHARGE_SYMBOL_FR": null,
+    "LEVEL_SYMBOL_EN": null,
+    "LEVEL_SYMBOL_FR": null
+   }
+  },
+  {
+   "id": "08HB014.2024-07-03",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2024-07-03",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATE": "2024-07-03",
+    "LEVEL": 1.4800000190734863,
+    "DISCHARGE": 2.069999933242798,
+    "DISCHARGE_SYMBOL_EN": null,
+    "DISCHARGE_SYMBOL_FR": null,
+    "LEVEL_SYMBOL_EN": null,
+    "LEVEL_SYMBOL_FR": null
+   }
+  },
+  {
+   "id": "08HB014.2024-07-04",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2024-07-04",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATE": "2024-07-04",
+    "LEVEL": 1.472000002861023,
+    "DISCHARGE": 1.8799999952316284,
+    "DISCHARGE_SYMBOL_EN": null,
+    "DISCHARGE_SYMBOL_FR": null,
+    "LEVEL_SYMBOL_EN": null,
+    "LEVEL_SYMBOL_FR": null
+   }
+  },
+  {
+   "id": "08HB014.2024-07-05",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2024-07-05",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATE": "2024-07-05",
+    "LEVEL": 1.4630000591278076,
+    "DISCHARGE": 1.7100000381469729,
+    "DISCHARGE_SYMBOL_EN": null,
+    "DISCHARGE_SYMBOL_FR": null,
+    "LEVEL_SYMBOL_EN": null,
+    "LEVEL_SYMBOL_FR": null
+   }
+  },
+  {
+   "id": "08HB014.2024-07-06",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2024-07-06",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATE": "2024-07-06",
+    "LEVEL": 1.4559999704360962,
+    "DISCHARGE": 1.5700000524520874,
+    "DISCHARGE_SYMBOL_EN": null,
+    "DISCHARGE_SYMBOL_FR": null,
+    "LEVEL_SYMBOL_EN": null,
+    "LEVEL_SYMBOL_FR": null
+   }
+  },
+  {
+   "id": "08HB014.2024-07-07",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2024-07-07",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATE": "2024-07-07",
+    "LEVEL": 1.4479999542236328,
+    "DISCHARGE": 1.4299999475479126,
+    "DISCHARGE_SYMBOL_EN": null,
+    "DISCHARGE_SYMBOL_FR": null,
+    "LEVEL_SYMBOL_EN": null,
+    "LEVEL_SYMBOL_FR": null
+   }
+  },
+  {
+   "id": "08HB014.2024-07-08",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2024-07-08",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATE": "2024-07-08",
+    "LEVEL": 1.4420000314712524,
+    "DISCHARGE": 1.309999942779541,
+    "DISCHARGE_SYMBOL_EN": null,
+    "DISCHARGE_SYMBOL_FR": null,
+    "LEVEL_SYMBOL_EN": null,
+    "LEVEL_SYMBOL_FR": null
+   }
+  }
+ ],
+ "numberMatched": 8,
+ "numberReturned": 8,
+ "links": [],
+ "timeStamp": "2026-08-25T13:04:37.192865Z"
+}

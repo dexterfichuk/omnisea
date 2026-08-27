@@ -1,0 +1,61 @@
+# The same three commands CONTRIBUTING.md asks a contributor to run, on every supported
+# Python — plus one job pinned to the oldest declared dependencies, so the floor in
+# pyproject.toml stays a tested fact rather than an aspiration.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 14 * * 1"  # Mondays: the live job, watching for upstream drift
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests examples
+      - run: pytest -m "not network"
+      - run: python -m omnisea.conformance
+
+  minimum-versions:
+    # Others will not have this repo's development stack. The declared floors are only real
+    # if something runs them: pandas 2.2 and pandas 3 disagree about merge_asof strictness,
+    # and xarray's DataTree API was brand new at 2024.10.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: >
+          pip install -e ".[dev]"
+          "pandas==2.2.3" "numpy==1.26.4" "xarray==2024.10.0" "requests==2.31.0"
+      - run: pytest -m "not network"
+      - run: python -m omnisea.conformance
+
+  live:
+    # The upstream services drift — datasets get delisted, extents change, filters move —
+    # and only a live run notices. Weekly and on demand; never a gate on pull requests.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest -m network

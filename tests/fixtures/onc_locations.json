@@ -1,0 +1,1482 @@
+[
+ {
+  "bbox": {
+   "maxDepth": -7.0,
+   "maxLat": 48.83555,
+   "maxLon": -125.13514,
+   "minDepth": -9.0,
+   "minLat": 48.83533,
+   "minLon": -125.13539
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=BAMF",
+  "deployments": 5,
+  "depth": -7.4,
+  "description": " Bamfield is a community located on the west coast of Vancouver Island in British Columbia.",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.835506,
+  "locationCode": "BAMF",
+  "locationName": "Bamfield",
+  "lon": -125.13534
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.607599,
+   "maxLon": -124.822388,
+   "minDepth": null,
+   "minLat": 48.604002,
+   "minLon": -124.827812
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF038",
+  "deployments": 3,
+  "depth": null,
+  "description": " Station Name Alias: PA6  Description: Cast sampling station with 200m radius.  ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.606,
+  "locationCode": "CF038",
+  "locationName": "CF038 (PA6)",
+  "lon": -124.8251
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.633603,
+   "maxLon": -124.897957,
+   "minDepth": null,
+   "minLat": 48.630006,
+   "minLon": -124.903383
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF039",
+  "deployments": 9,
+  "depth": null,
+  "description": " Station Name Alias: PA7  Description: Cast sampling station with 200m radius.  ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.632004,
+  "locationCode": "CF039",
+  "locationName": "CF039 (PA7)",
+  "lon": -124.90067
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.582772,
+   "maxLon": -124.960799,
+   "minDepth": null,
+   "minLat": 48.579175,
+   "minLon": -124.966221
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF040",
+  "deployments": 9,
+  "depth": null,
+  "description": " Station Name Alias: PA8  Description: Cast sampling station with 200m radius.  ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.581173,
+  "locationCode": "CF040",
+  "locationName": "CF040 (PA8)",
+  "lon": -124.96351
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.553108,
+   "maxLon": -125.001171,
+   "minDepth": null,
+   "minLat": 48.549511,
+   "minLon": -125.006589
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF041",
+  "deployments": 6,
+  "depth": null,
+  "description": " Station Name Alias: PA9  Description: Cast sampling station with 200m radius.  ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.551509,
+  "locationCode": "CF041",
+  "locationName": "CF041 (PA9)",
+  "lon": -125.00388
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.531246,
+   "maxLon": -125.029742,
+   "minDepth": null,
+   "minLat": 48.527649,
+   "minLon": -125.035158
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF042",
+  "deployments": 5,
+  "depth": null,
+  "description": " Station Name Alias: PA10  Description: Cast sampling station with 200m radius.  ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.529647,
+  "locationCode": "CF042",
+  "locationName": "CF042 (PA10)",
+  "lon": -125.03245
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.578049,
+   "maxLon": -125.05592,
+   "minDepth": null,
+   "minLat": 48.574452,
+   "minLon": -125.06134
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF043",
+  "deployments": 8,
+  "depth": null,
+  "description": " Station Name Alias: PA11  Description: Cast sampling station with 200m radius.  ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.57645,
+  "locationCode": "CF043",
+  "locationName": "CF043 (PA11)",
+  "lon": -125.05863
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.529727,
+   "maxLon": -124.949572,
+   "minDepth": null,
+   "minLat": 48.52613,
+   "minLon": -124.954988
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF045",
+  "deployments": 4,
+  "depth": null,
+  "description": " Station Name Alias: PA13  Description: Cast sampling station with 200m radius.  ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.528129,
+  "locationCode": "CF045",
+  "locationName": "CF045 (PA13)",
+  "lon": -124.95228
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.815498,
+   "maxLon": -125.277977,
+   "minDepth": null,
+   "minLat": 48.811901,
+   "minLon": -125.283423
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF340",
+  "deployments": 2,
+  "depth": null,
+  "description": " Station Name Alias: Description: Cast sampling station with 200m radius.  ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.8139,
+  "locationCode": "CF340",
+  "locationName": "CF340 (Folger Deep)",
+  "lon": -125.2807
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.810088,
+   "maxLon": -125.278777,
+   "minDepth": null,
+   "minLat": 48.806491,
+   "minLon": -125.284223
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF341",
+  "deployments": 3,
+  "depth": null,
+  "description": " Station Name Alias: Description: Cast sampling station with 200m radius.  ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.80849,
+  "locationCode": "CF341",
+  "locationName": "CF341 (Folger Pinnacle)",
+  "lon": -125.2815
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.795128,
+   "maxLon": -125.263978,
+   "minDepth": null,
+   "minLat": 48.791531,
+   "minLon": -125.269422
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF342",
+  "deployments": 1,
+  "depth": null,
+  "description": " Station Name Alias: EFF16 Description: Cast sampling station with 200m radius.  ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.79353,
+  "locationCode": "CF342",
+  "locationName": "CF342 (EFF16)",
+  "lon": -125.2667
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.951955,
+   "maxLon": -125.547129,
+   "minDepth": null,
+   "minLat": 48.948358,
+   "minLon": -125.55259
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF447",
+  "deployments": 4,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-01  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.950356,
+  "locationCode": "CF447",
+  "locationName": "CF447 (YGTN-01)",
+  "lon": -125.54986
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.934102,
+   "maxLon": -125.519276,
+   "minDepth": null,
+   "minLat": 48.930505,
+   "minLon": -125.524735
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF448",
+  "deployments": 10,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-02  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.932504,
+  "locationCode": "CF448",
+  "locationName": "CF448 (YGTN-02)",
+  "lon": -125.522005
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.912177,
+   "maxLon": -125.501332,
+   "minDepth": null,
+   "minLat": 48.90858,
+   "minLon": -125.506788
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF455",
+  "deployments": 4,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-03  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.910578,
+  "locationCode": "CF455",
+  "locationName": "CF455 (YGTN-03)",
+  "lon": -125.50406
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 49.025537,
+   "maxLon": -125.345105,
+   "minDepth": null,
+   "minLat": 49.021941,
+   "minLon": -125.350575
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF456",
+  "deployments": 14,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-08  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 49.023939,
+  "locationCode": "CF456",
+  "locationName": "CF456 (YGTN-08)",
+  "lon": -125.34784
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.922633,
+   "maxLon": -125.469328,
+   "minDepth": null,
+   "minLat": 48.919036,
+   "minLon": -125.474785
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF457",
+  "deployments": 10,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-04  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.921034,
+  "locationCode": "CF457",
+  "locationName": "CF457 (YGTN-04)",
+  "lon": -125.472056
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.945197,
+   "maxLon": -125.431245,
+   "minDepth": null,
+   "minLat": 48.9416,
+   "minLon": -125.436706
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF458",
+  "deployments": 8,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-05  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.943598,
+  "locationCode": "CF458",
+  "locationName": "CF458 (YGTN-05)",
+  "lon": -125.433976
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.967567,
+   "maxLon": -125.392969,
+   "minDepth": null,
+   "minLat": 48.963971,
+   "minLon": -125.398431
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF459",
+  "deployments": 10,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-06  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.965969,
+  "locationCode": "CF459",
+  "locationName": "CF459 (YGTN-06)",
+  "lon": -125.3957
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.990424,
+   "maxLon": -125.365243,
+   "minDepth": null,
+   "minLat": 48.986828,
+   "minLon": -125.370709
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF460",
+  "deployments": 14,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-07  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.988826,
+  "locationCode": "CF460",
+  "locationName": "CF460 (YGTN-07)",
+  "lon": -125.367976
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.988945,
+   "maxLon": -125.314889,
+   "minDepth": null,
+   "minLat": 48.985349,
+   "minLon": -125.320354
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF461",
+  "deployments": 8,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-10  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.987347,
+  "locationCode": "CF461",
+  "locationName": "CF461(YGTN-10)",
+  "lon": -125.317622
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.993984,
+   "maxLon": -125.339347,
+   "minDepth": null,
+   "minLat": 48.990388,
+   "minLon": -125.344813
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF462",
+  "deployments": 11,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-09  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.992386,
+  "locationCode": "CF462",
+  "locationName": "CF462(YGTN-09)",
+  "lon": -125.34208
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.957395,
+   "maxLon": -125.357007,
+   "minDepth": null,
+   "minLat": 48.953798,
+   "minLon": -125.362469
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF463",
+  "deployments": 4,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-11  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.955796,
+  "locationCode": "CF463",
+  "locationName": "CF463(YGTN-11)",
+  "lon": -125.359738
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.932676,
+   "maxLon": -125.411526,
+   "minDepth": null,
+   "minLat": 48.929079,
+   "minLon": -125.416985
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF464",
+  "deployments": 4,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-12  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.931077,
+  "locationCode": "CF464",
+  "locationName": "CF464(YGTN-12)",
+  "lon": -125.414256
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 49.012727,
+   "maxLon": -125.170558,
+   "minDepth": null,
+   "minLat": 49.009131,
+   "minLon": -125.176026
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF465",
+  "deployments": 6,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-14  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 49.011129,
+  "locationCode": "CF465",
+  "locationName": "CF465(YGTN-14)",
+  "lon": -125.173292
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 49.047117,
+   "maxLon": -125.150001,
+   "minDepth": null,
+   "minLat": 49.043521,
+   "minLon": -125.155473
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF466",
+  "deployments": 6,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-15  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 49.045519,
+  "locationCode": "CF466",
+  "locationName": "CF466(YGTN-15)",
+  "lon": -125.152737
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 49.063203,
+   "maxLon": -124.869273,
+   "minDepth": null,
+   "minLat": 49.059607,
+   "minLon": -124.874747
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF468",
+  "deployments": 3,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-16  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 49.061605,
+  "locationCode": "CF468",
+  "locationName": "CF468(YGTN-16)",
+  "lon": -124.87201
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 49.006238,
+   "maxLon": -124.873227,
+   "minDepth": null,
+   "minLat": 49.002642,
+   "minLon": -124.878693
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF469",
+  "deployments": 2,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-17  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 49.00464,
+  "locationCode": "CF469",
+  "locationName": "CF469(YGTN-17)",
+  "lon": -124.87596
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.978011,
+   "maxLon": -124.974952,
+   "minDepth": null,
+   "minLat": 48.974415,
+   "minLon": -124.980416
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF470",
+  "deployments": 2,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-18  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.976413,
+  "locationCode": "CF470",
+  "locationName": "CF470(YGTN-18)",
+  "lon": -124.977684
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.97366,
+   "maxLon": -125.57413,
+   "minDepth": null,
+   "minLat": 48.970064,
+   "minLon": -125.579594
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF471",
+  "deployments": 2,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-20  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.972062,
+  "locationCode": "CF471",
+  "locationName": "CF471(YGTN-20)",
+  "lon": -125.576862
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.97084,
+   "maxLon": -125.624581,
+   "minDepth": null,
+   "minLat": 48.967244,
+   "minLon": -125.630045
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF472",
+  "deployments": 1,
+  "depth": null,
+  "description": " Station Name Alias: YGTN-19  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.969242,
+  "locationCode": "CF472",
+  "locationName": "CF472(YGTN-19)",
+  "lon": -125.627313
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.847302,
+   "maxLon": -125.132584,
+   "minDepth": null,
+   "minLat": 48.843705,
+   "minLon": -125.138034
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF580",
+  "deployments": 4,
+  "depth": null,
+  "description": " Station Name Alias: BF-1  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.845703,
+  "locationCode": "CF580",
+  "locationName": "CF580 (BF-1)",
+  "lon": -125.135309
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.850623,
+   "maxLon": -125.138563,
+   "minDepth": null,
+   "minLat": 48.847026,
+   "minLon": -125.144013
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF581",
+  "deployments": 6,
+  "depth": null,
+  "description": " Station Name Alias: BF-2  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.849025,
+  "locationCode": "CF581",
+  "locationName": "CF581 (BF-2)",
+  "lon": -125.141288
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.853278,
+   "maxLon": -125.143166,
+   "minDepth": null,
+   "minLat": 48.849682,
+   "minLon": -125.148616
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF582",
+  "deployments": 10,
+  "depth": null,
+  "description": " Station Name Alias: BF-3  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.85168,
+  "locationCode": "CF582",
+  "locationName": "CF582 (BF-3)",
+  "lon": -125.145891
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.856357,
+   "maxLon": -125.148763,
+   "minDepth": null,
+   "minLat": 48.852761,
+   "minLon": -125.154213
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF583",
+  "deployments": 8,
+  "depth": null,
+  "description": " Station Name Alias: BF-4  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.854759,
+  "locationCode": "CF583",
+  "locationName": "CF583 (BF-4)",
+  "lon": -125.151488
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.859118,
+   "maxLon": -125.153695,
+   "minDepth": null,
+   "minLat": 48.855522,
+   "minLon": -125.159145
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF584",
+  "deployments": 9,
+  "depth": null,
+  "description": " Station Name Alias: BF-5  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.85752,
+  "locationCode": "CF584",
+  "locationName": "CF584 (BF-5)",
+  "lon": -125.15642
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.841031,
+   "maxLon": -125.141497,
+   "minDepth": null,
+   "minLat": 48.837434,
+   "minLon": -125.146946
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF585",
+  "deployments": 11,
+  "depth": null,
+  "description": " Station Name Alias: BF-6  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.839432,
+  "locationCode": "CF585",
+  "locationName": "CF585 (BF-6)",
+  "lon": -125.144221
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.844048,
+   "maxLon": -125.147317,
+   "minDepth": null,
+   "minLat": 48.840452,
+   "minLon": -125.152767
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF586",
+  "deployments": 7,
+  "depth": null,
+  "description": " Station Name Alias: BF-7  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.84245,
+  "locationCode": "CF586",
+  "locationName": "CF586 (BF-7)",
+  "lon": -125.150042
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.846838,
+   "maxLon": -125.152662,
+   "minDepth": null,
+   "minLat": 48.843241,
+   "minLon": -125.158112
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF587",
+  "deployments": 7,
+  "depth": null,
+  "description": " Station Name Alias: BF-8  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.84524,
+  "locationCode": "CF587",
+  "locationName": "CF587 (BF-8)",
+  "lon": -125.155387
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.849784,
+   "maxLon": -125.158272,
+   "minDepth": null,
+   "minLat": 48.846187,
+   "minLon": -125.163722
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF588",
+  "deployments": 6,
+  "depth": null,
+  "description": " Station Name Alias: BF-9  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.848185,
+  "locationCode": "CF588",
+  "locationName": "CF588 (BF-9)",
+  "lon": -125.160997
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.862179,
+   "maxLon": -125.158849,
+   "minDepth": null,
+   "minLat": 48.858582,
+   "minLon": -125.1643
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF589",
+  "deployments": 4,
+  "depth": null,
+  "description": " Station Name Alias: BF-10  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.86058,
+  "locationCode": "CF589",
+  "locationName": "CF589 (BF-10)",
+  "lon": -125.161575
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.865002,
+   "maxLon": -125.163773,
+   "minDepth": null,
+   "minLat": 48.861405,
+   "minLon": -125.169225
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CF590",
+  "deployments": 4,
+  "depth": null,
+  "description": " Station Name Alias: BF-11  Description: Cast sampling station with 200m radius. ",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.863404,
+  "locationCode": "CF590",
+  "locationName": "CF590 (BF-11)",
+  "lon": -125.166499
+ },
+ {
+  "bbox": {
+   "maxDepth": 6.0,
+   "maxLat": 48.974733,
+   "maxLon": -124.99635,
+   "minDepth": 6.0,
+   "minLat": 48.974733,
+   "minLon": -124.99635
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CSBF",
+  "deployments": 5,
+  "depth": 6.0,
+  "description": " The Burrough Point Farm is a commercial farm used for cultivating seaweed in Barkley Sound.",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.974733,
+  "locationCode": "CSBF",
+  "locationName": "Cascadia Seaweed Burrough Point Farm",
+  "lon": -124.99635
+ },
+ {
+  "bbox": {
+   "maxDepth": 6.0,
+   "maxLat": 48.968889,
+   "maxLon": -124.998889,
+   "minDepth": 6.0,
+   "minLat": 48.968889,
+   "minLon": -124.998889
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=CSBR",
+  "deployments": 5,
+  "depth": 6.0,
+  "description": " The Burrough Point Farm Reference Site in Barkley Sound is used to obtain ambient measurements as a comparison to the nearby seaweed farm.",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.968889,
+  "locationCode": "CSBR",
+  "locationName": "Cascadia Seaweed Burrough Point Reference Site",
+  "lon": -124.998889
+ },
+ {
+  "bbox": {
+   "maxDepth": 105.0,
+   "maxLat": 48.814733,
+   "maxLon": -125.274604,
+   "minDepth": 94.0,
+   "minLat": 48.813667,
+   "minLon": -125.28195
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPD",
+  "deployments": 53,
+  "depth": 96.35866,
+  "description": " Folger Deep is a deep location in Folger Passage near a pillar-like seamount, where productivity and marine mammals are observed.",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.813808,
+  "locationCode": "FGPD",
+  "locationName": "Folger Deep",
+  "lon": -125.280581
+ },
+ {
+  "bbox": {
+   "maxDepth": 96.0,
+   "maxLat": 48.813824,
+   "maxLon": -125.274707,
+   "minDepth": 96.0,
+   "minLat": 48.813824,
+   "minLon": -125.274707
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPD.H1",
+  "deployments": 1,
+  "depth": 96.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.813824,
+  "locationCode": "FGPD.H1",
+  "locationName": "Hydrophone A",
+  "lon": -125.274707
+ },
+ {
+  "bbox": {
+   "maxDepth": 96.0,
+   "maxLat": 48.813824,
+   "maxLon": -125.274707,
+   "minDepth": 96.0,
+   "minLat": 48.813824,
+   "minLon": -125.274707
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPD.H2",
+  "deployments": 1,
+  "depth": 96.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.813824,
+  "locationCode": "FGPD.H2",
+  "locationName": "Hydrophone B",
+  "lon": -125.274707
+ },
+ {
+  "bbox": {
+   "maxDepth": 96.0,
+   "maxLat": 48.813824,
+   "maxLon": -125.274707,
+   "minDepth": 96.0,
+   "minLat": 48.813824,
+   "minLon": -125.274707
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPD.H3",
+  "deployments": 1,
+  "depth": 96.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.813824,
+  "locationCode": "FGPD.H3",
+  "locationName": "Hydrophone C",
+  "lon": -125.274707
+ },
+ {
+  "bbox": {
+   "maxDepth": 96.0,
+   "maxLat": 48.813824,
+   "maxLon": -125.274707,
+   "minDepth": 96.0,
+   "minLat": 48.813824,
+   "minLon": -125.274707
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPD.H4",
+  "deployments": 1,
+  "depth": 96.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.813824,
+  "locationCode": "FGPD.H4",
+  "locationName": "Hydrophone D",
+  "lon": -125.274707
+ },
+ {
+  "bbox": {
+   "maxDepth": 100.0,
+   "maxLat": 48.81385,
+   "maxLon": -125.28,
+   "minDepth": 94.0,
+   "minLat": 48.813667,
+   "minLon": -125.280983
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPD.O1",
+  "deployments": 7,
+  "depth": 96.571429,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.813773,
+  "locationCode": "FGPD.O1",
+  "locationName": "Oxygen Sensor Aanderaa",
+  "lon": -125.280801
+ },
+ {
+  "bbox": {
+   "maxDepth": 98.0,
+   "maxLat": 48.814733,
+   "maxLon": -125.280667,
+   "minDepth": 94.0,
+   "minLat": 48.813711,
+   "minLon": -125.280983
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPD.O2",
+  "deployments": 12,
+  "depth": 95.566667,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.813834,
+  "locationCode": "FGPD.O2",
+  "locationName": "Oxygen Sensor SBE63",
+  "lon": -125.280806
+ },
+ {
+  "bbox": {
+   "maxDepth": 25.0,
+   "maxLat": 48.808292,
+   "maxLon": -125.2815,
+   "minDepth": 25.0,
+   "minLat": 48.808292,
+   "minLon": -125.2815
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPPN",
+  "deployments": 79,
+  "depth": 25.0,
+  "description": " Folger Pinnacle is an isolated pillar-like feature in Folger Passage, where biodiversity and coastal ecosystems are observed.",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.808292,
+  "locationCode": "FGPPN",
+  "locationName": "Folger Pinnacle",
+  "lon": -125.2815
+ },
+ {
+  "bbox": {
+   "maxDepth": 25.0,
+   "maxLat": 48.808292,
+   "maxLon": -125.2815,
+   "minDepth": 25.0,
+   "minLat": 48.808292,
+   "minLon": -125.2815
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPPN.C1",
+  "deployments": 3,
+  "depth": 25.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.808292,
+  "locationCode": "FGPPN.C1",
+  "locationName": "CTD Experiment Control",
+  "lon": -125.2815
+ },
+ {
+  "bbox": {
+   "maxDepth": 25.0,
+   "maxLat": 48.808292,
+   "maxLon": -125.2815,
+   "minDepth": 25.0,
+   "minLat": 48.808292,
+   "minLon": -125.2815
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPPN.C2",
+  "deployments": 3,
+  "depth": 25.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.808292,
+  "locationCode": "FGPPN.C2",
+  "locationName": "CTD Experiment UV Antifouling 1",
+  "lon": -125.2815
+ },
+ {
+  "bbox": {
+   "maxDepth": 25.0,
+   "maxLat": 48.808292,
+   "maxLon": -125.2815,
+   "minDepth": 25.0,
+   "minLat": 48.808292,
+   "minLon": -125.2815
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPPN.C3",
+  "deployments": 3,
+  "depth": 25.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.808292,
+  "locationCode": "FGPPN.C3",
+  "locationName": "CTD Experiment UV Antifouling 2",
+  "lon": -125.2815
+ },
+ {
+  "bbox": {
+   "maxDepth": 25.0,
+   "maxLat": 48.808292,
+   "maxLon": -125.2815,
+   "minDepth": 25.0,
+   "minLat": 48.808292,
+   "minLon": -125.2815
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPPN.J1",
+  "deployments": 1,
+  "depth": 25.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.808292,
+  "locationCode": "FGPPN.J1",
+  "locationName": "Camera Interface Box",
+  "lon": -125.2815
+ },
+ {
+  "bbox": {
+   "maxDepth": 25.0,
+   "maxLat": 48.808292,
+   "maxLon": -125.2815,
+   "minDepth": 25.0,
+   "minLat": 48.808292,
+   "minLon": -125.2815
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPPN.K1",
+  "deployments": 1,
+  "depth": 25.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.808292,
+  "locationCode": "FGPPN.K1",
+  "locationName": "Camera Left Light",
+  "lon": -125.2815
+ },
+ {
+  "bbox": {
+   "maxDepth": 25.0,
+   "maxLat": 48.808292,
+   "maxLon": -125.2815,
+   "minDepth": 25.0,
+   "minLat": 48.808292,
+   "minLon": -125.2815
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=FGPPN.K2",
+  "deployments": 1,
+  "depth": 25.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.808292,
+  "locationCode": "FGPPN.K2",
+  "locationName": "Camera Right Light",
+  "lon": -125.2815
+ },
+ {
+  "bbox": {
+   "maxDepth": -1302.0,
+   "maxLat": 48.99986,
+   "maxLon": -124.697,
+   "minDepth": -1310.0,
+   "minLat": 48.99973,
+   "minLon": -124.69705
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=MGRB",
+  "deployments": 4,
+  "depth": -1304.0,
+  "description": " Mt. Grey is a mountain located near Port Alberni on Vancouver Island.",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.999827,
+  "locationCode": "MGRB",
+  "locationName": "Mount Grey",
+  "lon": -124.697012
+ },
+ {
+  "bbox": {
+   "maxDepth": null,
+   "maxLat": 48.95944,
+   "maxLon": -125.4931,
+   "minDepth": null,
+   "minLat": 48.95944,
+   "minLon": -125.4931
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=MTOZ",
+  "deployments": 1,
+  "depth": null,
+  "description": " Mount Ozzard is a mountain located near Ucluelet Harbour, on the west coast of Vancouver Island.",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.95944,
+  "locationCode": "MTOZ",
+  "locationName": "Mount Ozzard",
+  "lon": -125.4931
+ },
+ {
+  "bbox": {
+   "maxDepth": -15.0,
+   "maxLat": 48.860686,
+   "maxLon": -124.655785,
+   "minDepth": -15.0,
+   "minLat": 48.860686,
+   "minLon": -124.655785
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=NITI",
+  "deployments": 1,
+  "depth": -15.0,
+  "description": " The Nitinaht region is located on the west coast of Vancouver Island and has been home to the Ditidaht People for over 5,000 years.",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.860686,
+  "locationCode": "NITI",
+  "locationName": "Nitinaht",
+  "lon": -124.655785
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.697,
+   "maxLat": 48.813459,
+   "maxLon": -125.281127,
+   "minDepth": 0.697,
+   "minLat": 48.813459,
+   "minLon": -125.281127
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=ODYSS",
+  "deployments": 43,
+  "depth": 0.697,
+  "description": "This Remotely Operated Vehicle is owned by Pelagic Research Services.",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.813459,
+  "locationCode": "ODYSS",
+  "locationName": "Odysseus",
+  "lon": -125.281127
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.0,
+   "maxLat": 48.8063,
+   "maxLon": -124.6783,
+   "minDepth": 0.0,
+   "minLat": 48.8063,
+   "minLon": -124.6783
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=SC16.DR18",
+  "deployments": 1,
+  "depth": 0.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.8063,
+  "locationCode": "SC16.DR18",
+  "locationName": "IOS Drifter ID 425",
+  "lon": -124.6783
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.0,
+   "maxLat": 48.7937,
+   "maxLon": -125.2109,
+   "minDepth": 0.0,
+   "minLat": 48.7937,
+   "minLon": -125.2109
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=SC16.DR20",
+  "deployments": 1,
+  "depth": 0.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.7937,
+  "locationCode": "SC16.DR20",
+  "locationName": "IOS Drifter ID 427",
+  "lon": -125.2109
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.0,
+   "maxLat": 48.5194,
+   "maxLon": -124.9641,
+   "minDepth": 0.0,
+   "minLat": 48.5194,
+   "minLon": -124.9641
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=SC16.DR30",
+  "deployments": 1,
+  "depth": 0.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.5194,
+  "locationCode": "SC16.DR30",
+  "locationName": "IOS Drifter ID 437",
+  "lon": -124.9641
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.0,
+   "maxLat": 48.7924,
+   "maxLon": -125.2583,
+   "minDepth": 0.0,
+   "minLat": 48.7924,
+   "minLon": -125.2583
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=SC16.DR34",
+  "deployments": 1,
+  "depth": 0.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.7924,
+  "locationCode": "SC16.DR34",
+  "locationName": "IOS Drifter ID 441",
+  "lon": -125.2583
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.0,
+   "maxLat": 48.8293,
+   "maxLon": -125.2164,
+   "minDepth": 0.0,
+   "minLat": 48.8293,
+   "minLon": -125.2164
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=SC16.DR35",
+  "deployments": 1,
+  "depth": 0.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.8293,
+  "locationCode": "SC16.DR35",
+  "locationName": "IOS Drifter ID 442",
+  "lon": -125.2164
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.0,
+   "maxLat": 48.6615,
+   "maxLon": -125.3483,
+   "minDepth": 0.0,
+   "minLat": 48.6615,
+   "minLon": -125.3483
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=SC17.DR101",
+  "deployments": 1,
+  "depth": 0.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.6615,
+  "locationCode": "SC17.DR101",
+  "locationName": "IOS Drifter ID 766",
+  "lon": -125.3483
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.0,
+   "maxLat": 48.7308,
+   "maxLon": -125.5954,
+   "minDepth": 0.0,
+   "minLat": 48.7308,
+   "minLon": -125.5954
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=SC17.DR102",
+  "deployments": 1,
+  "depth": 0.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.7308,
+  "locationCode": "SC17.DR102",
+  "locationName": "IOS Drifter ID 767",
+  "lon": -125.5954
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.0,
+   "maxLat": 48.6126,
+   "maxLon": -124.7384,
+   "minDepth": 0.0,
+   "minLat": 48.6126,
+   "minLon": -124.7384
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=SC17.DR110",
+  "deployments": 1,
+  "depth": 0.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.6126,
+  "locationCode": "SC17.DR110",
+  "locationName": "IOS Drifter ID 775",
+  "lon": -124.7384
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.0,
+   "maxLat": 48.6378,
+   "maxLon": -125.2367,
+   "minDepth": 0.0,
+   "minLat": 48.6378,
+   "minLon": -125.2367
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=SC17.DR121",
+  "deployments": 1,
+  "depth": 0.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.6378,
+  "locationCode": "SC17.DR121",
+  "locationName": "IOS Drifter ID 786",
+  "lon": -125.2367
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.0,
+   "maxLat": 48.61641,
+   "maxLon": -124.762944,
+   "minDepth": 0.0,
+   "minLat": 48.61641,
+   "minLon": -124.762944
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=SC17.DR134",
+  "deployments": 1,
+  "depth": 0.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.61641,
+  "locationCode": "SC17.DR134",
+  "locationName": "Osker SN 412",
+  "lon": -124.762944
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.0,
+   "maxLat": 48.645786,
+   "maxLon": -125.573056,
+   "minDepth": 0.0,
+   "minLat": 48.645786,
+   "minLon": -125.573056
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=SC17.DR144",
+  "deployments": 1,
+  "depth": 0.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.645786,
+  "locationCode": "SC17.DR144",
+  "locationName": "Osker SN 428",
+  "lon": -125.573056
+ },
+ {
+  "bbox": {
+   "maxDepth": 0.0,
+   "maxLat": 48.863085,
+   "maxLon": -125.351936,
+   "minDepth": 0.0,
+   "minLat": 48.863085,
+   "minLon": -125.351936
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=SC17.DR183",
+  "deployments": 1,
+  "depth": 0.0,
+  "description": "",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.863085,
+  "locationCode": "SC17.DR183",
+  "locationName": "Osker SN 512",
+  "lon": -125.351936
+ },
+ {
+  "bbox": {
+   "maxDepth": -8.0,
+   "maxLat": 48.92457,
+   "maxLon": -125.54198,
+   "minDepth": -9.0,
+   "minLat": 48.92457,
+   "minLon": -125.54198
+  },
+  "dataSearchURL": "https://data.oceannetworks.ca/DataSearch?location=UCLU",
+  "deployments": 5,
+  "depth": -8.6,
+  "description": " Ucluelet is a community on west coast of Vancouver Island.",
+  "hasDeviceData": "true",
+  "hasPropertyData": "false",
+  "lat": 48.92457,
+  "locationCode": "UCLU",
+  "locationName": "Ucluelet",
+  "lon": -125.54198
+ }
+]

@@ -1,0 +1,89 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "08HB014.2020-01",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2020-01",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATE": "2020-01",
+    "MONTHLY_MEAN_LEVEL": 2.506999969482422,
+    "MONTHLY_MEAN_DISCHARGE": 72.19999694824219
+   }
+  },
+  {
+   "id": "08HB014.2020-02",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2020-02",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATE": "2020-02",
+    "MONTHLY_MEAN_LEVEL": 1.9429999589920044,
+    "MONTHLY_MEAN_DISCHARGE": 23.299999237060547
+   }
+  },
+  {
+   "id": "08HB014.2020-03",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2020-03",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATE": "2020-03",
+    "MONTHLY_MEAN_LEVEL": 1.815000057220459,
+    "MONTHLY_MEAN_DISCHARGE": 14.399999618530272
+   }
+  },
+  {
+   "id": "08HB014.2020-04",
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -124.9694366455078,
+     48.89250183105469
+    ]
+   },
+   "properties": {
+    "IDENTIFIER": "08HB014.2020-04",
+    "STATION_NAME": "SARITA RIVER NEAR BAMFIELD",
+    "STATION_NUMBER": "08HB014",
+    "PROV_TERR_STATE_LOC": "BC",
+    "DATE": "2020-04",
+    "MONTHLY_MEAN_LEVEL": 1.6640000343322754,
+    "MONTHLY_MEAN_DISCHARGE": 7.210000038146973
+   }
+  }
+ ],
+ "numberMatched": 12,
+ "numberReturned": 4,
+ "links": [],
+ "timeStamp": "2026-08-25T13:04:37.443527Z"
+}

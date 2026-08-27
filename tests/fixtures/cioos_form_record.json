@@ -1,0 +1,18 @@
+{
+  "recordID": "bamfield-sst-2024",
+  "identifier": "b1f0c8de-0000-4a11-9c2e-000000000001",
+  "title": {"en": "Bamfield Inlet sea surface temperature", "fr": "Température de surface"},
+  "abstract": {"en": "Hourly SST from a shore logger in Bamfield Inlet.", "fr": ""},
+  "eov": ["seaSurfaceTemperature", "seaSurfaceHeight"],
+  "keywords": {"en": ["temperature", "Barkley Sound"], "fr": []},
+  "dateStart": "2024-01-01",
+  "dateEnd": "2024-12-31",
+  "map": {"north": "48.90", "south": "48.78", "east": "-125.05", "west": "-125.22", "polygon": ""},
+  "distribution": [
+    {"name": {"en": "ERDDAP tabledap"}, "url": "https://data.cioos.ca/erddap/tabledap/bamfield_sst.html"}
+  ],
+  "organization": "Bamfield Marine Sciences Centre",
+  "license": "CC-BY-4.0",
+  "progress": "onGoing",
+  "platforms": [{"type": "mooring", "id": "BAM01"}]
+}

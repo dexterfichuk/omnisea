@@ -1,0 +1,82 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -122.8769,
+     49.2517
+    ]
+   },
+   "properties": {
+    "identifier__identifiant": "1101200",
+    "station_id__id_station": "1101200",
+    "station_name__nom_station": "BURQUITLAM VANCOUVER GOLF COURSE",
+    "measurement_type__type_mesure": "snow",
+    "period__periode": "Ann",
+    "trend_value__valeur_tendance": null,
+    "elevation__elevation": 122,
+    "province__province": "BC",
+    "joined__rejoint": 1,
+    "year_range__annees": null,
+    "start_date__date_debut": "1926-01-01",
+    "end_date__date_fin": "2005-12-01"
+   },
+   "id": "1101200"
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -123.9878,
+     49.1989
+    ]
+   },
+   "properties": {
+    "identifier__identifiant": "10253G0",
+    "station_id__id_station": "10253G0",
+    "station_name__nom_station": "NANAIMO CITY YARD",
+    "measurement_type__type_mesure": "snow",
+    "period__periode": "Ann",
+    "trend_value__valeur_tendance": null,
+    "elevation__elevation": 114,
+    "province__province": "BC",
+    "joined__rejoint": 1,
+    "year_range__annees": null,
+    "start_date__date_debut": "1913-01-01",
+    "end_date__date_fin": "2017-12-01"
+   },
+   "id": "10253G0"
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -122.9711,
+     49.4403
+    ]
+   },
+   "properties": {
+    "identifier__identifiant": "1107200",
+    "station_id__id_station": "1107200",
+    "station_name__nom_station": "SEYMOUR FALLS",
+    "measurement_type__type_mesure": "snow",
+    "period__periode": "Ann",
+    "trend_value__valeur_tendance": null,
+    "elevation__elevation": 244,
+    "province__province": "BC",
+    "joined__rejoint": 0,
+    "year_range__annees": null,
+    "start_date__date_debut": "1928-01-01",
+    "end_date__date_fin": "2003-09-01"
+   },
+   "id": "1107200"
+  }
+ ],
+ "numberMatched": 39,
+ "numberReturned": 3
+}
