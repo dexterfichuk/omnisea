@@ -219,7 +219,7 @@ class Site:
             # comfortably under the row ceiling — and became roughly 2,800 requests, which
             # tripped a provider's rate limiter. The row ceiling bounds rows, not requests.
             raise QueryError(
-                f"site {self.label!r}: radius_km={self.radius_km:,.0f} is larger than the "
+                f"site {self.label!r}: radius_km={self.radius_km:,g} is larger than the "
                 f"{MAX_RADIUS_KM:,.0f} km ceiling — that is most of the planet, and it becomes "
                 "one request per matching station. Use bbox= for a genuinely global query, or "
                 "raise omnisea.query.MAX_RADIUS_KM if you mean it."

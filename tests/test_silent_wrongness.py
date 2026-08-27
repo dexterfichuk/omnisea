@@ -1151,3 +1151,111 @@ class TestVariablesReadsAsAQuestionAboutVariables:
     def test_names_gives_a_plain_list(self):
         names = omnisea.variables().names()
         assert isinstance(names, list) and "air_temperature" in names
+
+
+class TestTheLibraryTrustsItsOwnOutput:
+    """Found by an ops reviewer: omnisea warned about omnisea.
+
+    `align()` returns a naive UTC index and says so in `attrs`. Feeding that back into
+    `align(on=...)` — a two-stage pipeline, or a re-join after adding a feature — tripped the
+    naive-timestamp warning, which exists to catch a field sheet kept in local time. A warning
+    that fires on correct usage is a warning people learn to filter out.
+    """
+
+    def frame(self):
+        q = Query.from_sites([BAMFIELD], WEEK)
+        readings = pd.DataFrame(
+            {"water_surface_height_above_reference_datum": np.linspace(0.5, 3.0, 30)},
+            index=pd.date_range("2024-07-01", periods=30, freq="1h", tz="UTC", name="time"),
+        )
+        tree = build_tree(q, [node("08545", "in_situ/tides", readings, {})])
+        stamps = pd.date_range("2024-07-01", periods=6, freq="4h", tz="UTC")
+        return tree, align(tree, on=pd.DataFrame({"time": stamps}))
+
+    def test_re_feeding_align_output_does_not_warn(self):
+        tree, first = self.frame()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            again = align(tree, on=first)
+        assert len(again) == len(first)
+
+    def test_a_genuinely_unlabelled_field_sheet_still_warns(self):
+        tree, _ = self.frame()
+        sheet = pd.DataFrame({"time": pd.to_datetime(["2024-07-01 09:00"])})
+        with pytest.warns(UserWarning, match="no timezone"):
+            align(tree, on=sheet)
+
+
+class TestPinningAColumnThatIsNotThere:
+    def test_a_misspelled_keep_says_so(self):
+        """`keep=` silently ignored unknown names, so a typo dropped the very column the
+        caller was trying to protect while the audit read as though they never asked."""
+        frame = pd.DataFrame(
+            {"a": [1.0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+             "b": [2.0, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24]},
+            index=pd.date_range("2024-07-01", periods=12, freq="h"),
+        )
+        with pytest.warns(UserWarning, match="pin nothing"):
+            omnisea.drop_correlated(frame, keep=["a_typo"])
+
+    def test_a_real_name_is_silent(self):
+        frame = pd.DataFrame(
+            {"a": [1.0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+             "b": [2.0, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24]},
+            index=pd.date_range("2024-07-01", periods=12, freq="h"),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            out = omnisea.drop_correlated(frame, keep=["a"])
+        assert "a" in out.columns
+
+
+class TestTheTypesTheReadmePresentsArePublic:
+    def test_bbox_imports_from_the_package(self):
+        """The README's Types section presents Site and BBox side by side; only Site was
+        exported, so half of a documented pair raised ImportError."""
+        from omnisea import BBox, Site
+
+        assert BBox(-125.6, 48.5, -124.7, 49.2).west == -125.6
+        assert Site(48.8, -125.1, "x").name == "x"
+
+
+class TestTheRadiusCeilingMessageQuotesTheRadiusGiven:
+    def test_a_fractional_overshoot_is_not_rounded_into_nonsense(self):
+        """`{:,.0f}` rendered 2000.1 as "2,000", so the message read "radius_km=2,000 is
+        larger than the 2,000 km ceiling"."""
+        with pytest.raises(QueryError) as excinfo:
+            Site(48.8, -125.1, "just over", radius_km=2000.1)
+        assert "2,000.1" in str(excinfo.value)
+
+
+class TestARowEstimateNeverReadsZeroForDataThatExists:
+    """A 7-day query showed `eccc_climate_monthly` stations at `n_rows_est = 0` — and fetching
+    them returned the month those 7 days fall in. `int(days * samples_per_day)` floors to zero
+    as soon as one row covers more than the window, so the estimate said "nothing here" about
+    data that was there. Anyone filtering a catalogue on the estimate loses it silently.
+    """
+
+    def source(self, samples_per_day):
+        from omnisea.providers.ogc import OgcFeaturesSource
+
+        class Monthly(OgcFeaturesSource):
+            name = "monthly"
+            node_template = "in_situ/x/{station_id}"
+
+        Monthly.samples_per_day = samples_per_day
+        return Monthly.__new__(Monthly)
+
+    def test_a_period_longer_than_the_window_estimates_one_row(self):
+        query = Query.from_sites([BAMFIELD], WEEK)
+        assert self.source(1.0 / 30.4375).row_estimate(query) == 1     # monthly
+        assert self.source(1.0 / 365.25).row_estimate(query) == 1      # annual
+
+    def test_an_ordinary_cadence_is_unchanged(self):
+        query = Query.from_sites([BAMFIELD], WEEK)
+        assert self.source(24.0).row_estimate(query) == 168
+        assert self.source(1.0).row_estimate(query) == 7
+
+    def test_it_rounds_up_rather_than_truncating(self):
+        query = Query.from_sites([BAMFIELD], ("2024-07-01", "2024-08-20"))  # 50 days
+        assert self.source(1.0 / 30.4375).row_estimate(query) == 2

@@ -57,8 +57,8 @@ than failing obscurely.
 | `cache` | `requests-cache` | `omnisea.enable_cache()` |
 | `netcdf` | `netCDF4` | `omnisea.to_netcdf()`, and ERDDAP gridded data over OPeNDAP |
 | `cioos` | `PyYAML` | CIOOS metadata records written as YAML |
-| `examples` | `matplotlib`, `jupyter`, `scikit-learn` | running [`examples/bamfield.ipynb`](examples/bamfield.ipynb) |
-| `dev` | the above plus `pytest`, `ruff` | working on omnisea itself |
+| `examples` | `matplotlib`, `jupyter`, `scikit-learn`, `statsmodels` | running [`examples/bamfield.ipynb`](examples/bamfield.ipynb) |
+| `dev` | `cache` + `netcdf` + `cioos`, plus `pytest`, `ruff` | working on omnisea itself |
 
 `cache,netcdf` is the combination most people want. To develop:
 
@@ -68,11 +68,17 @@ pip install -e ".[dev]"
 pytest -m "not network"     # should be green before you change anything
 ```
 
+`dev` deliberately stops short of `examples` — the test suite needs neither a plotting stack
+nor a notebook kernel, and CI installs `dev` three times over. Add `".[dev,examples]"` if you
+want to re-run the notebook.
+
 ## Credentials
 
 **Seventeen of the eighteen sources need no credential at all.** Only Ocean Networks Canada
-does, and omnisea simply leaves it out of any query where no token is available — you never
-have to configure anything to use the rest.
+does, and a query that does not name it simply leaves it out when no token is available — you
+never have to configure anything to use the rest. Ask for `providers="onc_scalardata"` without
+a token and it raises instead, naming the two ways to supply one: you asked for that source by
+name, so silently returning nothing would read as *there is nothing there*.
 
 To add ONC: register free at [data.oceannetworks.ca](https://data.oceannetworks.ca), then
 **Profile → Web Services API**. Pass the token either way:
@@ -172,7 +178,9 @@ print(omnisea.describe(tree))
 /in_situ/weather_daily/1031316 CAPE BEALE LIGHT       8 2024-07-01 00:00 2024-07-08 00:00 air_temperature, air_temperature_min, air_tem…
 ```
 
-`describe()` is the readable view; `summary()` returns the same rows with every column.
+`describe()` is the readable view; `summary()` returns the same rows with every column. Both
+print wide — `pd.set_option("display.width", 140)` once, or a notebook, saves them from being
+folded into `node ... variables` by an 80-column terminal.
 
 Two things arrived from that: what the gauge *measured*, and what the harmonic model
 *predicts*. Plotted together, the predicted extrema land on the observed peaks:
@@ -284,13 +292,17 @@ Every column records how it got there:
 X.attrs["omnisea_aggregation"]
 ```
 ```
-water_surface_height_above_reference_datum@08545   nearest within 30min (8/8 matched)
-air_temperature@1031316                            backward within its own 1d interval (8/8 matched)
-precipitation_amount@1031316                       backward within its own 1d interval (8/8 matched)
-water_surface_height..._at_extremum@08545          nearest within 30min (0/8 matched)
+water_surface_height_above_reference_datum  nearest within 30min (33/33 matched)
+air_temperature                             backward within its own 1d interval (33/33 matched),
+                                              read in station-local time (America/Vancouver)
+precipitation_amount                        backward within its own 1d interval (33/33 matched),
+                                              read in station-local time (America/Vancouver)
+reviewed@08545:predictions                  nearest within 30min (7/33 matched)
 ```
 
-That last line is the point: what *couldn't* be matched is reported, not silently `NaN`.
+Keyed by the names the frame actually carries, so a methods table can be built from it
+mechanically. That last line is the point: what *couldn't* be matched is reported, not silently
+`NaN`.
 
 ### See what's redundant across sources, then drop it
 
@@ -317,19 +329,25 @@ the copy you trust so its partners go instead.
 
 ### Then build a model
 
-`examples/bamfield.ipynb` runs this end to end: a mock five-day logger deployment sampling every
-two hours, joined to the real tide and climate series, then a regression.
+`examples/bamfield.ipynb` runs this end to end: a mock field sheet of 33 chlorophyll grab
+samples at irregular daylight hours over a week, joined to the real tide and climate series,
+then a regression.
 
 The samples are **synthetic** — generated from the real fetched drivers with coefficients we
-choose, plus noise — which makes it a test of the *pipeline*. If the join were misaligned by the
-station's UTC offset, or a daily total had been interpolated, the fit would not recover them:
+choose, plus noise — which makes it a test of the *pipeline*. What makes the recovery below
+mean anything is that the response is built by an independent path: raw node series,
+interpolated with plain pandas, daily values looked up by local date. Generate it from
+`align()`'s output and then refit on `align()`'s output and any systematic join error appears
+identically on both sides and cancels exactly — the recovery looks perfect while the join is
+hours out. Built outside the join, a misalignment by the station's UTC offset or an interpolated
+daily total shows up as coefficients that miss:
 
 ```
                                             fitted  true  error
-intercept                                    5.969  6.00 -0.031
-water_surface_height_above_reference_datum  -0.450 -0.45  0.000
-air_temperature_max                          0.301  0.30  0.001
-hour_sin                                     0.586  0.60 -0.014
+intercept                                    5.856  6.00 -0.144
+water_surface_height_above_reference_datum  -0.415 -0.45  0.035
+air_temperature_max                          0.305  0.30  0.005
+hour_sin                                     0.548  0.60 -0.052
 ```
 
 ![Observed vs predicted](docs/images/model-fit.png)
@@ -385,9 +403,13 @@ projection over what they return. The GeoJSON response already carries every pro
 dropping columns would discard data that has already crossed the network:
 
 ```python
-tree = omnisea.fetch(..., variables=["air_temperature"])
-omnisea.fields(tree)     # -> 58 variables, from the 2 sources that have air_temperature
+tree = omnisea.fetch(sites=BAMFIELD, time=WEEK, variables=["air_temperature"])
+omnisea.fields(tree)     # -> 17 variables over 50 station-columns, from the 2 sources
 ```
+
+Two ECCC collections carry `air_temperature` near Bamfield, and both arrive whole — daily and
+monthly totals, degree days, snow depth, valid-day counts. You asked which sources were worth
+fetching, not which columns to throw away.
 
 A name omnisea doesn't recognise doesn't get you an error, either — it keeps every source in
 play, because a curated table is a floor, not an inventory:
@@ -514,9 +536,13 @@ wherever you keep them:
 
 ```python
 cat = omnisea.discover(bbox=(-125.3, 48.7, -125.0, 49.0), time=("2024-01-01", "2024-12-31"),
-                       cioos_records="cioos-siooc/records")   # or a path, directory, or URL
+                       cioos_records="./records")     # a directory of .yaml/.json records
 cat.metadata()    # titles, extents, EOVs, licences, download URLs
 ```
+
+`cioos_records` also takes a single file, a `https://…` URL, or `owner/repo[@ref][:path]` for a
+GitHub-hosted set — whichever your organization publishes to. Both record layouts are read: the
+entry form's own shape and the `metadata-xml` YAML that `firebase_to_xml` emits.
 
 GOOS EOV tags are translated to CF standard names, so `variables=["sea_surface_temperature"]`
 matches a record tagged `seaSurfaceTemperature`.
@@ -623,9 +649,11 @@ omnisea.enable_cache(path="~/.omnisea-cache.sqlite")
 What gets cached is decided per endpoint rather than by one TTL, because they differ in kind.
 Station catalogues and metadata are near-static (7 days); GitHub-hosted CIOOS records get a day
 (unauthenticated GitHub allows 60 requests an hour, which is the difference between discovery
-working twice in a row and not); appended archives get an hour. **Measurement endpoints are
-never cached**, and are excluded explicitly rather than by omission, so the exclusion survives a
-caller who passes `expire_after=` to cache everything else.
+working twice in a row and not); archives that are only ever appended to — yesterday's daily
+climate summary does not change — get an hour. **Realtime measurement endpoints are never
+cached**: their whole content is the last 30 minutes, and they are excluded explicitly rather
+than by omission, so the exclusion survives a caller who passes `expire_after=` to cache
+everything else.
 
 That judgment is part of the provider contract, not a core table: each provider declares a
 `cache_policy` for its own endpoints, and third-party providers' rules merge in exactly like the

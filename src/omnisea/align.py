@@ -216,6 +216,9 @@ def _normalize_target(on: Any) -> tuple[pd.DatetimeIndex, pd.DataFrame | None]:
 
     if isinstance(on, pd.DataFrame):
         frame = on.copy()
+        # A frame align() itself produced already carries naive UTC and says so in its attrs.
+        # Warning about it would be omnisea telling you off for using omnisea's own output.
+        already_utc = bool(on.attrs.get("omnisea_time_zone"))
         if not isinstance(frame.index, pd.DatetimeIndex):
             time_col = _find_time_column(frame)
             if time_col is None:
@@ -224,7 +227,7 @@ def _normalize_target(on: Any) -> tuple[pd.DatetimeIndex, pd.DataFrame | None]:
                     "(named time/datetime/date/timestamp)"
                 )
             frame = frame.set_index(time_col)
-        frame.index = _to_naive_utc(pd.DatetimeIndex(frame.index), warn=True)
+        frame.index = _to_naive_utc(pd.DatetimeIndex(frame.index), warn=not already_utc)
         frame = frame.sort_index()
         carried = frame
         index = frame.index
@@ -787,6 +790,17 @@ def drop_correlated(
     right answer and leaves the rest to you, with :func:`correlations` as the evidence.
     """
     pinned = {keep} if isinstance(keep, str) else {str(k) for k in keep}
+    unknown = sorted(pinned - {str(c) for c in frame.columns})
+    if unknown:
+        # Silently ignoring these pinned the wrong thing: the column you meant to protect gets
+        # dropped, and the audit trail reads as though you never asked.
+        warnings.warn(
+            f"drop_correlated(keep=...) names {unknown}, which are not columns of this frame "
+            "— they pin nothing. Check the spelling against frame.columns (with "
+            'columns="auto" a name may carry an @station suffix).',
+            UserWarning,
+            stacklevel=2,
+        )
     own = {str(c) for c in frame.attrs.get("omnisea_carried") or ()}
     units = {str(k): str(v) for k, v in (frame.attrs.get("omnisea_units") or {}).items()}
 

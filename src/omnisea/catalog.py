@@ -86,12 +86,15 @@ class Catalog:
     #: The columns worth reading at a glance. `.frame` keeps all twelve.
     DISPLAY_COLUMNS = ["source", "station_id", "name", "distance_km", "n_rows_est", "variables"]
 
-    def _display_frame(self, width: int = 34) -> pd.DataFrame:
+    def describe(self, width: int = 34) -> pd.DataFrame:
         """A printable view: the columns that help you decide, with long cells elided.
 
         Printing the full frame produced 725-character lines — the `variables` column dumps
         every CF name a source can serve — which destroys a terminal and hides the numbers the
-        decision actually turns on. `.frame` is still the complete table.
+        decision actually turns on. :attr:`frame` is still the complete table.
+
+        This is what the catalogue's own repr shows, available on its own so a report or a
+        notebook can print a filtered view without reaching for a private method.
         """
         frame = self.frame
         columns = [c for c in self.DISPLAY_COLUMNS if c in frame.columns]
@@ -502,12 +505,12 @@ class Catalog:
             f"<Catalog: {len(self.matches)} station(s) from {len(self.sources)} source(s), "
             f"~{self.n_rows_est:,} rows>"
         )
-        hidden = [c for c in COLUMNS if c not in self._display_frame().columns]
+        hidden = [c for c in COLUMNS if c not in self.describe().columns]
         footer_columns = (
-            f"\n\n  (showing {len(self._display_frame().columns)} of {len(COLUMNS)} columns; "
+            f"\n\n  (showing {len(self.describe().columns)} of {len(COLUMNS)} columns; "
             f"catalog.frame has them all: {', '.join(hidden)})"
         )
-        body = self._display_frame().to_string(max_rows=25, index=False)
+        body = self.describe().to_string(max_rows=25, index=False)
         footer = ""
         missing = self.missing_sites
         if missing:
@@ -532,7 +535,7 @@ class Catalog:
         return (
             f"<p><strong>Catalog</strong>: {len(self.matches)} station(s) from "
             f"{len(self.sources)} source(s), ~{self.n_rows_est:,} rows estimated</p>"
-            f"{self._display_frame(width=60).to_html(max_rows=40, index=False)}{note}"
+            f"{self.describe(width=60).to_html(max_rows=40, index=False)}{note}"
         )
 
 

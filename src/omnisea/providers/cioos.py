@@ -16,7 +16,7 @@ wherever *you* keep them, via the ``cioos_records`` option:
 .. code-block:: python
 
     omnisea.discover(bbox=..., time=..., cioos_records="./records")           # directory
-    omnisea.discover(bbox=..., time=..., cioos_records="cioos-siooc/records") # GitHub repo
+    omnisea.discover(bbox=..., time=..., cioos_records="my-org/records@main:ca") # GitHub
     omnisea.discover(bbox=..., time=..., cioos_records="https://.../records.json")
 
 Both record layouts are understood: the raw form/Firebase shape (``title``, ``map``, ``eov``)

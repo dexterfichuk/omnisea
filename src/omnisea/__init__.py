@@ -65,7 +65,7 @@ from .providers.base import (
     StationMatch,
     StationSeries,
 )
-from .query import Query, Site, as_sites, register_option
+from .query import BBox, Query, Site, as_sites, register_option
 from .registry import register_provider, register_source
 from .tree import (
     build_tree,
@@ -96,6 +96,7 @@ __all__ = [
     "area",
     "Query",
     "Site",
+    "BBox",
     "Catalog",
     # introspection
     "providers",

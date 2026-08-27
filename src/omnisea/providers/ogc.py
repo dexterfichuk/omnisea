@@ -15,6 +15,7 @@ reading them naively puts every station in the same wrong place.
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
@@ -222,11 +223,24 @@ class OgcFeaturesSource(RetrievalSource):
             lat=lat,
             lon=lon,
             variables=tuple(sorted(self.variables)),
-            n_rows_est=int(query.days * self.samples_per_day),
+            n_rows_est=self.row_estimate(query),
             first=_maybe_ts(first),
             last=_maybe_ts(last),
             extra={"properties": dict(props)},
         )
+
+    def row_estimate(self, query: Query) -> int:
+        """Roughly how many rows one station returns for this window. Rounded up, never to zero.
+
+        ``int(days * samples_per_day)`` floors to 0 as soon as one row covers more than the
+        window — a monthly collection over a one-week query — while the fetch returns the month
+        that week falls in. A catalogue reading "~0 rows" is the "nothing here" these sources
+        exist to stop showing, and a caller filtering on the estimate would never ask for data
+        that is really there. Over-stating by one costs an empty node that explains itself;
+        under-stating to zero costs the data. Sources that can count their periods exactly
+        override this.
+        """
+        return max(1, math.ceil(query.days * self.samples_per_day))
 
     def station_name(self, props: Mapping[str, Any]) -> str:
         """The station's display name, from the first of :attr:`name_fields` that has one."""

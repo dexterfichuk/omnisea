@@ -212,7 +212,7 @@ class EcccSwobRealtime(_SwobSource):
                 lat=lat,
                 lon=lon,
                 variables=tuple(sorted(self.variables)),
-                n_rows_est=int(query.days * self.samples_per_day),
+                n_rows_est=self.row_estimate(query),
                 extra={"tc_id": props.get("tc_id-value")},
             )
             seen[str(station_id)] = match.attach_site(query)
