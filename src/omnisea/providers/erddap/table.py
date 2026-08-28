@@ -452,6 +452,22 @@ def _units_of(info: DatasetInfo, name: str) -> str | None:
     return str(units) if units not in (None, "") else None
 
 
+def _lon_is_0_360(info: DatasetInfo, lon_name: str) -> bool:
+    """Does this dataset index longitude 0..360 rather than -180..180?
+
+    Decided from the variable's own ``actual_range``: a maximum beyond 180 can only be a
+    0..360 axis. A dataset that declares no range is assumed -180..180, the ERDDAP norm.
+    """
+    raw = info.variables.get(lon_name, {}).get("actual_range")
+    if not raw:
+        return False
+    try:
+        bounds = [float(part) for part in str(raw).split(",")]
+    except ValueError:
+        return False
+    return bool(bounds) and max(bounds) > 180.0
+
+
 def _space_constraints(info: DatasetInfo, query: Query) -> str:
     """tabledap constraints clipping a request to the requested area and depth range.
 
@@ -466,12 +482,29 @@ def _space_constraints(info: DatasetInfo, query: Query) -> str:
         lat_name = _named_variable(info, LATITUDE_NAMES)
         lon_name = _named_variable(info, LONGITUDE_NAMES)
         if lat_name and lon_name:
+            west, east = query.bbox.west, query.bbox.east
+            if _lon_is_0_360(info, lon_name):
+                # UHSLC (and other global archives) index longitude 0..360; a west-negative
+                # constraint falls outside the variable's actual_range and the server answers
+                # "no matching results" — an empty answer indistinguishable from "no station
+                # here", for stations that are really there.
+                west, east = west % 360, east % 360
             parts += [
                 f"&{lat_name}>={query.bbox.south}",
                 f"&{lat_name}<={query.bbox.north}",
-                f"&{lon_name}>={query.bbox.west}",
-                f"&{lon_name}<={query.bbox.east}",
             ]
+            if west <= east:
+                parts += [f"&{lon_name}>={west}", f"&{lon_name}<={east}"]
+            else:
+                # The converted box straddles the 0/360 seam (or the original straddled the
+                # antimeridian). tabledap constraints AND together, so one request cannot say
+                # "west of x OR east of y" — take the half holding more of the box rather
+                # than silently returning the empty intersection.
+                span_high, span_low = 360 - west, east
+                if span_high >= span_low:
+                    parts += [f"&{lon_name}>={west}"]
+                else:
+                    parts += [f"&{lon_name}<={east}"]
     if query.depth is not None and "depth" in info.variables:
         # Only a variable actually called `depth`: `z` is positive-up on some datasets and
         # positive-down on others, and guessing the sign would silently invert the range.

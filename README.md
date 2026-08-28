@@ -452,6 +452,8 @@ omnisea.fields(tree)     # what a particular fetch actually returned
 | `usgs_water` | `usgs` | **US river gauges**: discharge, stage and water temperature at native cadence, period of record honoured |
 | `usgs_water_daily` | `usgs` | US daily mean discharge/stage/temperature — the historical archive, read in station-local time |
 | `ndbc_stdmet` | `ndbc` | **Buoys — the wave source**: significant height, period, direction, plus marine wind, pressure, SST from ~1,900 platforms incl. relayed ECCC buoys |
+| `cdip_*` | `cdip` | Scripps research wave buoys (spectral-grade, archives to the 1980s) — named-only: `providers="cdip_tabledap", erddap_datasets=["wave_agg"]` |
+| `uhslc_*` | `uhslc` | Research-quality global tide archive, records over a century — named-only, 0–360 longitudes handled |
 | `eccc_climate` | `eccc` | Hourly surface climate observations |
 | `eccc_climate_daily` | `eccc` | Daily climate summaries |
 | `eccc_hydrometric` | `eccc` | Realtime water level and river discharge (~30 days) |
@@ -633,6 +635,12 @@ returned no rows. Publishing a partial pull without noticing is the failure this
 prevent. Its `include_urls=True` lists the exact endpoint each series came from, which matters
 for realtime sources whose contents cannot be recovered later from the query alone;
 `provenance(tree, by="node")` gives the same URLs as a frame.
+
+You do not have to remember any of this at analysis time: every `fetch()` **prints the full
+citation block as the tree is handed over** (`cite=False` silences it) and stamps the same
+block into `tree.attrs["citation"]`, where it survives `to_netcdf()` and rides onto
+`align()`'s matrix as `attrs["omnisea_citation"]` — so the sources are recoverable months
+later from whichever object you actually kept: scrollback, tree, file, or matrix.
 
 ## Adding your own source
 

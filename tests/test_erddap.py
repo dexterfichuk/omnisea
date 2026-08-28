@@ -1398,3 +1398,44 @@ class TestEachKnownServerIsItsOwnProvider:
         )
         assert not source.covers(bare)
         assert source.covers(pointed)
+
+
+class TestZeroTo360Longitude:
+    """UHSLC indexes longitude 0..360; a west-negative constraint falls outside the
+    variable's actual_range and the server answers "no matching results" — an empty answer
+    indistinguishable from "no station here", for stations that are really there."""
+
+    def info(self, actual_range):
+        from omnisea.providers.erddap.info import DatasetInfo
+
+        return DatasetInfo(
+            dataset_id="x",
+            global_attrs={},
+            variables={"longitude": {"actual_range": actual_range},
+                       "latitude": {"actual_range": "-80.0, 80.0"},
+                       "time": {}},
+        )
+
+    def test_a_0_360_dataset_gets_converted_constraints(self):
+        from omnisea.providers.erddap.table import _space_constraints
+        from omnisea.query import Query
+
+        q = Query.from_position(lat=48.37, lon=-124.61, radius_km=30,
+                                time=("2024-06-01", "2024-06-08"))
+        parts = _space_constraints(self.info("3.4117, 358.86"), q)
+        assert "longitude>=234." in parts and "longitude<=235." in parts
+        assert "longitude<=-124" not in parts
+
+    def test_a_normal_dataset_keeps_signed_longitudes(self):
+        from omnisea.providers.erddap.table import _space_constraints
+        from omnisea.query import Query
+
+        q = Query.from_position(lat=48.37, lon=-124.61, radius_km=30,
+                                time=("2024-06-01", "2024-06-08"))
+        parts = _space_constraints(self.info("-179.9, 179.9"), q)
+        assert "longitude>=-124" in parts or "longitude>=-125" in parts
+
+    def test_a_missing_range_is_assumed_signed(self):
+        from omnisea.providers.erddap.table import _lon_is_0_360
+
+        assert _lon_is_0_360(self.info(""), "longitude") is False

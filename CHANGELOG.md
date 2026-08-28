@@ -37,6 +37,19 @@ observatories, and CIOOS metadata records.
   US river discharge, stage and water temperature under the same branch as ECCC's gauges,
   excluding discontinued sites by their own period of record. A cross-border query produces
   one tree shape with both countries' licences attributed.
+- **Citations print at fetch time, in full.** Every `fetch()` prints the complete citation
+  block — organizations, stations, licences, terms — as the tree is handed over (`cite=False`
+  silences it) and stamps the same block into `tree.attrs["citation"]`, which survives
+  `to_netcdf()` and rides onto `align()`'s matrix as `omnisea_citation`. Attribution no
+  longer depends on remembering a later call.
+- **CDIP and UHSLC join as named ERDDAP servers.** Scripps' research wave buoys
+  (spectral-grade, archives to the 1980s, dense on the US West Coast) and the University of
+  Hawaii Sea Level Center's century-long research tide archive. Both are global-extent
+  aggregate servers, so they are named-only (`sweep=False`). Reaching UHSLC fixed a general
+  bug: datasets indexing longitude 0–360 answered west-negative constraints with "no
+  matching results" — an empty answer indistinguishable from "no station here"; constraints
+  now convert per the longitude variable's own `actual_range`, taking the larger half when
+  a box straddles the seam.
 - **`fetch(stations=...)` — address stations by id.** Seven of eight surveyed projects
   start from a station id they already know (a hardcoded gauge in a boat display, a river
   number in a model-forcing script) and none wants to supply a position.
