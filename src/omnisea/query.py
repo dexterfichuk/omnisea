@@ -60,6 +60,8 @@ KNOWN_OPTIONS: dict[str, str] = {
     "include_unmapped": "keep provider fields that have no CF mapping (default True)",
     "to_cf_units": "convert values to canonical CF units instead of provider units",
     "max_workers": "thread pool size for per-station fetches",
+    "cite": "print a one-line attribution when fetch() returns (default True); the full "
+    "citation block is written to tree.attrs['citation'] either way",
     "max_items": "hard ceiling on features pulled from a paged OGC collection",
 }
 

@@ -1677,3 +1677,59 @@ class TestConstantTextIsStoredOnceNotPerTimestamp:
 
         ds = series_to_dataset(self.series_with(self.frame(n=10)))
         assert "project" in ds.data_vars
+
+
+class TestCitationsAreCapturedAtFetchTime:
+    """Attribution forgotten at analysis time is the norm: the full block is stamped onto
+    the tree while it is being handed over, survives to_netcdf, and rides onto align()'s
+    matrix — so the sources are still recoverable months later from whatever object
+    actually got kept."""
+
+    def tree(self):
+        from omnisea.catalog import _stamp_citation
+        from omnisea.providers.base import StationMatch, StationSeries
+        from omnisea.query import Query, Site
+        from omnisea.tree import build_tree
+
+        idx = pd.date_range("2024-07-01", periods=48, freq="1h", tz="UTC", name="time")
+        match = StationMatch(source="dfo_tides", provider="dfo", station_id="07120",
+                             name="Victoria", lat=48.42, lon=-123.37, site="S")
+        series = StationSeries(
+            match=match,
+            frame=pd.DataFrame({"water_surface_height_above_reference_datum":
+                                np.linspace(1, 3, 48)}, index=idx),
+            node_path="in_situ/tides/07120",
+            attrs={"provider": "dfo", "source_name": "dfo_tides",
+                   "institution": "Fisheries and Oceans Canada",
+                   "license": "Open Government Licence - Canada"},
+            var_attrs={},
+        )
+        q = Query.from_sites([Site(48.42, -123.37, "Victoria")], ("2024-07-01", "2024-07-03"))
+        tree = build_tree(q, [series])
+        return tree, _stamp_citation
+
+    def test_the_full_block_is_stamped_and_printed(self, capsys):
+        tree, stamp = self.tree()
+        stamp(tree, announce=True)
+        assert "citation" in tree.attrs and "Fisheries and Oceans" in tree.attrs["citation"]
+        printed = capsys.readouterr().out
+        assert tree.attrs["citation"].rstrip() in printed, (
+            "the whole block prints at fetch time — attribution seen once beats "
+            "attribution stored and never looked at"
+        )
+        assert "Open Government Licence" in printed
+        assert 'tree.attrs["citation"]' in printed
+
+    def test_cite_false_writes_the_attribute_but_says_nothing(self, capsys):
+        tree, stamp = self.tree()
+        stamp(tree, announce=False)
+        assert "citation" in tree.attrs
+        assert capsys.readouterr().out == ""
+
+    def test_align_carries_the_citation_onto_the_matrix(self):
+        import omnisea
+
+        tree, stamp = self.tree()
+        stamp(tree, announce=False)
+        X = omnisea.align(tree, freq="1h")
+        assert X.attrs["omnisea_citation"] == tree.attrs["citation"]

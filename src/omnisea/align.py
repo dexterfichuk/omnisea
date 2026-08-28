@@ -485,6 +485,10 @@ def align(
         [] if carried is None else [str(c) for c in carried.columns]
     )
     wide.attrs["omnisea_units"] = units_seen
+    # The tree's stamped citation rides onto the matrix: the tree is usually gone by the
+    # time anyone writes a methods section, and the matrix is what survives.
+    if "citation" in tree.attrs:
+        wide.attrs["omnisea_citation"] = str(tree.attrs["citation"])
     # The observation counts and cell_methods behind each column, for anything downstream that
     # must judge columns by what was measured rather than by what resampling produced.
     wide.attrs["omnisea_samples"] = {emitted[key]: n for key, n in real_samples.items()}
