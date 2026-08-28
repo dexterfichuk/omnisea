@@ -815,6 +815,7 @@ test validates every emitted `standard_name` against the published table.
 |---|---|
 | [examples/quickstart_model.ipynb](examples/quickstart_model.ipynb) | **Start here** — the e2e demo: two countries → one model → pruned features → citation, in 19 cells |
 | [examples/quickstart_everything.ipynb](examples/quickstart_everything.ipynb) | No `providers=` anywhere: every source in the region, every variable in one matrix — satellite pixel included — and a model over all of it |
+| [examples/columbia_river.ipynb](examples/columbia_river.ipynb) | **The salmon notebook**: fish-ladder counts beside dam flow and spill; two count sheets 470 km apart measure the sockeye run's swimming speed (11 days, ~43 km/day, r ≈ 0.98) |
 | [examples/bamfield.ipynb](examples/bamfield.ipynb) | The full walkthrough, executed, with plots |
 | [examples/bamfield.py](examples/bamfield.py) | The same walkthrough as a terminal script |
 | [examples/csv_stations.py](examples/csv_stations.py) | A complete third-party provider in ~100 lines |
