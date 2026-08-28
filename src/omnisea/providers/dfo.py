@@ -15,6 +15,7 @@ Two upstream behaviours shape this adapter, both verified against the live servi
 from __future__ import annotations
 
 import logging
+import math
 import re
 import threading
 from collections.abc import Sequence
@@ -176,6 +177,19 @@ class DfoTidesSource(RetrievalSource):
     }
 
     # ------------------------------------------------------------------ discovery
+
+    def locate(self, station_id: str) -> tuple[float, float, str] | None:
+        for station in self.provider.all_stations():
+            if str(station.get("code") or station.get("id")) == str(station_id):
+                lat, lon = station.get("latitude"), station.get("longitude")
+                if lat is None or lon is None:
+                    return None
+                return (
+                    float(lat),
+                    float(lon),
+                    str(station.get("officialName") or station.get("name") or station_id),
+                )
+        return None
 
     def discover(self, query: Query) -> list[StationMatch]:
         series_wanted = self._series_for(query)
@@ -373,5 +387,8 @@ class DfoTidesSource(RetrievalSource):
         total = 0
         for code in codes:
             # Tidal extrema are roughly four turning points a day, not a regular series.
-            total += int(query.days * (4 if code == "wlp-hilo" else per_day))
+            # Ceiling per code, never zero: a three-hour window still meets a turning point
+            # often enough that "~0 rows" would misreport data that is really there — the
+            # same floor row_estimate() applies everywhere else.
+            total += max(1, math.ceil(query.days * (4 if code == "wlp-hilo" else per_day)))
         return total

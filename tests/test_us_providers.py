@@ -212,11 +212,15 @@ class TestNwisTranslation:
 
         def dv(url, params, provider=None, **_):
             assert url.endswith("/dv/"), "the daily source must ask the DV service"
-            assert params["statCd"] == "00003", "the mean — the statistic cell_methods asserts"
+            assert params["statCd"] == "00003,00001,00002", (
+                "mean, max and min in one request; each declares its statistic"
+            )
             return {
                 "value": {"timeSeries": [{
                     "variable": {"variableCode": [{"value": "00060"}],
-                                 "unit": {"unitCode": "ft3/s"}, "noDataValue": -999999.0},
+                                 "unit": {"unitCode": "ft3/s"}, "noDataValue": -999999.0,
+                                 "options": {"option": [{"name": "Statistic",
+                                                         "optionCode": "00003"}]}},
                     "values": [{"value": [
                         {"value": "1020", "qualifiers": ["A"],
                          "dateTime": "2024-07-01T00:00:00.000"},
@@ -241,3 +245,101 @@ class TestNwisTranslation:
         tree = build_tree(Query.from_sites([Site(48.05, -123.58, "Elwha")], WINDOW), [series])
         assert "/in_situ/hydrometric/12045500" in {n.path for n in tree.subtree}
         assert "usgs" in omnisea.providers() and "noaa_coops" in omnisea.providers()
+
+    def test_daily_max_and_min_carry_their_own_cell_methods(self, monkeypatch):
+        from omnisea.providers.usgs import UsgsProvider, UsgsWaterDailySource
+
+        source = UsgsWaterDailySource(UsgsProvider())
+        monkeypatch.setattr(usgs_mod, "get_text",
+                            lambda url, params, provider=None, **_: NWIS_RDB)
+
+        def dv(url, params, provider=None, **_):
+            def series(stat, value):
+                return {
+                    "variable": {"variableCode": [{"value": "00060"}],
+                                 "unit": {"unitCode": "ft3/s"}, "noDataValue": -999999.0,
+                                 "options": {"option": [{"name": "Statistic",
+                                                         "optionCode": stat}]}},
+                    "values": [{"value": [{"value": value, "qualifiers": ["A"],
+                                           "dateTime": "2024-07-01T00:00:00.000"}]}],
+                }
+            return {"value": {"timeSeries": [
+                series("00003", "1020"), series("00001", "1310"), series("00002", "890"),
+            ]}}
+
+        monkeypatch.setattr(usgs_mod, "get_json", dv)
+        q = query(lat=48.05, lon=-123.58)
+        (result,) = source.fetch(q, source.discover(q))
+        frame = result.frame
+        assert frame["river_discharge"].iloc[0] == 1020.0
+        assert frame["river_discharge_max"].iloc[0] == 1310.0
+        assert frame["river_discharge_min"].iloc[0] == 890.0
+        assert result.var_attrs["river_discharge"]["cell_methods"] == "time: mean"
+        assert result.var_attrs["river_discharge_max"]["cell_methods"] == "time: maximum"
+        assert result.var_attrs["river_discharge_min"]["cell_methods"] == "time: minimum"
+
+    def test_an_uncurated_parameter_code_passes_through_marked_unmapped(self, monkeypatch):
+        source = self.source(monkeypatch)
+
+        def iv(url, params, provider=None, **_):
+            assert "00095" in params["parameterCd"]
+            return {"value": {"timeSeries": [{
+                "variable": {"variableCode": [{"value": "00095"}],
+                             "variableName": "Specific conductance",
+                             "unit": {"unitCode": "uS/cm @25C"}, "noDataValue": -999999.0},
+                "values": [{"value": [{"value": "212", "qualifiers": ["A"],
+                                       "dateTime": "2024-07-01T00:00:00.000-07:00"}]}],
+            }]}}
+
+        monkeypatch.setattr(usgs_mod, "get_json", iv)
+        q = query(lat=48.05, lon=-123.58, usgs_parameters=["00095"])
+        (result,) = source.fetch(q, source.discover(q))
+        assert result.frame["nwis_00095"].iloc[0] == 212.0
+        attrs = result.var_attrs["nwis_00095"]
+        assert attrs["omnisea_mapped"] == 0
+        assert attrs["units"] == "uS/cm @25C"
+        assert "standard_name" not in attrs
+
+
+class TestCoopsEras:
+    def test_a_pre_1996_window_plans_hourly_height_requests(self, monkeypatch):
+        source = coops(monkeypatch)
+        q = Query.from_position(lat=48.125, lon=-123.44, radius_km=30,
+                                time=("1985-06-01", "1996-02-01"))
+        plan = list(source._requests(q, "water_level"))
+        products = {p for p, _, _ in plan}
+        assert products == {"hourly_height", "water_level"}, (
+            "the archive era and the six-minute era split at 1996; before this, a pre-1996 "
+            "request simply failed and the caller never learned why"
+        )
+        archive_end = max(e for p, _, e in plan if p == "hourly_height")
+        modern_start = min(s for p, s, _ in plan if p == "water_level")
+        assert archive_end == modern_start == pd.Timestamp("1996-01-01", tz="UTC")
+
+    def test_a_modern_window_stays_six_minute_only(self, monkeypatch):
+        source = coops(monkeypatch)
+        plan = list(source._requests(query(), "water_level"))
+        assert {p for p, _, _ in plan} == {"water_level"}
+
+    def test_observed_extrema_are_off_by_default_and_land_under_in_situ(self, monkeypatch):
+        source = coops(monkeypatch)
+        series = source.fetch(query(), source.discover(query()))
+        assert not any("tides_extrema" in s.node_path for s in series)
+        q = query(coops_high_low=True)
+        series = source.fetch(q, source.discover(q))
+        extrema = [s for s in series if "tides_extrema" in s.node_path]
+        assert extrema and extrema[0].node_path.startswith("in_situ/"), (
+            "high_low is a measurement product despite its prediction-flavoured name"
+        )
+
+    def test_the_datums_ladder_rides_on_the_observation_node(self, monkeypatch):
+        source = coops(monkeypatch)
+        monkeypatch.setattr(
+            source.provider, "datum_ladder",
+            lambda sid: {"datum_epoch": "1983-2001", "orthometric_datum": "NAVD88",
+                         "datum_offset_MHHW": 2.383, "datum_offsets_units": "m"},
+        )
+        obs = next(s for s in source.fetch(query(), source.discover(query()))
+                   if s.node_path.startswith("in_situ/tides/"))
+        assert obs.attrs["datum_epoch"] == "1983-2001"
+        assert obs.attrs["datum_offset_MHHW"] == 2.383

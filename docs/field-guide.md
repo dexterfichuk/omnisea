@@ -5,7 +5,7 @@ public ocean data source in the US and Canada — federal agencies, provincial n
 research institutions, community ERDDAP servers — and returns one CF-compliant tree, whatever
 it had to do to get there.
 
-**43 sources · 18 organizations · 2 countries · 1 API**
+**44 sources · 19 organizations · 2 countries · 1 API**
 
 ```python
 import omnisea
@@ -48,6 +48,7 @@ and the test suite, not by convention:
 | Fisheries and Oceans Canada (DFO/CHS) | `dfo_tides` | 1,573 tide gauges: observed, predicted, high/low events |
 | Environment and Climate Change Canada | `eccc_climate`, `eccc_climate_daily`, `eccc_climate_monthly`, `eccc_climate_normals`, `eccc_hydrometric`, `eccc_hydrometric_daily`, `eccc_hydrometric_monthly`, `eccc_hydrometric_annual`, `eccc_hydrometric_annual_peaks`, `eccc_ahccd_annual`, `eccc_ahccd_monthly`, `eccc_ahccd_seasonal`, `eccc_swob` | Climate, rivers, homogenized archives, realtime SWOB |
 | **NOAA CO-OPS** | `noaa_coops` | **US tide gauges, natively** — six-minute observations and predicted extrema, datum stated (MLLW/MSL/NAVD, IGLD on the Great Lakes), `coops_datum=` to choose |
+| **NOAA NDBC** | `ndbc_stdmet` | **Buoys — where wave data lives**: significant height, period, direction, marine wind, pressure, SST; the station table relays partner buoys, ECCC's included |
 | **USGS NWIS** | `usgs_water`, `usgs_water_daily` | **US river gauges** — discharge, stage, water temperature at native cadence and as daily means; period of record honoured |
 | Ocean Networks Canada | `onc` | Cabled observatories; needs a free API token (`onc_token=`) |
 | CIOOS (national + Pacific/Atlantic/SLGO) | `cioos` | Discovery across the national catalogue |

@@ -19,7 +19,7 @@ no CF mapping for (they travel under the provider's own names).
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 import pandas as pd
@@ -90,6 +90,7 @@ __all__ = [
     "as_sites",
     # queries
     "discover",
+    "discover_query",
     "fetch",
     "position",
     "positions",
@@ -336,6 +337,57 @@ def _build_query(
     raise QueryError("give one of bbox=, sites= or lat/lon=")
 
 
+
+def _resolve_stations(stations: Any) -> tuple[list[Site], list[str], dict[str, set[str]]]:
+    """Turn ``stations=`` into Sites at each station's own position, plus the id filter.
+
+    Accepts ``{"noaa_coops": "9444090"}``, ``{"usgs_water": ["12045500", ...]}``, a list of
+    ``"source:id"`` strings, or one such string. Ids resolve through each source's
+    :meth:`~omnisea.providers.base.DataSource.locate`; the seven-of-eight surveyed projects
+    that start from a known id never want to supply a position too.
+    """
+    pairs: list[tuple[str, str]] = []
+    if isinstance(stations, str):
+        stations = [stations]
+    if isinstance(stations, Mapping):
+        for source_name, ids in stations.items():
+            for sid in [ids] if isinstance(ids, str) else list(ids):
+                pairs.append((str(source_name), str(sid)))
+    else:
+        for entry in stations:
+            source_name, _, sid = str(entry).partition(":")
+            if not sid:
+                raise QueryError(
+                    f"stations entries need a source-qualified id like 'noaa_coops:9444090'; "
+                    f"got {entry!r}. A bare id is ambiguous — 12045500 could belong to more "
+                    "than one catalogue."
+                )
+            pairs.append((source_name, sid))
+
+    sites: list[Site] = []
+    source_names: list[str] = []
+    wanted: dict[str, set[str]] = {}
+    for source_name, sid in pairs:
+        source = registry.get_source(source_name)  # raises with a did-you-mean for typos
+        place = source.locate(sid)
+        if place is None:
+            hint = (
+                "name the dataset with erddap_datasets=[...] instead"
+                if source_name.startswith("erddap") or "erddap" in source.provider.name
+                else "use a spatial query (lat/lon or sites=) for this source"
+            )
+            raise QueryError(
+                f"{source_name} has no station {sid!r} in its catalogue, or cannot look "
+                f"stations up by id — {hint}."
+            )
+        lat, lon, name = place
+        sites.append(Site(lat, lon, name, radius_km=1.0))
+        if source_name not in source_names:
+            source_names.append(source_name)
+        wanted.setdefault(source_name, set()).add(sid)
+    return sites, source_names, wanted
+
+
 def discover(
     *,
     bbox: Sequence[float] | None = None,
@@ -343,6 +395,7 @@ def discover(
     lon: float | None = None,
     radius_km: float = 25.0,
     sites: Any = None,
+    stations: Any = None,
     time: Any = None,
     variables: Iterable[str] | None = None,
     depth: Sequence[float] | None = None,
@@ -352,6 +405,11 @@ def discover(
     **options: Any,
 ) -> Catalog:
     """Find out what data exists for a query, without downloading any of it.
+
+    ``stations=`` addresses stations you already know by id — ``{"noaa_coops": "9444090"}``,
+    ``{"usgs_water": ["12045500"]}``, or ``["dfo_tides:07120"]`` — resolving each id to its
+    own position through the source's catalogue, so no coordinates are needed. Only the named
+    stations are returned.
 
     ``time`` accepts a ``(start, end)`` pair, a ``slice``, or a single date meaning that whole
     day — so ``time="2024-07-01"`` is 1 July, and ``time="2024"`` is **1 January 2024 only**,
@@ -366,6 +424,15 @@ def discover(
     A source that fails is recorded on the catalogue rather than aborting the others; check
     ``catalog.errors``.
     """
+    wanted_ids: dict[str, set[str]] | None = None
+    if stations is not None:
+        if sites is not None or lat is not None or bbox is not None:
+            raise QueryError(
+                "pass stations= on its own — it resolves each id to the station's own "
+                "position, so a spatial query alongside it would be two answers to one "
+                "question."
+            )
+        sites, providers, wanted_ids = _resolve_stations(stations)
     query = _build_query(
         bbox=bbox,
         lat=lat,
@@ -377,9 +444,16 @@ def discover(
         depth=depth,
         providers=providers,
         max_rows=max_rows,
+        # The option form is what provider fetch pools read; see Catalog.fetch for the twin.
+        max_workers=max_workers,
         **options,
     )
-    return discover_query(query, max_workers=max_workers)
+    catalog = discover_query(query, max_workers=max_workers)
+    if wanted_ids is not None:
+        catalog = catalog.filter(
+            where=lambda m: m.station_id in wanted_ids.get(m.source, ())
+        )
+    return catalog
 
 
 def discover_query(query: Query, *, max_workers: int = DEFAULT_MAX_WORKERS) -> Catalog:
@@ -419,8 +493,12 @@ def discover_query(query: Query, *, max_workers: int = DEFAULT_MAX_WORKERS) -> C
     # One thread per source, up to a sane cap: discovery is I/O-bound waiting on ~26
     # independent institutions, and rationing it to 8 threads made the wall time the sum of
     # the slowest rounds instead of the single slowest server. The global request semaphore
-    # still bounds true concurrency per process.
-    fan_out = max(max_workers, min(32, len(runnable)))
+    # still bounds true concurrency per process. A caller who *lowered* max_workers gets the
+    # number they asked for — widening applies only to the untouched default.
+    if max_workers == DEFAULT_MAX_WORKERS:
+        fan_out = max(max_workers, min(32, len(runnable)))
+    else:
+        fan_out = max_workers
     for found in map_threads(_discover, runnable, max_workers=fan_out, label="discovery"):
         matches.extend(found)
 
@@ -434,6 +512,7 @@ def fetch(
     lon: float | None = None,
     radius_km: float = 25.0,
     sites: Any = None,
+    stations: Any = None,
     time: Any = None,
     variables: Iterable[str] | None = None,
     depth: Sequence[float] | None = None,
@@ -460,6 +539,7 @@ def fetch(
         lon=lon,
         radius_km=radius_km,
         sites=sites,
+        stations=stations,
         time=time,
         variables=variables,
         depth=depth,

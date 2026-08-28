@@ -37,6 +37,28 @@ observatories, and CIOOS metadata records.
   US river discharge, stage and water temperature under the same branch as ECCC's gauges,
   excluding discontinued sites by their own period of record. A cross-border query produces
   one tree shape with both countries' licences attributed.
+- **`fetch(stations=...)` — address stations by id.** Seven of eight surveyed projects
+  start from a station id they already know (a hardcoded gauge in a boat display, a river
+  number in a model-forcing script) and none wants to supply a position.
+  `fetch(stations={"noaa_coops": "9444090", "usgs_water": "12045500"}, time=...)` resolves
+  each id to its own coordinates through the source's catalogue and returns exactly the
+  named stations — four agencies, two countries, no coordinates in the call.
+- **CO-OPS grew three capabilities.** Windows before 1996 read the `hourly_height` archive
+  automatically (six-minute `water_level` begins in 1996; before this, older requests simply
+  failed — the gap a GNSS-reflectometry project hit without learning why).
+  `coops_high_low=True` fetches the *observed* tidal extrema into `in_situ/tides_extrema` —
+  a measurement product despite its prediction-flavoured name. And every tide node now
+  carries the full **datums ladder** (epoch, orthometric datum, metric offsets for
+  MHHW…MLLW), turning "the datum is stated" into "the datum is convertible".
+- **`usgs_parameters=` / `usgs_site_types=`** open NWIS beyond the curated codes (uncurated
+  ones return under NWIS's own name, marked unmapped), `63680` turbidity joins the curated
+  set, and `usgs_water_daily` serves mean, max and min with the `cell_methods` each earns.
+- **`ndbc_stdmet` — waves.** No other source served significant wave height, period or
+  direction natively; NDBC's ~1,900 buoys and shore stations do, plus marine wind, pressure
+  and sea surface temperature, already SI, already UTC. Three file families (archived years,
+  current-year months, 45-day realtime) stitch seamlessly, all-nines sentinels read as gaps,
+  and a 404 year is an answer. The station table relays partner platforms — dozens of ECCC
+  buoys — so the same source answers on both coasts of the border.
 - **`usgs_water_daily`** — daily mean discharge, stage and water temperature, the partner to
   `eccc_hydrometric_daily`, labelled by local calendar date and read in station-local time the
   same way. NWIS discovery now counts only the record kinds each source can serve, so a site

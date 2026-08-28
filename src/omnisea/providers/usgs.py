@@ -35,19 +35,28 @@ from ..http import (
     get_text,
     map_threads,
 )
-from ..query import Query
+from ..query import Query, register_option
 from .base import Provider, RetrievalSource, StationMatch, StationSeries, frame_from_records
 
 log = logging.getLogger("omnisea.usgs")
+
+register_option(
+    "usgs_parameters",
+    "usgs_water*: extra NWIS parameter codes to request beyond the curated set, e.g. "
+    "['00095'] for specific conductance. Codes without a curated mapping return under "
+    "NWIS's own variable name, marked omnisea_mapped=0.",
+)
+register_option(
+    "usgs_site_types",
+    "usgs_water*: NWIS siteType codes to search, default ['ST'] (streams). An estuary "
+    "gauge is siteType ES and a lake gauge LK — pass ['ST', 'ES', 'LK'] to see them.",
+)
 
 __all__ = ["UsgsProvider"]
 
 SITE_SERVICE = "https://waterservices.usgs.gov/nwis/site/"
 IV_SERVICE = "https://waterservices.usgs.gov/nwis/iv/"
 DV_SERVICE = "https://waterservices.usgs.gov/nwis/dv/"
-
-#: Typical NWIS reporting interval is 15 minutes.
-SAMPLES_PER_DAY = 96.0
 
 #: Kind to the service: a decade of 15-minute data in one request is a heavy ask.
 MAX_DAYS_PER_REQUEST = 120
@@ -79,6 +88,8 @@ class UsgsWaterSource(RetrievalSource):
     feature_type = "timeSeries"
     #: ``data_type_cd`` values whose records this source can actually serve.
     record_kinds = frozenset({"uv", "iv", "rt"})
+    #: Typical NWIS reporting interval is 15 minutes.
+    samples_per_day = 96.0
 
     #: Keyed by NWIS parameter code. Same CF names as the ECCC hydrometric sources, so a
     #: cross-border query serves comparable columns under identical names.
@@ -107,7 +118,45 @@ class UsgsWaterSource(RetrievalSource):
             cf_units="K",
             cf_offset=273.15,
         ),
+        # The most-requested code after discharge and stage in a survey of NWIS users —
+        # river plumes are what connect a stream gauge to the coastal questions this
+        # library serves.
+        "63680": cf.FieldSpec(
+            var="sea_water_turbidity",
+            standard_name="sea_water_turbidity",
+            units="FNU",
+            long_name="Turbidity",
+        ),
     }
+
+    def _codes(self, query: Query) -> list[str]:
+        """The curated set plus whatever ``usgs_parameters`` names."""
+        extra = query.option("usgs_parameters") or []
+        if isinstance(extra, str):
+            extra = [extra]
+        return list(self.fields) + [str(c) for c in extra if str(c) not in self.fields]
+
+    def locate(self, station_id: str) -> tuple[float, float, str] | None:
+        try:
+            payload = get_text(
+                SITE_SERVICE,
+                {"format": "rdb", "sites": station_id, "siteStatus": "all"},
+                provider=self.name,
+            )
+        except UpstreamError as exc:
+            if exc.status in (400, 404):
+                return None  # NWIS answers an unknown site number with an error, not a row
+            raise
+        for row in _parse_rdb(payload):
+            try:
+                return (
+                    float(row["dec_lat_va"]),
+                    float(row["dec_long_va"]),
+                    str(row.get("station_nm") or station_id),
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+        return None
 
     # ------------------------------------------------------------------ discovery
 
@@ -122,8 +171,8 @@ class UsgsWaterSource(RetrievalSource):
                     "format": "rdb",
                     # NWIS wants lon-lat order — west,south,east,north — at most 7 decimals.
                     "bBox": ",".join(f"{v:.7f}" for v in box),
-                    "parameterCd": ",".join(self.fields),
-                    "siteType": "ST",
+                    "parameterCd": ",".join(self._codes(query)),
+                    "siteType": ",".join(query.option("usgs_site_types") or ["ST"]),
                     "seriesCatalogOutput": "true",
                 },
                 provider=self.name,
@@ -143,9 +192,10 @@ class UsgsWaterSource(RetrievalSource):
         # samples — and only the kind this source fetches counts as availability: one box on
         # the Olympic Peninsula holds 573 water-quality records that the IV service would
         # answer with nothing.
+        wanted = set(self._codes(query))
         by_site: dict[str, dict[str, Any]] = {}
         for row in rows:
-            if row.get("parm_cd") not in self.fields:
+            if row.get("parm_cd") not in wanted:
                 continue
             if row.get("data_type_cd") not in self.record_kinds:
                 continue
@@ -185,8 +235,11 @@ class UsgsWaterSource(RetrievalSource):
                     name=str(info["name"]),
                     lat=lat,
                     lon=lon,
-                    variables=tuple(sorted(self.fields[p].var for p in info["params"])),
-                    n_rows_est=max(1, int(query.days * SAMPLES_PER_DAY)),
+                    variables=tuple(sorted(
+                        self.fields[p].var if p in self.fields else f"nwis_{p}"
+                        for p in info["params"]
+                    )),
+                    n_rows_est=self.row_estimate(query),
                     first=first,
                     last=last,
                     extra={"params": sorted(info["params"])},
@@ -221,8 +274,14 @@ class UsgsWaterSource(RetrievalSource):
         }
 
     def _fetch_site(self, query: Query, match: StationMatch) -> StationSeries | None:
-        params_wanted = match.extra.get("params") or list(self.fields)
+        # The catalogue's codes for this site, plus anything usgs_parameters names that the
+        # catalogue predates — NWIS simply omits series a site does not have.
+        params_wanted = list(match.extra.get("params") or self._codes(query))
+        for code in self._codes(query):
+            if code not in self.fields and code not in params_wanted:
+                params_wanted.append(code)
         to_cf = self.to_cf_units(query)
+        passthrough: dict[str, cf.FieldSpec] = {}
 
         # One dict per timestamp, columns merged across parameters — the shape
         # frame_from_records wants.
@@ -239,34 +298,60 @@ class UsgsWaterSource(RetrievalSource):
                     continue  # no rows in this chunk — same 404-means-empty convention
                 raise
             for series in (payload.get("value") or {}).get("timeSeries") or []:
-                code = str(
-                    (series.get("variable") or {}).get("variableCode", [{}])[0].get("value")
-                )
+                variable = series.get("variable") or {}
+                code = str(variable.get("variableCode", [{}])[0].get("value"))
                 spec = self.fields.get(code)
                 if spec is None:
-                    continue
-                no_data = (series.get("variable") or {}).get("noDataValue")
+                    if code not in set(params_wanted):
+                        continue
+                    # A code the user asked for by number, with no curated mapping: serve
+                    # it under NWIS's own name and unit rather than refusing — the SWOB
+                    # precedent, marked omnisea_mapped=0 below.
+                    spec = cf.FieldSpec(
+                        var=f"nwis_{code}",
+                        standard_name="",
+                        units=str((variable.get("unit") or {}).get("unitCode", "")),
+                        long_name=str(variable.get("variableName", f"NWIS {code}")),
+                    )
+                    passthrough[spec.var] = spec
+                column = spec.var + _stat_suffix(series)
+                no_data = variable.get("noDataValue")
                 for block in series.get("values") or []:
                     for point in block.get("value") or []:
                         stamp = str(point.get("dateTime"))
                         record = by_time.setdefault(stamp, {"time": stamp})
                         value = _number(point.get("value"), no_data)
-                        record[spec.var] = cf.convert(value, spec, to_cf_units=to_cf)
+                        record[column] = cf.convert(value, spec, to_cf_units=to_cf)
                         qualifiers = point.get("qualifiers") or []
-                        record[f"{spec.var}_qc"] = ",".join(map(str, qualifiers))
+                        record[f"{column}_qc"] = ",".join(map(str, qualifiers))
 
         frame = frame_from_records(list(by_time.values()))
         var_attrs: dict[str, dict[str, Any]] = {}
-        for code in params_wanted:
-            spec = self.fields.get(code)
-            if spec is None or spec.var not in frame.columns:
-                continue
-            var_attrs[spec.var] = cf.cf_attrs(spec, to_cf_units=to_cf)
-            var_attrs[f"{spec.var}_qc"] = {
-                "long_name": "NWIS qualifier codes",
-                "comment": "As published: A approved, P provisional, e estimated.",
-                "source_field": "qualifiers",
-            }
+        specs = {self.fields[c].var: self.fields[c] for c in params_wanted if c in self.fields}
+        specs.update(passthrough)
+        for var, spec in specs.items():
+            for column in frame.columns:
+                if column != var and not (
+                    column.startswith(f"{var}_") and column.rsplit("_", 1)[-1] in
+                    ("max", "min")
+                ):
+                    continue
+                attrs = cf.cf_attrs(spec, to_cf_units=to_cf)
+                if column.endswith("_max"):
+                    attrs["cell_methods"] = "time: maximum"
+                    attrs["long_name"] = f"{spec.long_name} (daily maximum)"
+                elif column.endswith("_min"):
+                    attrs["cell_methods"] = "time: minimum"
+                    attrs["long_name"] = f"{spec.long_name} (daily minimum)"
+                if var in passthrough:
+                    attrs["omnisea_mapped"] = 0
+                    attrs.pop("standard_name", None)
+                var_attrs[column] = attrs
+                var_attrs[f"{column}_qc"] = {
+                    "long_name": "NWIS qualifier codes",
+                    "comment": "As published: A approved, P provisional, e estimated.",
+                    "source_field": "qualifiers",
+                }
 
         return StationSeries(
             match=match,
@@ -309,12 +394,6 @@ class UsgsWaterDailySource(UsgsWaterSource):
         for code, spec in UsgsWaterSource.fields.items()
     }
 
-    def discover(self, query: Query) -> list[StationMatch]:
-        matches = super().discover(query)
-        for match in matches:
-            match.n_rows_est = max(1, int(query.days))
-        return matches
-
     def _fetch_site(self, query: Query, match: StationMatch) -> StationSeries | None:
         series = super()._fetch_site(query, match)
         if series is None:
@@ -335,10 +414,24 @@ class UsgsWaterDailySource(UsgsWaterSource):
             "format": "json",
             "sites": match.station_id,
             "parameterCd": ",".join(params_wanted),
-            "statCd": "00003",  # the daily MEAN; the statistic the cell_methods asserts
+            # Mean, max and min in one request; each series declares its statistic and
+            # lands as its own column with the cell_methods that statistic earns.
+            "statCd": "00003,00001,00002",
             "startDT": start.strftime("%Y-%m-%d"),
             "endDT": end.strftime("%Y-%m-%d"),
         }
+
+
+#: NWIS statistic codes that earn a column suffix. The mean (00003) is the primary column.
+_STAT_SUFFIX = {"00001": "_max", "00002": "_min"}
+
+
+def _stat_suffix(series: dict[str, Any]) -> str:
+    options = ((series.get("variable") or {}).get("options") or {}).get("option") or []
+    for option in options:
+        if option.get("name") == "Statistic":
+            return _STAT_SUFFIX.get(str(option.get("optionCode")), "")
+    return ""
 
 
 def _number(value: Any, no_data: Any) -> float | None:

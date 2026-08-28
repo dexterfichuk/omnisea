@@ -16,7 +16,7 @@ from typing import Any
 import xarray as xr
 
 from ... import cf
-from ...errors import ProviderError, UpstreamError
+from ...errors import MissingDependencyError, UpstreamError
 from ...query import BBox, Query
 from ..base import StationMatch
 from .common import ErddapSource, safe_name
@@ -95,10 +95,8 @@ class ErddapGridSource(ErddapSource):
             importlib.util.find_spec("netCDF4") is not None
             or importlib.util.find_spec("pydap") is not None
         ):
-            raise ProviderError(
-                "reading ERDDAP griddap needs an OPeNDAP-capable engine; install one with "
-                'pip install "omnisea[netcdf]"',
-                provider="erddap_griddap",
+            raise MissingDependencyError(
+                "netCDF4", "netcdf", "to read ERDDAP griddap over OPeNDAP"
             )
         # Dask keeps a big grid chunked rather than one array-shaped lazy read, but it is not a
         # hard dependency; without it xarray's own lazy indexing still defers every byte.

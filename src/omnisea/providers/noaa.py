@@ -26,6 +26,8 @@ from collections.abc import Sequence
 from datetime import timedelta
 from typing import Any
 
+import pandas as pd
+
 from .. import cf
 from ..errors import UpstreamError
 from ..http import DEFAULT_MAX_WORKERS, NEVER_CACHE, chunk_time, get_json, map_threads
@@ -39,6 +41,11 @@ register_option(
     "noaa_coops: vertical datum for water levels — MLLW (default), MSL, MHW, NAVD, STND; "
     "Great Lakes stations default to IGLD",
 )
+register_option(
+    "coops_high_low",
+    "noaa_coops: True also fetches the OBSERVED tidal extrema (product high_low) into "
+    "in_situ/tides_extrema — distinct from the predicted extrema despite the similar name",
+)
 
 __all__ = ["CoopsProvider", "clear_cache"]
 
@@ -49,12 +56,18 @@ STATIONS = "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.jso
 MAX_DAYS_WATER_LEVEL = 31
 MAX_DAYS_HILO = 365
 
-#: Six-minute cadence — 240 rows per station-day.
-SAMPLES_PER_DAY = 240
+#: Six-minute water_level begins here; before it, only the hourly_height archive exists.
+#: A request that ignores this simply fails for older windows — the gap a GNSS reflectometry
+#: project hit without ever learning why.
+SIX_MINUTE_ERA = pd.Timestamp("1996-01-01", tz="UTC")
 
 SERIES_NODES = {
     "water_level": "in_situ/tides",
     "hilo": "predictions/tides_hilo",
+    # Observed extrema are measurements and live beside the observations — the product name
+    # ("high_low") reads like the prediction product, which is exactly the confusion the
+    # branch split exists to prevent.
+    "high_low": "in_situ/tides_extrema",
 }
 
 _stations_cache: list[dict[str, Any]] | None = None
@@ -80,6 +93,8 @@ class CoopsProvider(Provider):
     cache_policy = {
         "api.tidesandcurrents.noaa.gov/api/prod/datagetter*": NEVER_CACHE,
         "api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json*": timedelta(days=7),
+        # The datums ladder changes with the tidal epoch — decades apart.
+        "api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations/*": timedelta(days=7),
     }
 
     def clear_cache(self) -> None:
@@ -87,6 +102,29 @@ class CoopsProvider(Provider):
 
     def build_sources(self) -> Sequence[RetrievalSource]:
         return [CoopsWaterSource(self)]
+
+    def datum_ladder(self, station_id: str) -> dict[str, Any]:
+        """Datum offsets and epoch for one station, as flat node attributes."""
+        try:
+            payload = self.get_json(
+                f"mdapi/prod/webapi/stations/{station_id}/datums.json",
+                params={"units": "metric"},  # the mdapi default is feet
+            )
+        except UpstreamError:
+            log.debug("no datums ladder for CO-OPS %s", station_id, exc_info=True)
+            return {}
+        attrs: dict[str, Any] = {}
+        if payload.get("epoch"):
+            attrs["datum_epoch"] = str(payload["epoch"])
+        if payload.get("OrthometricDatum"):
+            attrs["orthometric_datum"] = str(payload["OrthometricDatum"])
+        for entry in payload.get("datums") or []:
+            name, value = entry.get("name"), entry.get("value")
+            if name and value is not None:
+                attrs[f"datum_offset_{name}"] = float(value)
+        if attrs:
+            attrs["datum_offsets_units"] = "m"
+        return attrs
 
     def all_stations(self) -> list[dict[str, Any]]:
         """The CO-OPS water-level station list, fetched once per process.
@@ -119,6 +157,8 @@ class CoopsWaterSource(RetrievalSource):
     title = "NOAA CO-OPS water levels"
     node_path = "in_situ/tides"
     feature_type = "timeSeries"
+    #: Six-minute water levels.
+    samples_per_day = 240.0
 
     fields = {
         "water_level": cf.FieldSpec(
@@ -130,6 +170,17 @@ class CoopsWaterSource(RetrievalSource):
             comment=(
                 "CO-OPS six-minute observed water level. The reference datum is stated in "
                 "the vertical_datum attribute — MLLW unless coops_datum= chose another."
+            ),
+        ),
+        "high_low": cf.FieldSpec(
+            var="water_surface_height_above_reference_datum_at_verified_extremum",
+            standard_name="water_surface_height_above_reference_datum",
+            units="m",
+            long_name="Observed high/low tide height above station datum",
+            comment=(
+                "CO-OPS verified OBSERVED tidal extrema — measurements, despite sharing a "
+                "shape with the predicted product; kept under in_situ for exactly that "
+                "reason."
             ),
         ),
         "hilo": cf.FieldSpec(
@@ -144,6 +195,12 @@ class CoopsWaterSource(RetrievalSource):
             ),
         ),
     }
+
+    def locate(self, station_id: str) -> tuple[float, float, str] | None:
+        for st in self.provider.all_stations():
+            if str(st.get("id")) == str(station_id):
+                return float(st["lat"]), float(st["lng"]), str(st.get("name") or station_id)
+        return None
 
     # ------------------------------------------------------------------ discovery
 
@@ -162,7 +219,7 @@ class CoopsWaterSource(RetrievalSource):
                     lat=float(lat),
                     lon=float(lon),
                     variables=("water_surface_height_above_reference_datum",),
-                    n_rows_est=max(1, int(query.days * SAMPLES_PER_DAY)),
+                    n_rows_est=self.row_estimate(query),
                     extra={
                         "state": station.get("state"),
                         # Great Lakes gauges publish against IGLD, and asking them for MLLW
@@ -177,7 +234,10 @@ class CoopsWaterSource(RetrievalSource):
     # ------------------------------------------------------------------ retrieval
 
     def fetch(self, query: Query, matches: list[StationMatch]) -> list[StationSeries]:
-        jobs = [(match, code) for match in matches for code in ("water_level", "hilo")]
+        codes = ["water_level", "hilo"]
+        if query.option("coops_high_low"):
+            codes.append("high_low")
+        jobs = [(match, code) for match in matches for code in codes]
         results = map_threads(
             lambda job: self._fetch_series(query, *job),
             jobs,
@@ -185,6 +245,32 @@ class CoopsWaterSource(RetrievalSource):
             label="coops series",
         )
         return [r for r in results if r is not None]
+
+    def _requests(self, query: Query, code: str):
+        """(product, start, end) chunks for one series, splitting eras for observations.
+
+        Six-minute ``water_level`` exists from 1996; the decades before it live only in
+        ``hourly_height``. One column serves both eras — same quantity, same datum, hourly
+        rows simply spaced wider — instead of the pre-1996 request failing outright.
+        """
+        if code == "hilo":
+            for start, end in chunk_time(query.start, query.end, max_days=MAX_DAYS_HILO):
+                yield "predictions", start, end
+            return
+        if code == "high_low":
+            for start, end in chunk_time(query.start, query.end, max_days=MAX_DAYS_HILO):
+                yield "high_low", start, end
+            return
+        if query.start < SIX_MINUTE_ERA:
+            archive_end = min(query.end, SIX_MINUTE_ERA)
+            for start, end in chunk_time(query.start, archive_end, max_days=MAX_DAYS_HILO):
+                yield "hourly_height", start, end
+        if query.end > SIX_MINUTE_ERA:
+            modern_start = max(query.start, SIX_MINUTE_ERA)
+            for start, end in chunk_time(
+                modern_start, query.end, max_days=MAX_DAYS_WATER_LEVEL
+            ):
+                yield "water_level", start, end
 
     def _datum(self, query: Query, match: StationMatch) -> str:
         chosen = str(query.option("coops_datum") or "").upper()
@@ -197,10 +283,9 @@ class CoopsWaterSource(RetrievalSource):
     ) -> StationSeries | None:
         datum = self._datum(query, match)
         rows: list[dict[str, Any]] = []
-        max_days = MAX_DAYS_HILO if code == "hilo" else MAX_DAYS_WATER_LEVEL
-        for start, end in chunk_time(query.start, query.end, max_days=max_days):
+        for product, start, end in self._requests(query, code):
             params: dict[str, Any] = {
-                "product": "predictions" if code == "hilo" else "water_level",
+                "product": product,
                 "station": match.station_id,
                 "datum": datum,
                 "units": "metric",
@@ -212,6 +297,11 @@ class CoopsWaterSource(RetrievalSource):
             }
             if code == "hilo":
                 params["interval"] = "hilo"
+            if product == "hourly_height":
+                # The archive era: hourly means, one column with the six-minute rows. The
+                # cadence change is visible in the data and stated in the comment; the
+                # alternative was a request that fails for any window before 1996.
+                params.pop("interval", None)
             payload = get_json(API, params, provider=self.name)
             error = str((payload.get("error") or {}).get("message") or "")
             if error:
@@ -221,7 +311,7 @@ class CoopsWaterSource(RetrievalSource):
                     log.debug("coops %s %s: %s", match.station_id, code, error.strip())
                     continue
                 raise UpstreamError(error.strip(), provider=self.name, url=API)
-            rows.extend(payload.get("predictions" if code == "hilo" else "data") or [])
+            rows.extend(payload.get("predictions" if product == "predictions" else "data") or [])
 
         spec = self.fields[code]
         include_unmapped = self.include_unmapped(query)
@@ -235,12 +325,15 @@ class CoopsWaterSource(RetrievalSource):
                 spec.var: cf.convert(_number(row.get("v")), spec, to_cf_units=to_cf),
             }
             if code == "water_level":
-                record[f"{spec.var}_qc"] = row.get("q")
-                if include_unmapped:
+                if row.get("q") is not None:
+                    record[f"{spec.var}_qc"] = row.get("q")
+                if include_unmapped and row.get("s") is not None:
                     # One-sigma standard deviation of the six-minute samples — no CF name,
                     # but it is the published measurement uncertainty.
                     record["sigma"] = _number(row.get("s"))
-            elif include_unmapped:
+            elif include_unmapped and row.get("ty") is not None:
+                record["extremum_type"] = row.get("ty")
+            elif include_unmapped and row.get("type") is not None:
                 record["extremum_type"] = row.get("type")
             records.append(record)
 
@@ -277,6 +370,12 @@ class CoopsWaterSource(RetrievalSource):
             datum=datum,
             station_state=str(match.extra.get("state") or "") or None,
         )
+        if code == "water_level":
+            # The full datums ladder turns "the datum is stated" into "the datum is
+            # convertible": two US gauges both on MLLW are not on the same surface, and the
+            # offsets are what relate them. Enrichment, not measurement — a station without
+            # a published ladder still returns its data.
+            attrs.update(self.provider.datum_ladder(match.station_id))
         return StationSeries(
             match=match,
             frame=frame,

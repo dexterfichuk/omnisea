@@ -15,7 +15,7 @@ from typing import Any
 import pandas as pd
 import xarray as xr
 
-from .errors import OmniseaError, PayloadTooLargeError, ProviderError
+from .errors import OmniseaError, PayloadTooLargeError, ProviderError, QueryError
 from .http import DEFAULT_MAX_WORKERS, map_threads
 from .providers.base import DataSource, StationMatch, StationSeries
 from .query import Query
@@ -300,7 +300,7 @@ class Catalog:
         as warnings, never dropped in silence.
         """
         if on_error not in ("raise", "collect"):
-            raise ValueError(f"on_error must be 'raise' or 'collect'; got {on_error!r}")
+            raise QueryError(f"on_error must be 'raise' or 'collect'; got {on_error!r}")
 
         if on_error == "raise" and self.errors:
             # The documented default. A one-shot omnisea.fetch() runs discovery internally and
@@ -352,6 +352,10 @@ class Catalog:
             query = query.replace(options={**dict(query.options), **options})
         if to_cf_units:
             query = query.replace(options={**dict(query.options), "to_cf_units": True})
+        # The documented option form — query.option("max_workers") — is what every provider's
+        # per-station pool reads. Without this line the keyword bound here and never reached
+        # them, so the pools always ran at the default regardless of what the caller asked.
+        query = query.replace(options={**dict(query.options), "max_workers": max_workers})
         # Everything that shaped this result, so a saved tree can be re-run. Without these you
         # cannot tell a two-station tree produced by nearest=2 from one where only two stations
         # existed — and the README claims "the root records the query".
@@ -569,7 +573,7 @@ def _nearest_per_site(matches: list[StationMatch], n: int) -> list[StationMatch]
     is worth knowing rather than guessing at.
     """
     if n < 1:
-        raise ValueError(f"nearest must be at least 1; got {n}")
+        raise QueryError(f"nearest must be at least 1; got {n}")
     if matches and all(m.distance_km is None for m in matches):
         log.warning(
             "filter(nearest=%d) on a query with no sites: these matches carry no distance, so "

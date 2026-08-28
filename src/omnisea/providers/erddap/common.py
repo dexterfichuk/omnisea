@@ -154,16 +154,30 @@ class ErddapSource(RetrievalSource):
     # ------------------------------------------------------------------ discovery
 
     def discover(self, query: Query) -> list[StationMatch]:
+        # Notes collected on behalf of this call. Workers append (list.append is atomic);
+        # only this thread — the one take_discovery_note() reads from — writes the
+        # thread-local, in the finally. Routing the value through the local from a worker
+        # thread lost it (the flagship multi-server sweep reported extent-less datasets to a
+        # thread nobody reads) and could leave a stale note for the next source that ran on
+        # the same pool thread.
+        notes: list[str] = []
+        try:
+            return self._discover_servers(query, notes)
+        finally:
+            if notes:
+                self._notes.value = "; ".join(notes)
+
+    def _discover_servers(self, query: Query, notes: list[str]) -> list[StationMatch]:
         chosen = self.servers(query)
         if len(chosen) == 1:
-            return self._discover_one(query, chosen[0])
+            return self._discover_one(query, chosen[0], notes)
 
         # Several installations. One of them being down, slow or mid-reindex must not cost the
         # caller the others -- these are a dozen independent institutions, and requiring all of
         # them to be healthy would make the sweep less reliable the more of it you use. What
         # failed is recorded on the source's notes, so an incomplete sweep still says so.
         results = map_threads(
-            lambda s: self._discover_safely(query, s),
+            lambda s: self._discover_safely(query, s, notes),
             chosen,
             max_workers=int(query.option("max_workers", DEFAULT_MAX_WORKERS)),
             label=f"{self.name} servers",
@@ -189,7 +203,7 @@ class ErddapSource(RetrievalSource):
                 f"reached {len(chosen) - len(failed)} of {len(chosen)} ERDDAP servers; "
                 f"no answer from {'; '.join(failed)}"
             )
-            self._notes.value = note
+            notes.append(note)
             log.warning("%s: %s", self.name, note)
         return matches
 
@@ -220,10 +234,10 @@ class ErddapSource(RetrievalSource):
         return note
 
     def _discover_safely(
-        self, query: Query, server: ErddapServer
+        self, query: Query, server: ErddapServer, notes: list[str]
     ) -> tuple[ErddapServer, list[StationMatch], str | None]:
         try:
-            return server, self._discover_one(query, server), None
+            return server, self._discover_one(query, server, notes), None
         except UpstreamError as exc:
             if exc.status == 404 and "unknown datasetID" in (exc.detail or ""):
                 # erddap_datasets= named something this installation does not host. Across a
@@ -244,14 +258,21 @@ class ErddapSource(RetrievalSource):
         except Exception as exc:  # noqa: BLE001 - reported, not swallowed
             return server, [], f"{type(exc).__name__}: {str(exc).splitlines()[0][:120]}"
 
-    def _discover_one(self, query: Query, server_info: ErddapServer) -> list[StationMatch]:
+    def _discover_one(
+        self,
+        query: Query,
+        server_info: ErddapServer,
+        notes: list[str] | None = None,
+    ) -> list[StationMatch]:
         server = server_info.url
         named = _as_list(query.option("erddap_datasets"))
         candidates = named or self._candidate_ids(query, server)
         if not candidates:
             # Nothing the area filter could reach. That may be true, or it may be that the
             # publisher declared no extent — ask before letting an absence read as an answer.
-            self._note_extentless(server)
+            note = self._note_extentless(server)
+            if note is not None and notes is not None:
+                notes.append(note)
             return []
 
         cap = int(query.option("erddap_max_datasets", DEFAULT_MAX_DATASETS))
@@ -340,7 +361,9 @@ class ErddapSource(RetrievalSource):
                 # corrected the distance to the nearest edge. Re-attaching would undo that.
                 matches.append(match)
         if not named and not matches:
-            self._note_extentless(server)
+            note = self._note_extentless(server)
+            if note is not None and notes is not None:
+                notes.append(note)
         log.debug("%s discovered %d dataset(s) on %s", self.name, len(matches), server)
         return matches
 
@@ -560,7 +583,7 @@ class ErddapSource(RetrievalSource):
     #: which is the common case for every regional server outside its region.
     _extentless_counts: dict[tuple[str, str], int] = {}
 
-    def _note_extentless(self, server: str) -> None:
+    def _note_extentless(self, server: str) -> str | None:
         """Say how many datasets no spatial filter could ever have reached.
 
         A publisher who omits ``geospatial_lat/lon_*`` makes their dataset invisible to every
@@ -584,16 +607,17 @@ class ErddapSource(RetrievalSource):
                     None,
                 )
             except OmniseaError:
-                return
+                return None
             hidden = len(table_rows(payload)) if payload else 0
             self._extentless_counts[key] = hidden
-        if hidden:
-            self._notes.value = (
-                f"nothing matched, but {hidden} {self.protocol} dataset(s) on {server} declare "
-                "no geospatial extent, so no area query can reach them — they are excluded "
-                "from this catalogue rather than absent from the server. Name them with "
-                "erddap_datasets=[...] to fetch them anyway."
-            )
+        if not hidden:
+            return None
+        return (
+            f"nothing matched, but {hidden} {self.protocol} dataset(s) on {server} declare "
+            "no geospatial extent, so no area query can reach them — they are excluded "
+            "from this catalogue rather than absent from the server. Name them with "
+            "erddap_datasets=[...] to fetch them anyway."
+        )
 
     def _sibling_selected(self, query: Query) -> bool:
         """Is the other ERDDAP protocol also selected by this query?"""
