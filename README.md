@@ -636,6 +636,12 @@ prevent. Its `include_urls=True` lists the exact endpoint each series came from,
 for realtime sources whose contents cannot be recovered later from the query alone;
 `provenance(tree, by="node")` gives the same URLs as a frame.
 
+You do not have to remember any of this at analysis time: every `fetch()` **prints the full
+citation block as the tree is handed over** (`cite=False` silences it) and stamps the same
+block into `tree.attrs["citation"]`, where it survives `to_netcdf()` and rides onto
+`align()`'s matrix as `attrs["omnisea_citation"]` — so the sources are recoverable months
+later from whichever object you actually kept: scrollback, tree, file, or matrix.
+
 ## Adding your own source
 
 A new data source is **one new file**, not a refactor. omnisea models two levels — a `Provider`
