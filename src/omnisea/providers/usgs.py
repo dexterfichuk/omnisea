@@ -136,6 +136,28 @@ class UsgsWaterSource(RetrievalSource):
             extra = [extra]
         return list(self.fields) + [str(c) for c in extra if str(c) not in self.fields]
 
+    def locate(self, station_id: str) -> tuple[float, float, str] | None:
+        try:
+            payload = get_text(
+                SITE_SERVICE,
+                {"format": "rdb", "sites": station_id, "siteStatus": "all"},
+                provider=self.name,
+            )
+        except UpstreamError as exc:
+            if exc.status in (400, 404):
+                return None  # NWIS answers an unknown site number with an error, not a row
+            raise
+        for row in _parse_rdb(payload):
+            try:
+                return (
+                    float(row["dec_lat_va"]),
+                    float(row["dec_long_va"]),
+                    str(row.get("station_nm") or station_id),
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+        return None
+
     # ------------------------------------------------------------------ discovery
 
     def discover(self, query: Query) -> list[StationMatch]:

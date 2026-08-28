@@ -180,6 +180,13 @@ class NdbcStdmetSource(RetrievalSource):
         ),
     }
 
+    def locate(self, station_id: str) -> tuple[float, float, str] | None:
+        wanted = station_id.lower()
+        for st in self.provider.all_stations():
+            if st["id"].lower() == wanted:
+                return st["lat"], st["lon"], st["name"] or station_id
+        return None
+
     # ------------------------------------------------------------------ discovery
 
     def discover(self, query: Query) -> list[StationMatch]:

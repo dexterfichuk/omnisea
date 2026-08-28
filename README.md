@@ -169,7 +169,15 @@ eccc_hydrometric_daily    08HB048     CARNATION CREEK AT THE MOUTH        13.47 
   (showing 6 of 12 columns; catalog.frame has them all: provider, site, lat, lon, first, last)
 ```
 
-Drop the `providers=` argument to search every registered source at once. The DFO tide gauge is
+Drop the `providers=` argument to search every registered source at once. Already know your
+station? Skip coordinates entirely:
+
+```python
+tree = omnisea.fetch(
+    stations={"noaa_coops": "9444090", "usgs_water": "12045500", "dfo_tides": "07120"},
+    time=("2024-07-01", "2024-07-08"),
+)
+``` The DFO tide gauge is
 80 m from the research station — now pull the nearest station per source:
 
 ```python

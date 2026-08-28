@@ -299,3 +299,47 @@ class TestNwisTranslation:
         assert attrs["omnisea_mapped"] == 0
         assert attrs["units"] == "uS/cm @25C"
         assert "standard_name" not in attrs
+
+
+class TestCoopsEras:
+    def test_a_pre_1996_window_plans_hourly_height_requests(self, monkeypatch):
+        source = coops(monkeypatch)
+        q = Query.from_position(lat=48.125, lon=-123.44, radius_km=30,
+                                time=("1985-06-01", "1996-02-01"))
+        plan = list(source._requests(q, "water_level"))
+        products = {p for p, _, _ in plan}
+        assert products == {"hourly_height", "water_level"}, (
+            "the archive era and the six-minute era split at 1996; before this, a pre-1996 "
+            "request simply failed and the caller never learned why"
+        )
+        archive_end = max(e for p, _, e in plan if p == "hourly_height")
+        modern_start = min(s for p, s, _ in plan if p == "water_level")
+        assert archive_end == modern_start == pd.Timestamp("1996-01-01", tz="UTC")
+
+    def test_a_modern_window_stays_six_minute_only(self, monkeypatch):
+        source = coops(monkeypatch)
+        plan = list(source._requests(query(), "water_level"))
+        assert {p for p, _, _ in plan} == {"water_level"}
+
+    def test_observed_extrema_are_off_by_default_and_land_under_in_situ(self, monkeypatch):
+        source = coops(monkeypatch)
+        series = source.fetch(query(), source.discover(query()))
+        assert not any("tides_extrema" in s.node_path for s in series)
+        q = query(coops_high_low=True)
+        series = source.fetch(q, source.discover(q))
+        extrema = [s for s in series if "tides_extrema" in s.node_path]
+        assert extrema and extrema[0].node_path.startswith("in_situ/"), (
+            "high_low is a measurement product despite its prediction-flavoured name"
+        )
+
+    def test_the_datums_ladder_rides_on_the_observation_node(self, monkeypatch):
+        source = coops(monkeypatch)
+        monkeypatch.setattr(
+            source.provider, "datum_ladder",
+            lambda sid: {"datum_epoch": "1983-2001", "orthometric_datum": "NAVD88",
+                         "datum_offset_MHHW": 2.383, "datum_offsets_units": "m"},
+        )
+        obs = next(s for s in source.fetch(query(), source.discover(query()))
+                   if s.node_path.startswith("in_situ/tides/"))
+        assert obs.attrs["datum_epoch"] == "1983-2001"
+        assert obs.attrs["datum_offset_MHHW"] == 2.383

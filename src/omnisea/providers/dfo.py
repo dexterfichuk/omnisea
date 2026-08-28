@@ -178,6 +178,19 @@ class DfoTidesSource(RetrievalSource):
 
     # ------------------------------------------------------------------ discovery
 
+    def locate(self, station_id: str) -> tuple[float, float, str] | None:
+        for station in self.provider.all_stations():
+            if str(station.get("code") or station.get("id")) == str(station_id):
+                lat, lon = station.get("latitude"), station.get("longitude")
+                if lat is None or lon is None:
+                    return None
+                return (
+                    float(lat),
+                    float(lon),
+                    str(station.get("officialName") or station.get("name") or station_id),
+                )
+        return None
+
     def discover(self, query: Query) -> list[StationMatch]:
         series_wanted = self._series_for(query)
         if not series_wanted:

@@ -339,6 +339,17 @@ class DataSource(ABC):
             return None
         return (now or pd.Timestamp.now(tz="UTC")) - self.retention
 
+    def locate(self, station_id: str) -> tuple[float, float, str] | None:
+        """Where a station this source knows by id sits: ``(lat, lon, name)``, or ``None``.
+
+        The hook behind ``fetch(stations=...)`` — the survey of real users found seven of
+        eight projects start from a station id they already know, not a position. A source
+        that keeps a client-side catalogue answers from it; one whose upstream can be asked
+        by id asks; the default ``None`` means "this source cannot look a station up", and
+        the caller turns that into an error naming the spatial alternative.
+        """
+        return None
+
     def take_discovery_note(self) -> str | None:
         """Anything :meth:`discover` needs to tell the caller that is not an error or a match.
 
