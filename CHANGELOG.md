@@ -42,6 +42,13 @@ observatories, and CIOOS metadata records.
   silences it) and stamps the same block into `tree.attrs["citation"]`, which survives
   `to_netcdf()` and rides onto `align()`'s matrix as `omnisea_citation`. Attribution no
   longer depends on remembering a later call.
+- **Columbia River DART: dams and salmon.** `dart_river` serves daily outflow, spill,
+  inflow and total dissolved gas at the thirteen mainstem Columbia/Snake projects, under the
+  same branch as every other river source; `dart_passage` serves the adult fish-ladder
+  counts — Chinook (with run designation), sockeye, steelhead, coho, chum, pink, shad,
+  lamprey, bull trout — as day totals under plain English names, because there is no CF
+  standard name for a salmon. Bonneville's count record starts in 1938. Verified against
+  the raw reports: 176.7 kcfs outflow, 26,359 sockeye on 2024-07-01.
 - **CDIP and UHSLC join as named ERDDAP servers.** Scripps' research wave buoys
   (spectral-grade, archives to the 1980s, dense on the US West Coast) and the University of
   Hawaii Sea Level Center's century-long research tide archive. Both are global-extent
