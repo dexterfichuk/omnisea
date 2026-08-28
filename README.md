@@ -449,6 +449,8 @@ omnisea.fields(tree)     # what a particular fetch actually returned
 |---|---|---|
 | `dfo_tides` | `dfo` | Water levels: observed, predicted, and high/low events (1573 stations) |
 | `noaa_coops` | `noaa_coops` | **US tide gauges**, natively: six-minute observed water levels and predicted extrema, datum stated (MLLW/MSL/NAVD, IGLD on the Great Lakes) |
+| `noaa_coops_currents` | `noaa_coops` | **Measured currents** from ADCP deployments (episodic; empty is an answer) — the registry's first |
+| `noaa_coops_currents_predictions` | `noaa_coops` | Predicted max-flood/slack/max-ebb events at 4,430 stations — the current-current partner to `tides_hilo` |
 | `usgs_water` | `usgs` | **US river gauges**: discharge, stage and water temperature at native cadence, period of record honoured |
 | `usgs_water_daily` | `usgs` | US daily mean discharge/stage/temperature — the historical archive, read in station-local time |
 | `ndbc_stdmet` | `ndbc` | **Buoys — the wave source**: significant height, period, direction, plus marine wind, pressure, SST from ~1,900 platforms incl. relayed ECCC buoys |

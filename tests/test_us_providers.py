@@ -343,3 +343,94 @@ class TestCoopsEras:
                    if s.node_path.startswith("in_situ/tides/"))
         assert obs.attrs["datum_epoch"] == "1983-2001"
         assert obs.attrs["datum_offset_MHHW"] == 2.383
+
+
+CURRENTS_STATIONS = {"stations": [
+    {"id": "ca0101", "name": "Cape Cod Canal, West End", "lat": 41.7461, "lng": -70.6594},
+    {"id": "PCT1416", "name": "Cattle Point, San Juan Channel", "lat": 48.4483, "lng": -122.955},
+]}
+CURRENTS_DATA = {"data": [
+    {"t": "2024-07-01 00:03", "s": "210.6", "d": "218", "b": "14"},
+    {"t": "2024-07-01 00:09", "s": "205.2", "d": "219", "b": "14"},
+]}
+CURRENTS_PRED = {"current_predictions": {"units": "meters, cm/s", "cp": [
+    {"Type": "slack", "meanFloodDir": 46, "meanEbbDir": 187, "Bin": "1",
+     "Time": "2024-07-01 03:36", "Velocity_Major": 0, "Depth": "4.6"},
+    {"Type": "flood", "meanFloodDir": 46, "meanEbbDir": 187, "Bin": "1",
+     "Time": "2024-07-01 06:54", "Velocity_Major": 88.3, "Depth": "4.6"},
+    {"Type": "ebb", "meanFloodDir": 46, "meanEbbDir": 187, "Bin": "1",
+     "Time": "2024-07-01 13:22", "Velocity_Major": -102.4, "Depth": "4.6"},
+]}}
+
+
+class TestCoopsCurrents:
+    """The registry's first current sources. What these guard: the separate alphanumeric id
+    catalogue, the envelope that differs from every other CO-OPS product, the signed
+    along-channel convention, and episodic deployments answering empty rather than failing."""
+
+    def sources(self, monkeypatch):
+        from omnisea.providers.noaa import (
+            CoopsCurrentPredictionsSource,
+            CoopsCurrentsSource,
+            CoopsProvider,
+        )
+
+        provider = CoopsProvider()
+        monkeypatch.setattr(provider, "stations_of_type",
+                            lambda kind: CURRENTS_STATIONS["stations"])
+
+        def fake_get_json(url, params, provider=None, **_):
+            if params.get("product") == "currents":
+                return CURRENTS_DATA
+            if params.get("product") == "currents_predictions":
+                return CURRENTS_PRED
+            return {"error": {"message": "No data was found."}}
+
+        monkeypatch.setattr(noaa_mod, "get_json", fake_get_json)
+        return CoopsCurrentsSource(provider), CoopsCurrentPredictionsSource(provider)
+
+    def test_observed_currents_parse_with_bin_carried(self, monkeypatch):
+        obs, _ = self.sources(monkeypatch)
+        q = query(lat=41.7461, lon=-70.6594)
+        (series,) = obs.fetch(q, obs.discover(q))
+        frame = series.frame
+        assert frame["sea_water_speed"].iloc[0] == 210.6
+        assert frame["direction_of_sea_water_velocity"].iloc[0] == 218.0
+        assert frame["bin"].iloc[0] == 14.0
+        assert series.node_path == "in_situ/currents/ca0101"
+        assert series.var_attrs["sea_water_speed"]["units"] == "cm s-1"
+
+    def test_predictions_use_their_own_envelope_and_sign_convention(self, monkeypatch):
+        _, pred = self.sources(monkeypatch)
+        q = query(lat=48.4483, lon=-122.955)
+        (series,) = pred.fetch(q, pred.discover(q))
+        frame = series.frame
+        assert series.node_path == "predictions/currents/PCT1416"
+        v = frame["sea_water_speed_along_channel_at_event"]
+        assert v.iloc[0] == 0.0 and v.iloc[1] == 88.3 and v.iloc[2] == -102.4, (
+            "signed along-channel: positive flood, negative ebb, zero slack"
+        )
+        assert list(frame["event_type"]) == ["slack", "flood", "ebb"]
+        assert series.attrs["mean_flood_direction"] == 46.0
+        assert series.attrs["mean_ebb_direction"] == 187.0
+
+    def test_to_cf_units_reaches_metres_per_second(self, monkeypatch):
+        obs, _ = self.sources(monkeypatch)
+        q = query(lat=41.7461, lon=-70.6594, to_cf_units=True)
+        (series,) = obs.fetch(q, obs.discover(q))
+        assert series.frame["sea_water_speed"].iloc[0] == pytest.approx(2.106)
+        assert series.var_attrs["sea_water_speed"]["units"] == "m s-1"
+
+    def test_an_out_of_water_deployment_is_empty_not_an_error(self, monkeypatch):
+        obs, _ = self.sources(monkeypatch)
+        monkeypatch.setattr(noaa_mod, "get_json",
+                            lambda url, params, provider=None, **_: {
+                                "error": {"message": " No data was found. "}})
+        q = query(lat=41.7461, lon=-70.6594)
+        (series,) = obs.fetch(q, obs.discover(q))
+        assert series.is_empty
+
+    def test_current_stations_are_addressable_by_id(self, monkeypatch):
+        obs, pred = self.sources(monkeypatch)
+        assert obs.locate("CA0101") == (41.7461, -70.6594, "Cape Cod Canal, West End")
+        assert pred.locate("pct1416") == (48.4483, -122.955, "Cattle Point, San Juan Channel")
