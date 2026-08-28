@@ -106,6 +106,24 @@ SERVERS: dict[str, ErddapServer] = {
             sweep=False,  # matches any bbox; would hit the dataset ceiling every time
         ),
         ErddapServer(
+            "cdip",
+            "https://erddap.cdip.ucsd.edu/erddap",
+            "Coastal Data Information Program (Scripps)",
+            "research wave buoys as station-aggregated datasets (wave_agg, sst_agg) — "
+            "spectral-grade waves back to the 1980s, dense on the US West Coast",
+            5,
+            sweep=False,  # four global-extent aggregates; they would match every bbox on Earth
+        ),
+        ErddapServer(
+            "uhslc",
+            "https://uhslc.soest.hawaii.edu/erddap",
+            "University of Hawaii Sea Level Center",
+            "research-quality global tide-gauge archive (hourly and daily), some records "
+            "over a century long — the long-baseline partner to the operational gauges",
+            6,
+            sweep=False,  # global-extent aggregates, named-only for the same reason
+        ),
+        ErddapServer(
             "coastwatch_west",
             "https://coastwatch.pfeg.noaa.gov/erddap",
             "NOAA CoastWatch West Coast Node",

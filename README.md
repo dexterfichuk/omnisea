@@ -452,6 +452,8 @@ omnisea.fields(tree)     # what a particular fetch actually returned
 | `usgs_water` | `usgs` | **US river gauges**: discharge, stage and water temperature at native cadence, period of record honoured |
 | `usgs_water_daily` | `usgs` | US daily mean discharge/stage/temperature — the historical archive, read in station-local time |
 | `ndbc_stdmet` | `ndbc` | **Buoys — the wave source**: significant height, period, direction, plus marine wind, pressure, SST from ~1,900 platforms incl. relayed ECCC buoys |
+| `cdip_*` | `cdip` | Scripps research wave buoys (spectral-grade, archives to the 1980s) — named-only: `providers="cdip_tabledap", erddap_datasets=["wave_agg"]` |
+| `uhslc_*` | `uhslc` | Research-quality global tide archive, records over a century — named-only, 0–360 longitudes handled |
 | `eccc_climate` | `eccc` | Hourly surface climate observations |
 | `eccc_climate_daily` | `eccc` | Daily climate summaries |
 | `eccc_hydrometric` | `eccc` | Realtime water level and river discharge (~30 days) |
