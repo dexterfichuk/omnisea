@@ -42,6 +42,13 @@ observatories, and CIOOS metadata records.
   silences it) and stamps the same block into `tree.attrs["citation"]`, which survives
   `to_netcdf()` and rides onto `align()`'s matrix as `omnisea_citation`. Attribution no
   longer depends on remembering a later call.
+- **CO-OPS currents, at last.** `noaa_coops_currents` serves measured ADCP currents (speed,
+  direction, depth bin — deployments are episodic, so an empty window is an answer), and
+  `noaa_coops_currents_predictions` serves the predicted max-flood/slack/max-ebb events a
+  navigator plans around, at 4,430 stations — 407 in Puget Sound alone — with the channel's
+  mean flood/ebb axes as node attributes. Separate alphanumeric id catalogues, a response
+  envelope unlike every other CO-OPS product, signed along-channel velocity (+flood, −ebb).
+  The registry's first current sources of either kind.
 - **Columbia River DART: dams and salmon.** `dart_river` serves daily outflow, spill,
   inflow and total dissolved gas at the thirteen mainstem Columbia/Snake projects, under the
   same branch as every other river source; `dart_passage` serves the adult fish-ladder

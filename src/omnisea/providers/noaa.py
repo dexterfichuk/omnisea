@@ -71,14 +71,16 @@ SERIES_NODES = {
 }
 
 _stations_cache: list[dict[str, Any]] | None = None
+_typed_stations_cache: dict[str, list[dict[str, Any]]] = {}
 _lock = threading.Lock()
 
 
 def clear_cache() -> None:
-    """Drop the cached station list (used by tests)."""
+    """Drop the cached station lists (used by tests)."""
     global _stations_cache
     with _lock:
         _stations_cache = None
+        _typed_stations_cache.clear()
 
 
 class CoopsProvider(Provider):
@@ -101,7 +103,11 @@ class CoopsProvider(Provider):
         clear_cache()
 
     def build_sources(self) -> Sequence[RetrievalSource]:
-        return [CoopsWaterSource(self)]
+        return [
+            CoopsWaterSource(self),
+            CoopsCurrentsSource(self),
+            CoopsCurrentPredictionsSource(self),
+        ]
 
     def datum_ladder(self, station_id: str) -> dict[str, Any]:
         """Datum offsets and epoch for one station, as flat node attributes."""
@@ -125,6 +131,26 @@ class CoopsProvider(Provider):
         if attrs:
             attrs["datum_offsets_units"] = "m"
         return attrs
+
+    def stations_of_type(self, kind: str) -> list[dict[str, Any]]:
+        """A typed station catalogue, fetched once per process per type.
+
+        CO-OPS keeps separate id namespaces per instrument family: water-level gauges are
+        seven-digit numbers, current stations are alphanumeric (``ca0101``, ``PCT1401``),
+        and the water-levels list contains none of them — asking one list for the other's
+        stations answers nothing, quietly.
+        """
+        with _lock:
+            cached = _typed_stations_cache.get(kind)
+        if cached is not None:
+            return cached
+        payload = self.get_json(
+            "mdapi/prod/webapi/stations.json", params={"type": kind}
+        )
+        stations = list(payload.get("stations") or [])
+        with _lock:
+            _typed_stations_cache[kind] = stations
+        return stations
 
     def all_stations(self) -> list[dict[str, Any]]:
         """The CO-OPS water-level station list, fetched once per process.
@@ -381,6 +407,226 @@ class CoopsWaterSource(RetrievalSource):
             frame=frame,
             node_path=f"{SERIES_NODES[code]}/{match.station_id}",
             attrs=attrs,
+            var_attrs=var_attrs,
+        )
+
+
+class CoopsCurrentsSource(RetrievalSource):
+    """Measured currents from CO-OPS ADCP deployments: speed and direction, six-minute.
+
+    Deployments are episodic — an instrument sits in a channel for months, not decades — so
+    "No data was found" for your window is the common answer and arrives as an empty node,
+    not an error. The registry's first measured-current source.
+    """
+
+    name = "noaa_coops_currents"
+    title = "NOAA CO-OPS currents (observed)"
+    node_path = "in_situ/currents"
+    feature_type = "timeSeries"
+    samples_per_day = 240.0
+    station_type = "currents"
+
+    fields = {
+        "s": cf.FieldSpec(
+            var="sea_water_speed",
+            standard_name="sea_water_speed",
+            units="cm s-1",
+            long_name="Current speed",
+            cf_units="m s-1",
+            cf_scale=0.01,
+        ),
+        "d": cf.FieldSpec(
+            var="direction_of_sea_water_velocity",
+            standard_name="direction_of_sea_water_velocity",
+            units="degree",
+            long_name="Current direction (toward)",
+        ),
+    }
+
+    def locate(self, station_id: str) -> tuple[float, float, str] | None:
+        for st in self.provider.stations_of_type(self.station_type):
+            if str(st.get("id")).lower() == str(station_id).lower():
+                return float(st["lat"]), float(st["lng"]), str(st.get("name") or station_id)
+        return None
+
+    def discover(self, query: Query) -> list[StationMatch]:
+        matches: list[StationMatch] = []
+        for st in self.provider.stations_of_type(self.station_type):
+            lat, lng = st.get("lat"), st.get("lng")
+            if lat is None or lng is None or not query.contains(float(lat), float(lng)):
+                continue
+            matches.append(
+                self.new_match(
+                    station_id=str(st["id"]),
+                    name=str(st.get("name") or st["id"]),
+                    lat=float(lat),
+                    lon=float(lng),
+                    variables=tuple(sorted(spec.var for spec in self.fields.values())),
+                    n_rows_est=self.row_estimate(query),
+                ).attach_site(query)
+            )
+        return matches
+
+    def fetch(self, query: Query, matches: list[StationMatch]) -> list[StationSeries]:
+        results = map_threads(
+            lambda match: self._fetch_station(query, match),
+            matches,
+            max_workers=int(query.option("max_workers", DEFAULT_MAX_WORKERS)),
+            label="coops currents",
+        )
+        return [r for r in results if r is not None]
+
+    def _rows(self, query: Query, match: StationMatch) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for start, end in chunk_time(query.start, query.end, max_days=MAX_DAYS_WATER_LEVEL):
+            payload = get_json(
+                API,
+                {
+                    "product": "currents",
+                    "station": match.station_id,
+                    "units": "metric",
+                    "time_zone": "gmt",
+                    "format": "json",
+                    "application": "omnisea",
+                    "begin_date": start.strftime("%Y%m%d %H:%M"),
+                    "end_date": end.strftime("%Y%m%d %H:%M"),
+                },
+                provider=self.name,
+            )
+            error = str((payload.get("error") or {}).get("message") or "")
+            if error:
+                if "no data" in error.lower():
+                    continue  # an episodic deployment simply was not in the water
+                raise UpstreamError(error.strip(), provider=self.name, url=API)
+            rows.extend(payload.get("data") or [])
+        return rows
+
+    def _fetch_station(self, query: Query, match: StationMatch) -> StationSeries | None:
+        to_cf = self.to_cf_units(query)
+        records = []
+        for row in self._rows(query, match):
+            record: dict[str, Any] = {"time": row.get("t")}
+            for key, spec in self.fields.items():
+                record[spec.var] = cf.convert(_number(row.get(key)), spec, to_cf_units=to_cf)
+            if self.include_unmapped(query) and row.get("b") is not None:
+                record["bin"] = _number(row.get("b"))
+            records.append(record)
+        frame = frame_from_records(records)
+        var_attrs = {
+            spec.var: cf.cf_attrs(spec, to_cf_units=to_cf) for spec in self.fields.values()
+        }
+        if "bin" in frame.columns:
+            var_attrs["bin"] = {
+                "long_name": "ADCP depth bin number",
+                cf.MAPPED_ATTR: 0,
+                "source_field": "b",
+            }
+        return StationSeries(
+            match=match,
+            frame=frame,
+            node_path=f"{self.node_path}/{match.station_id}",
+            attrs=self.base_attrs(
+                source_url=f"{API}?product=currents&station={match.station_id}",
+            ),
+            var_attrs=var_attrs,
+        )
+
+
+class CoopsCurrentPredictionsSource(CoopsCurrentsSource):
+    """Predicted tidal-current events: max flood, slack, max ebb — 4,430 stations.
+
+    The current-current partner to ``tides_hilo``: an irregular series of the moments a
+    navigator plans around, under ``predictions/`` where a prediction belongs. Velocity is
+    the along-channel (major-axis) component, signed positive on flood; the event type
+    rides beside it.
+    """
+
+    name = "noaa_coops_currents_predictions"
+    title = "NOAA CO-OPS current predictions (max/slack events)"
+    node_path = "predictions/currents"
+    #: Roughly four floods, four ebbs and eight slacks a day.
+    samples_per_day = 12.0
+    station_type = "currentpredictions"
+
+    fields = {
+        "Velocity_Major": cf.FieldSpec(
+            var="sea_water_speed_along_channel_at_event",
+            standard_name="",  # signed along-channel speed at flood/slack/ebb has no CF name
+            units="cm s-1",
+            long_name="Predicted along-channel current at the event (+flood, -ebb)",
+            cf_units="m s-1",
+            cf_scale=0.01,
+        ),
+    }
+
+    def _fetch_station(self, query: Query, match: StationMatch) -> StationSeries | None:
+        to_cf = self.to_cf_units(query)
+        rows: list[dict[str, Any]] = []
+        flood_dir = ebb_dir = depth = None
+        for start, end in chunk_time(query.start, query.end, max_days=MAX_DAYS_HILO):
+            payload = get_json(
+                API,
+                {
+                    "product": "currents_predictions",
+                    "station": match.station_id,
+                    "units": "metric",
+                    "time_zone": "gmt",
+                    "format": "json",
+                    "application": "omnisea",
+                    "interval": "MAX_SLACK",
+                    "begin_date": start.strftime("%Y%m%d %H:%M"),
+                    "end_date": end.strftime("%Y%m%d %H:%M"),
+                },
+                provider=self.name,
+            )
+            error = str((payload.get("error") or {}).get("message") or "")
+            if error:
+                if "no data" in error.lower():
+                    continue
+                raise UpstreamError(error.strip(), provider=self.name, url=API)
+            # A different envelope from every other CO-OPS product: current_predictions.cp.
+            for row in (payload.get("current_predictions") or {}).get("cp") or []:
+                rows.append(row)
+                flood_dir = row.get("meanFloodDir", flood_dir)
+                ebb_dir = row.get("meanEbbDir", ebb_dir)
+                depth = row.get("Depth", depth)
+
+        spec = self.fields["Velocity_Major"]
+        include_unmapped = self.include_unmapped(query)
+        records = []
+        for row in rows:
+            record: dict[str, Any] = {
+                "time": row.get("Time"),
+                spec.var: cf.convert(
+                    _number(row.get("Velocity_Major")), spec, to_cf_units=to_cf
+                ),
+            }
+            if include_unmapped:
+                record["event_type"] = row.get("Type")
+            records.append(record)
+        frame = frame_from_records(records)
+        var_attrs: dict[str, dict[str, Any]] = {
+            spec.var: cf.cf_attrs(spec, to_cf_units=to_cf)
+        }
+        if "event_type" in frame.columns:
+            var_attrs["event_type"] = {
+                "long_name": "predicted current event",
+                "comment": "flood, slack or ebb, as published by CO-OPS.",
+                cf.MAPPED_ATTR: 0,
+                "source_field": "Type",
+            }
+        return StationSeries(
+            match=match,
+            frame=frame,
+            node_path=f"{self.node_path}/{match.station_id}",
+            attrs=self.base_attrs(
+                source_url=(
+                    f"{API}?product=currents_predictions&station={match.station_id}"
+                ),
+                mean_flood_direction=_number(flood_dir),
+                mean_ebb_direction=_number(ebb_dir),
+                sensor_depth_m=_number(depth),
+            ),
             var_attrs=var_attrs,
         )
 
