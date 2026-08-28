@@ -212,11 +212,15 @@ class TestNwisTranslation:
 
         def dv(url, params, provider=None, **_):
             assert url.endswith("/dv/"), "the daily source must ask the DV service"
-            assert params["statCd"] == "00003", "the mean — the statistic cell_methods asserts"
+            assert params["statCd"] == "00003,00001,00002", (
+                "mean, max and min in one request; each declares its statistic"
+            )
             return {
                 "value": {"timeSeries": [{
                     "variable": {"variableCode": [{"value": "00060"}],
-                                 "unit": {"unitCode": "ft3/s"}, "noDataValue": -999999.0},
+                                 "unit": {"unitCode": "ft3/s"}, "noDataValue": -999999.0,
+                                 "options": {"option": [{"name": "Statistic",
+                                                         "optionCode": "00003"}]}},
                     "values": [{"value": [
                         {"value": "1020", "qualifiers": ["A"],
                          "dateTime": "2024-07-01T00:00:00.000"},
@@ -241,3 +245,57 @@ class TestNwisTranslation:
         tree = build_tree(Query.from_sites([Site(48.05, -123.58, "Elwha")], WINDOW), [series])
         assert "/in_situ/hydrometric/12045500" in {n.path for n in tree.subtree}
         assert "usgs" in omnisea.providers() and "noaa_coops" in omnisea.providers()
+
+    def test_daily_max_and_min_carry_their_own_cell_methods(self, monkeypatch):
+        from omnisea.providers.usgs import UsgsProvider, UsgsWaterDailySource
+
+        source = UsgsWaterDailySource(UsgsProvider())
+        monkeypatch.setattr(usgs_mod, "get_text",
+                            lambda url, params, provider=None, **_: NWIS_RDB)
+
+        def dv(url, params, provider=None, **_):
+            def series(stat, value):
+                return {
+                    "variable": {"variableCode": [{"value": "00060"}],
+                                 "unit": {"unitCode": "ft3/s"}, "noDataValue": -999999.0,
+                                 "options": {"option": [{"name": "Statistic",
+                                                         "optionCode": stat}]}},
+                    "values": [{"value": [{"value": value, "qualifiers": ["A"],
+                                           "dateTime": "2024-07-01T00:00:00.000"}]}],
+                }
+            return {"value": {"timeSeries": [
+                series("00003", "1020"), series("00001", "1310"), series("00002", "890"),
+            ]}}
+
+        monkeypatch.setattr(usgs_mod, "get_json", dv)
+        q = query(lat=48.05, lon=-123.58)
+        (result,) = source.fetch(q, source.discover(q))
+        frame = result.frame
+        assert frame["river_discharge"].iloc[0] == 1020.0
+        assert frame["river_discharge_max"].iloc[0] == 1310.0
+        assert frame["river_discharge_min"].iloc[0] == 890.0
+        assert result.var_attrs["river_discharge"]["cell_methods"] == "time: mean"
+        assert result.var_attrs["river_discharge_max"]["cell_methods"] == "time: maximum"
+        assert result.var_attrs["river_discharge_min"]["cell_methods"] == "time: minimum"
+
+    def test_an_uncurated_parameter_code_passes_through_marked_unmapped(self, monkeypatch):
+        source = self.source(monkeypatch)
+
+        def iv(url, params, provider=None, **_):
+            assert "00095" in params["parameterCd"]
+            return {"value": {"timeSeries": [{
+                "variable": {"variableCode": [{"value": "00095"}],
+                             "variableName": "Specific conductance",
+                             "unit": {"unitCode": "uS/cm @25C"}, "noDataValue": -999999.0},
+                "values": [{"value": [{"value": "212", "qualifiers": ["A"],
+                                       "dateTime": "2024-07-01T00:00:00.000-07:00"}]}],
+            }]}}
+
+        monkeypatch.setattr(usgs_mod, "get_json", iv)
+        q = query(lat=48.05, lon=-123.58, usgs_parameters=["00095"])
+        (result,) = source.fetch(q, source.discover(q))
+        assert result.frame["nwis_00095"].iloc[0] == 212.0
+        attrs = result.var_attrs["nwis_00095"]
+        assert attrs["omnisea_mapped"] == 0
+        assert attrs["units"] == "uS/cm @25C"
+        assert "standard_name" not in attrs
