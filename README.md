@@ -8,6 +8,9 @@ adapters per source, CF-standard canonicalization, EDR-shaped spatial-temporal q
 `xarray.DataTree` as the output container so 1-D point series and 4-D grids can coexist without a
 lossy flat join.
 
+**Start with the [Field Guide](docs/field-guide.md)** — every source and organization, the
+guarantees each is held to, and the five-line workflow.
+
 ## Installing
 
 Not on PyPI yet, so install from the repository. Python 3.11 or newer.
@@ -792,6 +795,7 @@ test validates every emitted `standard_name` against the published table.
 | File | What it shows |
 |---|---|
 | [examples/quickstart_model.ipynb](examples/quickstart_model.ipynb) | **Start here** — the e2e demo: two countries → one model → pruned features → citation, in 19 cells |
+| [examples/quickstart_everything.ipynb](examples/quickstart_everything.ipynb) | No `providers=` anywhere: every source in the region, every variable in one matrix — satellite pixel included — and a model over all of it |
 | [examples/bamfield.ipynb](examples/bamfield.ipynb) | The full walkthrough, executed, with plots |
 | [examples/bamfield.py](examples/bamfield.py) | The same walkthrough as a terminal script |
 | [examples/csv_stations.py](examples/csv_stations.py) | A complete third-party provider in ~100 lines |
