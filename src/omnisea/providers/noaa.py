@@ -49,9 +49,6 @@ STATIONS = "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.jso
 MAX_DAYS_WATER_LEVEL = 31
 MAX_DAYS_HILO = 365
 
-#: Six-minute cadence — 240 rows per station-day.
-SAMPLES_PER_DAY = 240
-
 SERIES_NODES = {
     "water_level": "in_situ/tides",
     "hilo": "predictions/tides_hilo",
@@ -119,6 +116,8 @@ class CoopsWaterSource(RetrievalSource):
     title = "NOAA CO-OPS water levels"
     node_path = "in_situ/tides"
     feature_type = "timeSeries"
+    #: Six-minute water levels.
+    samples_per_day = 240.0
 
     fields = {
         "water_level": cf.FieldSpec(
@@ -162,7 +161,7 @@ class CoopsWaterSource(RetrievalSource):
                     lat=float(lat),
                     lon=float(lon),
                     variables=("water_surface_height_above_reference_datum",),
-                    n_rows_est=max(1, int(query.days * SAMPLES_PER_DAY)),
+                    n_rows_est=self.row_estimate(query),
                     extra={
                         "state": station.get("state"),
                         # Great Lakes gauges publish against IGLD, and asking them for MLLW

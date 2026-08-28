@@ -108,7 +108,15 @@ class PayloadTooLargeError(OmniseaError):
     query fails loudly instead of silently truncating or hammering the upstream API.
     """
 
-    def __init__(self, message: str, *, estimate: int | None = None, limit: int | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        estimate: int | None = None,
+        limit: int | None = None,
+        provider: str | None = None,
+    ):
         self.estimate = estimate
         self.limit = limit
-        super().__init__(message)
+        self.provider = provider
+        super().__init__(f"[{provider}] {message}" if provider else message)

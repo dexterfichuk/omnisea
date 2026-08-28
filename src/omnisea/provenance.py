@@ -16,6 +16,7 @@ from typing import Any
 import pandas as pd
 import xarray as xr
 
+from .errors import QueryError
 from .tree import data_nodes, scalar_coord
 
 __all__ = ["provenance", "citation", "sources_used"]
@@ -60,7 +61,7 @@ def provenance(tree: xr.DataTree, *, by: str = "source") -> pd.DataFrame:
             if not frame.empty else frame
 
     if by not in ("source", "provider"):
-        raise ValueError(f"by must be 'source', 'provider' or 'node'; got {by!r}")
+        raise QueryError(f"by must be 'source', 'provider' or 'node'; got {by!r}")
 
     keys = ["provider", "source"] if by == "source" else ["provider"]
     # Attribution joins the grouping keys rather than being aggregated with "first": one ERDDAP
@@ -102,7 +103,7 @@ def citation(
     later from the query alone.
     """
     if style not in ("text", "markdown"):
-        raise ValueError(f"style must be 'text' or 'markdown'; got {style!r}")
+        raise QueryError(f"style must be 'text' or 'markdown'; got {style!r}")
 
     detail = provenance(tree, by="node")
     if detail.empty:

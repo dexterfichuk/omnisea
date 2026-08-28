@@ -20,6 +20,7 @@ provider (``"eccc"``) selects all of its sources.
 from __future__ import annotations
 
 import logging
+import math
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
@@ -259,6 +260,10 @@ class DataSource(ABC):
     #: platform spelling a measurement two ways across hardware generations, say. They may
     #: share an output variable; without this a reviewer cannot tell that from a mistake.
     equivalent_fields: tuple[frozenset[str], ...] = ()
+    #: Typical rows per station per day at this source's native cadence. The default row
+    #: estimate below multiplies it out; a source that can count exactly overrides
+    #: :meth:`row_estimate` instead.
+    samples_per_day: float = 24.0
     #: How far back this dataset holds data, for the "realtime" collections that keep only a
     #: rolling window. ``None`` means a full historical archive.
     #:
@@ -266,6 +271,19 @@ class DataSource(ABC):
     #: tree, which reads as "there is no gauge here" when the truth is "this collection only
     #: keeps 30 days, and the historical one is a different source".
     retention: pd.Timedelta | None = None
+
+    def row_estimate(self, query: Query) -> int:
+        """Roughly how many rows one station returns for this window. Rounded up, never to zero.
+
+        ``int(days * samples_per_day)`` floors to 0 as soon as one row covers more than the
+        window — a monthly collection over a one-week query — while the fetch returns the month
+        that week falls in. A catalogue reading "~0 rows" is the "nothing here" these sources
+        exist to stop showing, and a caller filtering on the estimate would never ask for data
+        that is really there. Over-stating by one costs an empty node that explains itself;
+        under-stating to zero costs the data. Sources that can count their periods exactly
+        override this.
+        """
+        return max(1, math.ceil(query.days * self.samples_per_day))
 
     def __init__(self, provider: Provider):
         self.provider = provider

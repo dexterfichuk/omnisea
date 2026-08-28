@@ -90,6 +90,7 @@ __all__ = [
     "as_sites",
     # queries
     "discover",
+    "discover_query",
     "fetch",
     "position",
     "positions",
@@ -377,6 +378,8 @@ def discover(
         depth=depth,
         providers=providers,
         max_rows=max_rows,
+        # The option form is what provider fetch pools read; see Catalog.fetch for the twin.
+        max_workers=max_workers,
         **options,
     )
     return discover_query(query, max_workers=max_workers)
@@ -419,8 +422,12 @@ def discover_query(query: Query, *, max_workers: int = DEFAULT_MAX_WORKERS) -> C
     # One thread per source, up to a sane cap: discovery is I/O-bound waiting on ~26
     # independent institutions, and rationing it to 8 threads made the wall time the sum of
     # the slowest rounds instead of the single slowest server. The global request semaphore
-    # still bounds true concurrency per process.
-    fan_out = max(max_workers, min(32, len(runnable)))
+    # still bounds true concurrency per process. A caller who *lowered* max_workers gets the
+    # number they asked for — widening applies only to the untouched default.
+    if max_workers == DEFAULT_MAX_WORKERS:
+        fan_out = max(max_workers, min(32, len(runnable)))
+    else:
+        fan_out = max_workers
     for found in map_threads(_discover, runnable, max_workers=fan_out, label="discovery"):
         matches.extend(found)
 

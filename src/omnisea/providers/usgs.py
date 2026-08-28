@@ -58,9 +58,6 @@ SITE_SERVICE = "https://waterservices.usgs.gov/nwis/site/"
 IV_SERVICE = "https://waterservices.usgs.gov/nwis/iv/"
 DV_SERVICE = "https://waterservices.usgs.gov/nwis/dv/"
 
-#: Typical NWIS reporting interval is 15 minutes.
-SAMPLES_PER_DAY = 96.0
-
 #: Kind to the service: a decade of 15-minute data in one request is a heavy ask.
 MAX_DAYS_PER_REQUEST = 120
 
@@ -91,6 +88,8 @@ class UsgsWaterSource(RetrievalSource):
     feature_type = "timeSeries"
     #: ``data_type_cd`` values whose records this source can actually serve.
     record_kinds = frozenset({"uv", "iv", "rt"})
+    #: Typical NWIS reporting interval is 15 minutes.
+    samples_per_day = 96.0
 
     #: Keyed by NWIS parameter code. Same CF names as the ECCC hydrometric sources, so a
     #: cross-border query serves comparable columns under identical names.
@@ -218,7 +217,7 @@ class UsgsWaterSource(RetrievalSource):
                         self.fields[p].var if p in self.fields else f"nwis_{p}"
                         for p in info["params"]
                     )),
-                    n_rows_est=max(1, int(query.days * SAMPLES_PER_DAY)),
+                    n_rows_est=self.row_estimate(query),
                     first=first,
                     last=last,
                     extra={"params": sorted(info["params"])},
@@ -372,12 +371,6 @@ class UsgsWaterDailySource(UsgsWaterSource):
         )
         for code, spec in UsgsWaterSource.fields.items()
     }
-
-    def discover(self, query: Query) -> list[StationMatch]:
-        matches = super().discover(query)
-        for match in matches:
-            match.n_rows_est = max(1, int(query.days))
-        return matches
 
     def _fetch_site(self, query: Query, match: StationMatch) -> StationSeries | None:
         series = super()._fetch_site(query, match)

@@ -720,7 +720,7 @@ Three knobs worth setting when this runs unattended:
 
 ```python
 omnisea.set_timeout(connect=5, read=20)   # per request; default (10, 120)
-omnisea.set_max_concurrency(4)            # simultaneous HTTP requests; default 8
+omnisea.set_max_concurrency(24, per_host=4)   # the defaults: 24 in flight overall, 4 per host
 omnisea.enable_cache()                    # catalogues cached, measurements never
 omnisea.clear_caches()                    # drop in-process station lists; see below
 ```

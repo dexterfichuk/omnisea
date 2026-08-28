@@ -1237,7 +1237,7 @@ class TestOneServerCannotSinkASweep:
         source = self.source()
         good = a_match("ca_hydro_08HB048")
 
-        def one(query, server):
+        def one(query, server, notes=None):
             if server.name == "hakai":
                 raise UpstreamError("boom", provider="erddap_tabledap")
             return [good]
@@ -1252,7 +1252,7 @@ class TestOneServerCannotSinkASweep:
         source = self.source()
         monkeypatch.setattr(
             source, "_discover_one",
-            lambda q, s: [] if s.name == "nwem" else (_ for _ in ()).throw(
+            lambda q, s, notes=None: [] if s.name == "nwem" else (_ for _ in ()).throw(
                 UpstreamError("boom", provider="erddap_tabledap")
             ),
         )
@@ -1266,7 +1266,7 @@ class TestOneServerCannotSinkASweep:
         source = self.source()
         monkeypatch.setattr(
             source, "_discover_one",
-            lambda q, s: (_ for _ in ()).throw(UpstreamError("boom", provider="x")),
+            lambda q, s, notes=None: (_ for _ in ()).throw(UpstreamError("boom", provider="x")),
         )
         with pytest.raises(UpstreamError, match="none of the 2 ERDDAP servers answered"):
             source.discover(self.query(["hakai", "nwem"]))
@@ -1276,7 +1276,7 @@ class TestOneServerCannotSinkASweep:
         source = self.source()
         good = a_match("ca_hydro_08HB048")
 
-        def one(query, server):
+        def one(query, server, notes=None):
             if server.name == "ioos_sensors":
                 raise PayloadTooLargeError("too many", estimate=87, limit=25)
             return [good]
@@ -1293,7 +1293,7 @@ class TestOneServerCannotSinkASweep:
         source = self.source()
         monkeypatch.setattr(
             source, "_discover_one",
-            lambda q, s: (_ for _ in ()).throw(
+            lambda q, s, notes=None: (_ for _ in ()).throw(
                 PayloadTooLargeError("too many", estimate=87, limit=25)
             ),
         )
@@ -1306,7 +1306,7 @@ class TestOneServerCannotSinkASweep:
         source = self.source()
         good = a_match("ca_hydro_08HB048")
 
-        def one(query, server):
+        def one(query, server, notes=None):
             if server.name == "hakai":
                 raise UpstreamError(
                     "not found", provider="erddap_tabledap", status=404,

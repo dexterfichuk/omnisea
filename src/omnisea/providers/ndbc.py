@@ -46,9 +46,6 @@ BASE = "https://www.ndbc.noaa.gov"
 STATION_TABLE = f"{BASE}/data/stations/station_table.txt"
 FILE_READER = f"{BASE}/view_text_file.php"
 
-#: Ten-minute reporting is typical for moored buoys.
-SAMPLES_PER_DAY = 144.0
-
 MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -110,6 +107,8 @@ class NdbcStdmetSource(RetrievalSource):
     title = "NDBC standard meteorological data"
     node_path = "in_situ/buoys"
     feature_type = "timeSeries"
+    #: Ten-minute reporting is typical for moored buoys.
+    samples_per_day = 144.0
 
     #: Keyed by the stdmet column header. Everything NDBC publishes is already SI.
     fields = {
@@ -197,7 +196,7 @@ class NdbcStdmetSource(RetrievalSource):
                     lat=st["lat"],
                     lon=st["lon"],
                     variables=tuple(sorted(spec.var for spec in self.fields.values())),
-                    n_rows_est=max(1, int(query.days * SAMPLES_PER_DAY)),
+                    n_rows_est=self.row_estimate(query),
                     extra={"owner": st["owner"], "kind": st["kind"]},
                 ).attach_site(query)
             )

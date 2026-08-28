@@ -37,7 +37,7 @@ from typing import Any
 import pandas as pd
 
 from .. import cf
-from ..errors import ProviderError
+from ..errors import MissingDependencyError, ProviderError
 from ..http import get_json, get_session
 from ..query import BBox, Query, register_option
 from .base import DiscoverySource, Provider, StationMatch
@@ -264,8 +264,11 @@ def _parse_text(text: str, label: str) -> list[dict[str, Any]]:
     try:
         import yaml  # optional; only needed for YAML records
     except ImportError:
-        log.warning("skipping %s: PyYAML is not installed (pip install pyyaml)", label)
-        return []
+        # A silent empty catalogue would read "there are no records here" when the truth is
+        # "a dependency is missing" — the exact conflation this library exists to prevent.
+        raise MissingDependencyError(
+            "PyYAML", "cioos", "to read CIOOS YAML metadata records"
+        ) from None
     try:
         return _flatten_records(yaml.safe_load(stripped))
     except Exception:  # noqa: BLE001 - one malformed record must not abort the scan
