@@ -10,6 +10,7 @@ from .base import (
     StationMatch,
     StationSeries,
 )
+from .cbr import CbrProvider
 from .cioos import CioosProvider
 from .dfo import DfoProvider
 from .eccc import EcccProvider
@@ -37,6 +38,7 @@ __all__ = [
     "UsgsProvider",
     "NAMED_PROVIDERS",
     "CioosProvider",
+    "CbrProvider",
     "OncProvider",
     "BUILTIN_PROVIDERS",
 ]
@@ -51,6 +53,6 @@ __all__ = [
 #: with ``erddap_server=<url>``.
 BUILTIN_PROVIDERS = [
     DfoProvider(), EcccProvider(), CioosProvider(), ErddapProvider(), OncProvider(),
-    CoopsProvider(), UsgsProvider(), NdbcProvider(),
+    CoopsProvider(), UsgsProvider(), NdbcProvider(), CbrProvider(),
     *(cls() for cls in NAMED_PROVIDERS.values()),
 ]

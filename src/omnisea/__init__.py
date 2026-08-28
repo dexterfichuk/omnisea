@@ -381,7 +381,16 @@ def _resolve_stations(stations: Any) -> tuple[list[Site], list[str], dict[str, s
                 f"stations up by id — {hint}."
             )
         lat, lon, name = place
-        sites.append(Site(lat, lon, name, radius_km=1.0))
+        # Two sources naming the same station — dart_river:BON and dart_passage:BON — are one
+        # place, and site labels are the join key, so they must collapse to one Site. Same
+        # label at a genuinely different position (two catalogues' "Race Rocks") stays two
+        # sites, disambiguated by the id.
+        existing = next((x for x in sites if x.label == name), None)
+        if existing is not None:
+            if abs(existing.lat - lat) > 0.05 or abs(existing.lon - lon) > 0.05:
+                sites.append(Site(lat, lon, f"{name} ({sid})", radius_km=1.0))
+        else:
+            sites.append(Site(lat, lon, name, radius_km=1.0))
         if source_name not in source_names:
             source_names.append(source_name)
         wanted.setdefault(source_name, set()).add(sid)

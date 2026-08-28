@@ -454,6 +454,8 @@ omnisea.fields(tree)     # what a particular fetch actually returned
 | `ndbc_stdmet` | `ndbc` | **Buoys — the wave source**: significant height, period, direction, plus marine wind, pressure, SST from ~1,900 platforms incl. relayed ECCC buoys |
 | `cdip_*` | `cdip` | Scripps research wave buoys (spectral-grade, archives to the 1980s) — named-only: `providers="cdip_tabledap", erddap_datasets=["wave_agg"]` |
 | `uhslc_*` | `uhslc` | Research-quality global tide archive, records over a century — named-only, 0–360 longitudes handled |
+| `dart_river` | `cbr` | **Columbia/Snake dams** (UW DART): daily outflow, spill, inflow, dissolved gas at 13 projects |
+| `dart_passage` | `cbr` | **Adult salmon counts** at the fish ladders — Chinook, sockeye, steelhead, coho, lamprey; Bonneville's record starts in 1938 |
 | `eccc_climate` | `eccc` | Hourly surface climate observations |
 | `eccc_climate_daily` | `eccc` | Daily climate summaries |
 | `eccc_hydrometric` | `eccc` | Realtime water level and river discharge (~30 days) |
