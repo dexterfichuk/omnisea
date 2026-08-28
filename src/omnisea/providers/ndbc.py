@@ -156,7 +156,7 @@ class NdbcStdmetSource(RetrievalSource):
         ),
         "PRES": cf.FieldSpec(
             var="air_pressure_at_mean_sea_level",
-            standard_name="air_pressure_at_sea_level",
+            standard_name="air_pressure_at_mean_sea_level",
             units="hPa",
             long_name="Sea level pressure",
         ),
