@@ -461,6 +461,7 @@ class Catalog:
         )
         if to_cf_units:
             _warn_unconverted(tree)
+        _stamp_citation(tree, announce=bool(query.option("cite", True)))
         return tree
 
     def _record_incompleteness(
@@ -609,6 +610,33 @@ def _nearest_per_site(matches: list[StationMatch], n: int) -> list[StationMatch]
                     n, twin.station_id, dropped.station_id, twin.name,
                 )
     return kept
+
+
+def _stamp_citation(tree: xr.DataTree, *, announce: bool) -> None:
+    """Write the full citation block onto the tree, and say who the data is from — now.
+
+    Attribution forgotten at analysis time is the norm, not the exception: the moment to
+    capture it is while the tree is being handed over. The full block lands in
+    ``tree.attrs["citation"]`` — a plain string, so it survives ``to_netcdf`` and is still
+    there months later when the methods section is finally written — and the same block is
+    printed in full, so every retrieval shows its sources whether or not
+    :func:`omnisea.citation` is ever called. ``cite=False`` silences the printing; the
+    attribute is always written.
+    """
+    from .provenance import citation as full_citation
+
+    try:
+        text = full_citation(tree)
+    except Exception:  # pragma: no cover - enrichment must never sink a successful fetch
+        log.debug("could not derive a citation for this tree", exc_info=True)
+        return
+    if not text.strip():
+        return
+    tree.attrs["citation"] = text
+    if not announce:
+        return
+    print(text.rstrip())
+    print('(saved at tree.attrs["citation"]; omnisea.citation(tree) re-renders it any time)')
 
 
 def _warn_unconverted(tree: xr.DataTree) -> None:
