@@ -443,6 +443,7 @@ omnisea.fields(tree)     # what a particular fetch actually returned
 | `noaa_coops` | `noaa_coops` | **US tide gauges**, natively: six-minute observed water levels and predicted extrema, datum stated (MLLW/MSL/NAVD, IGLD on the Great Lakes) |
 | `usgs_water` | `usgs` | **US river gauges**: discharge, stage and water temperature at native cadence, period of record honoured |
 | `usgs_water_daily` | `usgs` | US daily mean discharge/stage/temperature — the historical archive, read in station-local time |
+| `ndbc_stdmet` | `ndbc` | **Buoys — the wave source**: significant height, period, direction, plus marine wind, pressure, SST from ~1,900 platforms incl. relayed ECCC buoys |
 | `eccc_climate` | `eccc` | Hourly surface climate observations |
 | `eccc_climate_daily` | `eccc` | Daily climate summaries |
 | `eccc_hydrometric` | `eccc` | Realtime water level and river discharge (~30 days) |

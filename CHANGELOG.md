@@ -37,6 +37,12 @@ observatories, and CIOOS metadata records.
   US river discharge, stage and water temperature under the same branch as ECCC's gauges,
   excluding discontinued sites by their own period of record. A cross-border query produces
   one tree shape with both countries' licences attributed.
+- **`ndbc_stdmet` — waves.** No other source served significant wave height, period or
+  direction natively; NDBC's ~1,900 buoys and shore stations do, plus marine wind, pressure
+  and sea surface temperature, already SI, already UTC. Three file families (archived years,
+  current-year months, 45-day realtime) stitch seamlessly, all-nines sentinels read as gaps,
+  and a 404 year is an answer. The station table relays partner platforms — dozens of ECCC
+  buoys — so the same source answers on both coasts of the border.
 - **`usgs_water_daily`** — daily mean discharge, stage and water temperature, the partner to
   `eccc_hydrometric_daily`, labelled by local calendar date and read in station-local time the
   same way. NWIS discovery now counts only the record kinds each source can serve, so a site
